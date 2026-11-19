@@ -7,7 +7,7 @@
       "name": "session-band",
       "source": "./",
       "description": "Band above the prompt: turn, speed, cost, prompt cache countdown, model, effort and context; notifies before the cache expires.",
-      "version": "0.6.4",
+      "version": "0.6.5",
       "category": "mod"
     }
   ]
