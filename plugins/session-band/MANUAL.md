@@ -10,6 +10,7 @@ What every part of the band shows, when it appears, and how its numbers are work
 - [The compact button](#the-compact-button)
 - [How costs are measured](#how-costs-are-measured)
 - [Commands and settings](#commands-and-settings)
+- [Band background colors](#band-background-colors)
 - [Restarts and resumed sessions](#restarts-and-resumed-sessions)
 
 ## The band
@@ -88,7 +89,7 @@ The row appears only when **all** of these hold:
 1. No turn is running, and the cache hasn't expired.
 2. Prices are known: the model is in the price table, or its price scale has been measured (see [How costs are measured](#how-costs-are-measured)).
 3. The baseline is known.
-4. The old context is at least 20k tokens.
+4. The **old context** is at least 20k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
 6. The overhead is **$0.20 a turn or more**.
 7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
@@ -139,7 +140,41 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 **Settings** (under the plugin's options in `/plugin`):
 
 - *Turns kept when compacting* (`keepTurns`): 1–20, default 3.
-- *Band background* (`background`): a color behind the band to set it apart from the terminal. Takes hex (`#1e2430` or `#abc`), a color name (`blue`), or a theme key that follows your Claude Code theme (`subtle`, `inactive`, `promptBorder`, …). Empty, the default, keeps the terminal's background; anything else is ignored. Pick a color the band's green, amber and dim text stay readable on. If the band doesn't change right away, run `/reload-plugins`.
+- *Band background* (`background`): a color behind the band to set it apart from the terminal. Takes hex (`#1e2430` or `#abc`), a color name (`blue`), or a theme key (see [Band background colors](#band-background-colors)). Empty, the default, keeps the terminal's background; anything else is ignored. If the band doesn't change right away, run `/reload-plugins`.
+
+## Band background colors
+
+A hex value or color name is fixed: it stays the same whichever theme you use. A **theme key** names one of the color tokens of your Claude Code theme instead, so the band follows the theme when you switch between light and dark. The tokens are listed, with what each is for, in the *Color token reference* of [Configure your terminal for Claude Code](https://code.claude.com/docs/en/terminal-config).
+
+**Recommended: `userMessageBackground`**, the background of your own messages in the conversation. The band then matches them, and it is meant as a background, so it is usually quiet enough for the band's text.
+
+Most other tokens are colors for text, borders and accents, and behind the band they can be loud or hide its colored text:
+
+| Key | Its color in Claude Code |
+|---|---|
+| `text`, `inverseText` | default text; text drawn on colored badges |
+| `inactive`, `subtle` | secondary text (hints, timestamps); faint borders and dividers |
+| `suggestion`, `remember` | autocomplete and picker highlight; memory and `CLAUDE.md` indicators |
+| `success`, `error`, `warning`, `merged` | status messages |
+| `claude`, `permission` | the primary accent; dialog borders |
+| `planMode`, `autoAccept`, `promptBorder`, `bashBorder`, `ide` | mode accents and the input box border |
+| `diffAdded`, `diffRemoved` and their `Dimmed` and `Word` variants | diff line backgrounds and word highlights |
+
+The mod's API names the keys above; `userMessageBackground` isn't among them but works, as other tokens from the reference may.
+
+### Tip: a custom theme
+
+To make a theme key a color you like, override it in a custom theme. In `/theme`, choose **New custom theme…** and override the token, or write `~/.claude/themes/<name>.json`:
+
+```json
+{
+  "name": "My theme",
+  "base": "dark",
+  "overrides": { "userMessageBackground": "#2a2f3a" }
+}
+```
+
+Set `base` to the theme you use now so nothing else changes, then pick the theme in `/theme`. Edits to the file apply without a restart. Your own messages change color along with the band. See [Create a custom theme](https://code.claude.com/docs/en/terminal-config) for the token list and color formats.
 
 ## Restarts and resumed sessions
 
