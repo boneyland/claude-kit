@@ -83,7 +83,7 @@ test('session start reads the branch and dirty state from git status', async ($,
   })
 
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  expect(runs[0]?.slice(0, 3)).toEqual(['git', '--no-optional-locks', 'status'])
+  expect(runs[0]?.slice(0, 5)).toEqual(['git', '-c', 'core.fsmonitor=false', '--no-optional-locks', 'status'])
 
   const ui = await $.ui.mount(BAND(false))
   expect((await ui.find({ type: 'Text', text: 'main*' }))?.text).toBe('main*')

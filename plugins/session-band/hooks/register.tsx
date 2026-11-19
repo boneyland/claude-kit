@@ -86,10 +86,13 @@ const parseGit = (stdout: string): Git | null => {
 }
 
 // `--no-optional-locks` keeps status from taking index.lock, so it never races
-// the person's or Claude's own git commands. Rewritten only when it changed.
+// the person's or Claude's own git commands; `core.fsmonitor=false` keeps a
+// repository's own config from running a command every poll. Rewritten only when it changed.
 const refreshGit = async ($: EngineInterface) => {
   const result = await $.process
-    .run(['git', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], { timeoutMs: 5000 })
+    .run(['git', '-c', 'core.fsmonitor=false', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], {
+      timeoutMs: 5000,
+    })
     .catch(() => null)
   const next = result === null || result.exitCode !== 0 ? null : parseGit(result.stdout)
   const current = await read($, git)
@@ -480,6 +483,7 @@ export const compactWithTail = async (
 let keepTailTurns: number | null = null
 
 const compactKeepingTail = async ($: EngineInterface, turns: number): Promise<SessionCompactResult> => {
+  if (keepTailTurns !== null) return { skip: 'A compaction is already running.' }
   keepTailTurns = turns
   try {
     return await $.session.compact({
@@ -502,8 +506,9 @@ export const register: Register = (on, options) => {
       turns === null ? await next(e) : await compactWithTail(e.messages, turns, older => next({ ...e, messages: older }))
 
     // A plain compaction's summary is measured on the next request, for the /compact estimate.
+    // The context the last request carried is gone: no warning until the next one says what is left.
     if (result.messages !== undefined && isMain && e.trigger !== 'precompute') {
-      await update($, spend, sp => ({ ...sp, isCompactPending: turns === null, dismissedAt: null }))
+      await update($, spend, sp => ({ ...sp, context: null, isCompactPending: turns === null, dismissedAt: null }))
     }
     return result
   })
@@ -612,20 +617,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // The main loop's turns only: a subagent's run within one is part of its cost,
+  // not a turn of its own, and only the main loop's turn.complete ends the busy spell.
   on('turn.start', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
     const usd = (await $.session.usage()).cost?.usd ?? 0
-    if (e.agentId === undefined) {
-      await update($, spend, sp => ({ ...sp, steps: 0, predicted: 0, usdAtTurnStart: usd }))
-    }
+    await update($, spend, sp => ({ ...sp, steps: 0, predicted: 0, usdAtTurnStart: usd }))
     await update($, stats, s => {
       const total = (s.costOffset ?? 0) + usd
       return { ...s, turn: s.turn + 1, costAtStart: total, total }
     })
     await update($, isBusy, () => true)
-    if (e.agentId === undefined) {
-      const now = await $.clock.now()
-      await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
-    }
+    const now = await $.clock.now()
+    await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
 
     return next(e)
   })

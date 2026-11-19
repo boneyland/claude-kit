@@ -112,8 +112,10 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   let usd = 0
   const steps: TurnUsage[][] = []
   let spendNow: Record<string, number> = {}
+  let statsNow: Record<string, number> = {}
   on('state.set', (_, e, next) => {
     if (e.key === 'spend') spendNow = e.value as unknown as Record<string, number>
+    if (e.key === 'stats') statsNow = e.value as unknown as Record<string, number>
     return next(e)
   })
   on('store.get', (_, e) => ({ value: store[e.key] }))
@@ -177,9 +179,16 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   expect(Math.round(after1.scale! * 1000) / 1000).toBe(2)
   expect(after1.stepsPerTurn).toBe(2)
   expect(after1.context).toBe(20_006)
+  expect(statsNow.turn).toBe(1)
+
+  // A subagent's run is not a turn of the band's.
+  await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' })
+  expect(statsNow.turn).toBe(1)
 
   // A compaction, then the next request carries B plus the summary.
   await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
+  // The carried context is gone with it: no warning on the old figure.
+  expect(spendNow.context).toBe(null)
   await turn('t2', [usage({ cache_creation_input_tokens: 29_997, ephemeral_1h_input_tokens: 29_997 })], 0.6)
   expect(store.summaries).toEqual([12_000 - 3])
 })
