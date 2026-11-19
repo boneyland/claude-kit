@@ -1,7 +1,19 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
-import type { Cache, Git, Limit, Stats, TurnClock } from '../types'
+import type { Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
+import {
+  baselineFromBreakdown,
+  contextOf,
+  expiredWarning,
+  formatUsd,
+  median,
+  overheadWarning,
+  predictUsd,
+  resumeCost,
+  type SpendInputs,
+  type SpendWarning,
+} from './spend'
 
 // Responses shorter than this are mostly tool-call stubs: their timing is noise.
 const MIN_TOKENS = 20
@@ -92,6 +104,49 @@ const elapsed = (seconds: number) => {
 
 const branchLabel = ({ branch, isDirty }: Git) =>
   `${branch.length > BRANCH_MAX ? `${branch.slice(0, BRANCH_MAX - 1)}…` : branch}${isDirty ? '*' : ''}`
+
+// What the long context costs against starting over: the measured inputs of the
+// spend warnings, and the running sums that calibrate list prices to the engine's cost.
+const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
+  model: null,
+  context: null,
+  baseline: null,
+  isBaselineMeasured: false,
+  scale: null,
+  stepsPerTurn: null,
+  summary: null,
+  steps: 0,
+  predicted: 0,
+  usdAtTurnStart: 0,
+  calibPredicted: 0,
+  calibObserved: 0,
+  dismissedAt: null,
+  isFresh: false,
+  isCompactPending: false,
+} as Spend)
+
+// Kept across sessions: a fresh session's first request per project, and compaction summaries.
+const BASELINE_KEY = (cwd: string) => `baseline:${cwd}`
+const SUMMARIES_KEY = 'summaries'
+const SAMPLES_KEPT = 5
+// The overhead warning, dismissed, returns once the context grew this much more.
+const DISMISS_GROWTH = 50_000
+
+const spendInputs = (s: Spend): SpendInputs => ({
+  model: s.model,
+  context: s.context,
+  baseline: s.baseline,
+  scale: s.scale,
+  stepsPerTurn: s.stepsPerTurn,
+  summary: s.summary,
+})
+
+const pushSample = async ($: EngineInterface, key: string, value: number) => {
+  const kept = ((await $.store.get(key)) as number[] | undefined) ?? []
+  const next = [...(Array.isArray(kept) ? kept : []), value].slice(-SAMPLES_KEPT)
+  await $.store.set(key, next)
+  return next
+}
 
 // `claude-sonnet-5-5` -> `sonnet-5-5`; a date suffix or context tag is dropped.
 const shortModel = (model: string) =>
@@ -288,7 +343,8 @@ const desktopSession = async ($: EngineInterface) => {
 // and then a toast says it instead.
 const notifyCacheExpiry = async ($: EngineInterface, minutes: number) => {
   const project = (await $.session.cwd()).split('/').filter(Boolean).pop() ?? 'session'
-  const message = `Prompt cache expires in ${minutes} min`
+  const cost = resumeCost(spendInputs(await read($, spend)))
+  const message = `Prompt cache expires in ${minutes} min${cost !== null && cost >= 0.1 ? `; then the next message costs ≈ ${formatUsd(cost)}` : ''}`
 
   const notifier = `${$.plugin.root}/${NOTIFIER}`
   if (await $.fs.exists(notifier)) {
@@ -321,10 +377,94 @@ const notifyCacheExpiry = async ($: EngineInterface, minutes: number) => {
   if (!isDelivered) $.ui.toast(`⏳ ${text}`, { timeoutMs: 30000 })
 }
 
+// One response's usage: priced for calibration; on the main loop, the context it
+// carried, a fresh session's baseline, and a compaction's summary.
+const recordUsage = async ($: EngineInterface, usage: TurnUsage, isMain: boolean) => {
+  const price = predictUsd(usage.model, usage)
+  if (!isMain) return update($, spend, sp => ({ ...sp, predicted: sp.predicted + price }))
+
+  const context = contextOf(usage)
+  const before = await read($, spend)
+
+  let baseline = before.baseline
+  let isBaselineMeasured = before.isBaselineMeasured
+  if (before.isFresh && before.steps === 0) {
+    const samples = await pushSample($, BASELINE_KEY(await $.session.cwd()), context)
+    baseline = Math.min(...samples)
+    isBaselineMeasured = true
+  }
+
+  let summary = before.summary
+  if (before.isCompactPending && baseline !== null && context > baseline) {
+    summary = median(await pushSample($, SUMMARIES_KEY, context - baseline))
+  }
+
+  // Another model prices differently: calibration starts over.
+  const isNewModel = before.model !== null && before.model !== usage.model
+  await update($, spend, sp => ({
+    ...sp,
+    model: usage.model,
+    context,
+    baseline,
+    isBaselineMeasured,
+    summary,
+    steps: sp.steps + 1,
+    predicted: sp.predicted + price,
+    isFresh: false,
+    isCompactPending: false,
+    ...(isNewModel ? { scale: null, calibPredicted: 0, calibObserved: 0 } : {}),
+  }))
+}
+
+// At a main turn's end: the engine's cost against list price, the requests a turn
+// makes, and B from /context's breakdown while no fresh session has measured it.
+const settleSpend = async ($: EngineInterface) => {
+  const usage = await $.session.usage()
+  const usd = usage.cost?.usd ?? 0
+  const sp = await read($, spend)
+  const calibPredicted = sp.calibPredicted + sp.predicted
+  const calibObserved = sp.calibObserved + Math.max(0, usd - sp.usdAtTurnStart)
+  const scale = calibPredicted >= 0.02 ? Math.min(4, Math.max(0.25, calibObserved / calibPredicted)) : sp.scale
+  const stepsPerTurn =
+    sp.steps === 0 ? sp.stepsPerTurn : sp.stepsPerTurn === null ? sp.steps : sp.stepsPerTurn * 0.7 + sp.steps * 0.3
+
+  let baseline = sp.baseline
+  if (!sp.isBaselineMeasured) {
+    const { context } = await $.session.usage({ breakdown: 'summary' })
+    baseline = context.breakdown ? baselineFromBreakdown(context.breakdown.categories) : null
+  }
+  await update($, spend, s => ({ ...s, calibPredicted, calibObserved, scale, stepsPerTurn, baseline }))
+}
+
 export const register: Register = on => {
+  // A compaction of the main conversation: its summary is measured on the next request.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId === undefined && e.trigger !== 'precompute' && result.messages !== undefined) {
+      await update($, spend, sp => ({ ...sp, isCompactPending: true, dismissedAt: null }))
+    }
+    return result
+  })
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    const wasRunning = (await read($, stats)).turn !== 0
     await restore($)
+
+    // No turn kept and none restored: this session starts from nothing, so its
+    // first request measures what a fresh session in this project carries.
+    const isFresh = !wasRunning && (await read($, stats)).turn === 0
+    const cwd = await $.session.cwd()
+    const baselines = (await $.store.get(BASELINE_KEY(cwd))) as number[] | undefined
+    const summaries = (await $.store.get(SUMMARIES_KEY)) as number[] | undefined
+    const measured = Array.isArray(baselines) && baselines.length > 0 ? Math.min(...baselines) : null
+    await update($, spend, sp => ({
+      ...sp,
+      isFresh: wasRunning ? sp.isFresh : isFresh,
+      baseline: measured ?? sp.baseline,
+      isBaselineMeasured: measured !== null || sp.isBaselineMeasured,
+      summary: Array.isArray(summaries) ? median(summaries) : sp.summary,
+    }))
 
     await $.command.register({
       name: 'session_data',
@@ -396,6 +536,9 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     const usd = (await $.session.usage()).cost?.usd ?? 0
+    if (e.agentId === undefined) {
+      await update($, spend, sp => ({ ...sp, steps: 0, predicted: 0, usdAtTurnStart: usd }))
+    }
     await update($, stats, s => {
       const total = (s.costOffset ?? 0) + usd
       return { ...s, turn: s.turn + 1, costAtStart: total, total }
@@ -410,7 +553,13 @@ export const register: Register = on => {
   })
 
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId !== undefined) return yield* next(e)
+    if (e.agentId !== undefined) {
+      for await (const chunk of next(e)) {
+        if (chunk.kind === 'stop' && chunk.usage !== null) await recordUsage($, chunk.usage, false)
+        yield chunk
+      }
+      return
+    }
 
     await update($, effort, () => (e.effort === undefined ? null : String(e.effort)))
 
@@ -425,6 +574,7 @@ export const register: Register = on => {
       }
 
       if (chunk.kind === 'stop' && chunk.usage !== null) {
+        await recordUsage($, chunk.usage, true)
         const tokens = chunk.usage.output_tokens
         const seconds = ((await $.clock.now()) - startedAt) / 1000
         const speed = tokens / seconds
@@ -449,6 +599,7 @@ export const register: Register = on => {
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
       await update($, turnClock, t => ({ ...t, startedAt: null }))
+      await settleSpend($)
       await saveSnapshot($)
       await refreshGit($)
     }
@@ -494,6 +645,18 @@ export const register: Register = on => {
     const running = e.props.isWorking && clock.startedAt !== null ? elapsed(clock.seconds) : null
     const repo = await read($, git)
 
+    // Shown while idle, when the next message is still the person's to decide.
+    const sp = await read($, spend)
+    const warning: SpendWarning | null = e.props.isWorking
+      ? null
+      : secondsLeft === 0
+        ? expiredWarning(spendInputs(sp))
+        : sp.dismissedAt !== null && (sp.context ?? 0) < sp.dismissedAt + DISMISS_GROWTH
+          ? null
+          : overheadWarning(spendInputs(sp))
+    // The frame takes two rows: dropped when the warning row would not fit with it.
+    const framed = level !== null && e.props.maxRows >= (warning === null ? 3 : 4)
+
     const now = await $.clock.now()
     // A window whose reset has passed since it was saved stands at 0 until the next reading.
     const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
@@ -502,16 +665,8 @@ export const register: Register = on => {
       return w.resetsAt !== null && Date.parse(w.resetsAt) <= now ? [{ ...w, percentUsed: 0, resetsAt: null }] : [w]
     })
 
-    return (
-      <Box
-        flexDirection="row"
-        alignItems="center"
-        columnGap={GAPS[tier]}
-        flexWrap="nowrap"
-        overflow="hidden"
-        paddingX={1}
-        {...(level ? { borderStyle: 'round', borderColor: level } : {})}
-      >
+    const row = (
+      <Box flexDirection="row" alignItems="center" columnGap={GAPS[tier]} flexWrap="nowrap" overflow="hidden">
         {tier <= 2 ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
             {tier <= 1 ? <Text dimColor>Turn</Text> : <Text dimColor>#</Text>}
@@ -573,6 +728,28 @@ export const register: Register = on => {
           <Text bold>{`${s.context}%`}</Text>
         </Box>
         <Button key="hide" label="×" role="dismiss" plain dimColor onPress={() => update($, isHidden, () => true)} />
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column" paddingX={1} {...(framed ? { borderStyle: 'round', borderColor: level } : {})}>
+        {row}
+        {warning !== null ? (
+          <Box flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap" overflow="hidden">
+            <Text color={WARN} wrap="truncate-end">{warning.text}</Text>
+            <Box flexGrow={1} flexShrink={1} />
+            {warning.kind === 'overhead' ? (
+              <Button
+                key="dismiss-spend"
+                label="×"
+                role="dismiss"
+                plain
+                dimColor
+                onPress={() => update($, spend, s => ({ ...s, dismissedAt: s.context }))}
+              />
+            ) : null}
+          </Box>
+        ) : null}
       </Box>
     )
   })

@@ -5,7 +5,7 @@ const BAND = (isWorking: boolean, bodyColumns = 120) =>
     plugin: 'session-band',
     component: 'AbovePrompt',
     surface: 'terminal',
-    props: { hasSurvey: false, isWorking, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 } },
+    props: { hasSurvey: false, isWorking, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
   }) as const
 
 const NOW = Date.parse('2026-11-20T10:00:00Z')
@@ -68,6 +68,7 @@ test('session start reads the branch and dirty state from git status', async ($,
   on('session.id', () => ({ value: 'engine-id' }))
   on('clock.now', () => ({ value: NOW }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.cwd', () => ({ value: '/repo' }))
   on('process.run', (_, e) => {
     runs.push([...e.argv])
     return {

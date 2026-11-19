@@ -5,7 +5,7 @@ const BAND = (bodyColumns: number) =>
     plugin: 'session-band',
     component: 'AbovePrompt',
     surface: 'terminal',
-    props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 } },
+    props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
   }) as const
 
 const NOW = Date.parse('2026-11-02T10:00:00Z')

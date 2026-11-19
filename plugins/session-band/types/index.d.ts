@@ -32,8 +32,33 @@ export type Git = {
   isDirty: boolean
 }
 
+// The spend warnings' inputs: measured tokens, and list price calibrated to the engine's cost.
+export type Spend = {
+  model: string | null
+  // C: the input tokens of the main loop's last request.
+  context: number | null
+  // B: a fresh session's first request in this project, or /context's non-conversation rows.
+  baseline: number | null
+  isBaselineMeasured: boolean
+  // The engine's cost over list price, null until a turn measured it.
+  scale: number | null
+  stepsPerTurn: number | null
+  // Median measured compaction summary, in tokens.
+  summary: number | null
+  // The running main turn: its requests, list price of every loop's responses, cost at its start.
+  steps: number
+  predicted: number
+  usdAtTurnStart: number
+  calibPredicted: number
+  calibObserved: number
+  // The context size when the overhead warning was dismissed.
+  dismissedAt: number | null
+  isFresh: boolean
+  isCompactPending: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null }
+    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend }
   }
 }
