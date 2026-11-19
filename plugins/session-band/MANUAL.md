@@ -136,7 +136,10 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 | `/session_data demo <minutes>` | Pretend the cache has that many minutes left, to preview the colors, frame and notifications. The next answer resets it. |
 | `/session_data width` | Print the band's measured width and tier (for debugging). |
 
-**Setting:** *Turns kept when compacting* (`keepTurns`), 1–20, default 3. Change it under the plugin's options in `/plugin`.
+**Settings** (under the plugin's options in `/plugin`):
+
+- *Turns kept when compacting* (`keepTurns`): 1–20, default 3.
+- *Band background* (`background`): a color behind the band to set it apart from the terminal. Takes hex (`#1e2430` or `#abc`), a color name (`blue`), or a theme key that follows your Claude Code theme (`subtle`, `inactive`, `promptBorder`, …). Empty, the default, keeps the terminal's background; anything else is ignored. Pick a color the band's green, amber and dim text stay readable on. If the band doesn't change right away, run `/reload-plugins`.
 
 ## Restarts and resumed sessions
 

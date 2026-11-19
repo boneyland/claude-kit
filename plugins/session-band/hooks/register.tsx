@@ -512,8 +512,16 @@ const compactKeepingTail = async ($: EngineInterface, turns: number): Promise<Se
   }
 }
 
+// The band's background from the setting: hex, a color name or a theme key; anything
+// else, empty included, leaves the terminal's own.
+export const bandBackground = (value: unknown) => {
+  const v = typeof value === 'string' ? value.trim() : ''
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) || /^[a-z][a-z0-9]{1,31}$/i.test(v) ? v : undefined
+}
+
 export const register: Register = (on, options) => {
   const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
+  const background = bandBackground(options.background)
 
   on('session.compact', async ($, e, next) => {
     const isMain = e.agentId === undefined
@@ -839,7 +847,13 @@ export const register: Register = (on, options) => {
     )
 
     return (
-      <Box flexDirection="column" paddingX={1} {...(framed ? { borderStyle: 'round', borderColor: level } : {})}>
+      <Box
+        key="band"
+        flexDirection="column"
+        paddingX={1}
+        {...(background !== undefined ? { backgroundColor: background } : {})}
+        {...(framed ? { borderStyle: 'round', borderColor: level } : {})}
+      >
         {row}
         {warning !== null ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap" overflow="hidden">

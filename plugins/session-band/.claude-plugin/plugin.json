@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort and context fill; notifies before the cache expires.",
   "author": {
     "name": "johnnyvizz",
@@ -18,6 +18,12 @@
       "default": 3,
       "min": 1,
       "max": 20
+    },
+    "background": {
+      "type": "string",
+      "title": "Band background",
+      "description": "A color behind the band, to set it apart from the terminal: hex (#1e2430), a color name (blue) or a theme key (subtle). Empty keeps the terminal's background.",
+      "default": ""
     }
   }
 }

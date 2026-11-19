@@ -41,3 +41,21 @@ test('the band shows the 5-hour and weekly limits, with resets when wide', async
   expect(await narrow.find({ type: 'Text', text: /↻/ })).toBe(undefined)
   await narrow.unmount()
 })
+
+test('the band takes its background from the setting, the terminal\'s by default', async ($, on) => {
+  on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
+  on('clock.now', () => ({ value: NOW }))
+  on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
+  const ui = await $.ui.mount(BAND(120))
+  expect((await ui.find({ key: 'band' }))?.props.backgroundColor).toBe(undefined)
+  await ui.unmount()
+})
+
+test('a set background paints the band', { options: { background: '#1e2430' } }, async ($, on) => {
+  on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
+  on('clock.now', () => ({ value: NOW }))
+  on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
+  const ui = await $.ui.mount(BAND(120))
+  expect((await ui.find({ key: 'band' }))?.props.backgroundColor).toBe('#1e2430')
+  await ui.unmount()
+})

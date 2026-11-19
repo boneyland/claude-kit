@@ -1,7 +1,7 @@
 import type { SessionMessage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { compactWithTail, tailStart } from './register'
+import { bandBackground, compactWithTail, tailStart } from './register'
 
 const prompt = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
 const reply = (text: string): SessionMessage => ({ role: 'assistant', text, toolUses: [] })
@@ -83,4 +83,15 @@ test('the command schedules the compaction after it returns, keeping the set tur
   const named = await $.command.run(RUN('compact 5'))
   expect(named.text).toBe('Compacting, keeping the last 5 turns…')
   expect(scheduled).toEqual([0, 0])
+})
+
+test('the background setting takes hex, color names and theme keys, nothing else', async () => {
+  expect(bandBackground('')).toBe(undefined)
+  expect(bandBackground(' #1E2430 ')).toBe('#1E2430')
+  expect(bandBackground('#abc')).toBe('#abc')
+  expect(bandBackground('blue')).toBe('blue')
+  expect(bandBackground('subtle')).toBe('subtle')
+  expect(bandBackground('#12345')).toBe(undefined)
+  expect(bandBackground('rgb(1,2,3)')).toBe(undefined)
+  expect(bandBackground(3)).toBe(undefined)
 })
