@@ -437,14 +437,24 @@ const settleSpend = async ($: EngineInterface) => {
 }
 
 // Where the last `turns` turns begin: the index of the user message that opens the
-// earliest of them (one the person wrote, not a carrier of tool results); -1 when
-// the conversation has no earlier message to summarize.
+// earliest of them, -1 when the conversation has no earlier message to summarize.
+// A turn is a prompt the model answered: slash commands run in the terminal
+// (/plugin, /reload-plugins, …) leave user messages that no reply follows, and
+// the messages run together before a reply (prompt, reminders) open one turn.
 export const tailStart = (messages: readonly SessionMessage[], turns: number) => {
+  const isOpener = (m: SessionMessage) => m.role === 'user' && (m.toolResults?.length ?? 0) === 0
   let seen = 0
+  let isAnswered = false
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!
-    const isPrompt = m.role === 'user' && (m.toolResults?.length ?? 0) === 0 && m.text.trim() !== ''
-    if (isPrompt && ++seen === turns) return i > 0 ? i : -1
+    if (m.role === 'assistant') {
+      isAnswered = true
+      continue
+    }
+    if (!isOpener(m) || !isAnswered) continue
+    while (i > 0 && isOpener(messages[i - 1]!)) i--
+    if (++seen === turns) return i > 0 ? i : -1
+    isAnswered = false
   }
   return -1
 }

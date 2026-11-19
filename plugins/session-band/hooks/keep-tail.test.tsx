@@ -36,6 +36,20 @@ test('a turn starts at a prompt the person wrote, not at tool results', async ()
   expect(tailStart(CONVERSATION, 4)).toBe(-1)
 })
 
+test('slash commands run in the terminal are not turns', async () => {
+  const local = [
+    ...CONVERSATION,
+    prompt('<local-command-caveat>…</local-command-caveat>'),
+    prompt('<command-name>/plugin</command-name>'),
+    prompt('<local-command-stdout>Updated.</local-command-stdout>'),
+  ]
+  expect(tailStart(local, 1)).toBe(8)
+  expect(tailStart(local, 2)).toBe(4)
+  // Between turns they stay in the kept tail, with the prompt that follows them.
+  const between = [prompt('one'), reply('a'), prompt('<command-name>/plugin</command-name>'), prompt('two'), reply('b')]
+  expect(tailStart(between, 1)).toBe(2)
+})
+
 test('the older turns are summarized and the kept ones follow the summary word for word', async () => {
   const summarized: string[][] = []
   const result = await compactWithTail(CONVERSATION, 2, async older => {
