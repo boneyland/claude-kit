@@ -59,3 +59,42 @@ test('a set background paints the band', { options: { background: '#1e2430' } },
   expect((await ui.find({ key: 'band' }))?.props.backgroundColor).toBe('#1e2430')
   await ui.unmount()
 })
+
+const seedIcons = (on: Parameters<Parameters<typeof test>[1] & ((...a: never[]) => unknown)>[1]) => {
+  on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
+  on('clock.now', () => ({ value: NOW }))
+  on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
+}
+
+test('the terminal draws emoji icons and a context bar when wide', async ($, on) => {
+  seedIcons(on)
+  const wide = await $.ui.mount(BAND(120))
+  expect(await wide.findAll({ type: 'Svg' })).toHaveLength(0)
+  expect((await wide.find({ type: 'Text', text: '💰' }))?.text).toBe('💰')
+  expect((await wide.find({ type: 'Text', text: '⏳' }))?.text).toBe('⏳')
+  expect((await wide.find({ type: 'Text', text: '████' }))?.props.color).toBe('#4caf6e')
+  expect((await wide.find({ type: 'Text', text: '░░░░░░' }))?.text).toBe('░░░░░░')
+  await wide.unmount()
+
+  const narrow = await $.ui.mount(BAND(90))
+  expect(await narrow.find({ key: 'context-bar' })).toBe(undefined)
+  expect((await narrow.find({ type: 'Text', text: '40%' }))?.text).toBe('40%')
+  await narrow.unmount()
+})
+
+test('the terminal draws glyphs when set', { options: { terminalIcons: 'glyphs' } }, async ($, on) => {
+  seedIcons(on)
+  const ui = await $.ui.mount(BAND(120))
+  expect((await ui.find({ type: 'Text', text: '$' }))?.text).toBe('$')
+  expect((await ui.find({ type: 'Text', text: '⧗' }))?.text).toBe('⧗')
+  expect(await ui.find({ type: 'Text', text: '💰' })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('the desktop draws its ring icons', async ($, on) => {
+  seedIcons(on)
+  const ui = await $.ui.mount({ ...BAND(120), surface: 'desktop' } as never)
+  expect((await ui.findAll({ type: 'Svg' })).length > 0).toBe(true)
+  expect(await ui.find({ type: 'Text', text: '💰' })).toBe(undefined)
+  await ui.unmount()
+})

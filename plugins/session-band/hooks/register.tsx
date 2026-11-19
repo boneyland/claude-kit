@@ -519,9 +519,31 @@ export const bandBackground = (value: unknown) => {
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) || /^[a-z][a-z0-9]{1,31}$/i.test(v) ? v : undefined
 }
 
+// The terminal draws no images: its icons are emoji, or glyphs colored like the band.
+const TERMINAL_ICONS = {
+  emoji: { timer: '⏱️', speed: '⚡', cost: '💰', cache: '⏳', branch: '🌿' },
+  glyphs: { timer: '⏱', speed: '⚡\uFE0E', cost: '$', cache: '⧗', branch: '⎇' },
+} as const
+
+// The terminal's context bar: cells filled as the context fills.
+const BAR_CELLS = 10
+const BAR_GREEN = '#4caf6e'
+const BAR_YELLOW = '#e6c547'
+const BAR_RED = '#e0605a'
+export const terminalContextBar = (percent: number) => {
+  const p = Math.min(100, Math.max(0, percent))
+  const filled = Math.round((p / 100) * BAR_CELLS)
+  return {
+    filled: '█'.repeat(filled),
+    empty: '░'.repeat(BAR_CELLS - filled),
+    color: p >= 85 ? BAR_RED : p >= 65 ? BAR_YELLOW : BAR_GREEN,
+  }
+}
+
 export const register: Register = (on, options) => {
   const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
   const background = bandBackground(options.background)
+  const glyphs = TERMINAL_ICONS[options.terminalIcons === 'glyphs' ? 'glyphs' : 'emoji']
 
   on('session.compact', async ($, e, next) => {
     const isMain = e.agentId === undefined
@@ -724,7 +746,9 @@ export const register: Register = (on, options) => {
 
     const ui = $.ui.resolve(e)
     const { Box, Button, Text } = ui
-    const Svg = 'Svg' in ui ? ui.Svg : null
+    // The terminal hands back an Svg too but draws it empty: its icons are text.
+    const isTerminal = e.surface === 'terminal'
+    const Svg = !isTerminal && 'Svg' in ui ? ui.Svg : null
     const speed = s.speed === null ? '—' : `${s.speed} tok/s`
     const turnCost = s.turnCost === null ? '—' : usd(s.turnCost)
 
@@ -785,18 +809,18 @@ export const register: Register = (on, options) => {
         ) : null}
         {running !== null ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            {tier <= 1 ? <Text dimColor>⏱</Text> : null}
+            {tier <= 1 ? <Text dimColor>{glyphs.timer}</Text> : null}
             <Text bold>{running}</Text>
           </Box>
         ) : null}
         {tier <= 3 ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            {Svg ? <Svg source={SPEED_ICON} alt="speed" width={icon} height={icon} /> : <Text color={SPEED}>⚡</Text>}
+            {Svg ? <Svg source={SPEED_ICON} alt="speed" width={icon} height={icon} /> : <Text color={SPEED}>{glyphs.speed}</Text>}
             <Text bold wrap="truncate-end">{tier <= 1 || s.speed === null ? speed : `${s.speed}/s`}</Text>
           </Box>
         ) : null}
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-          {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>$</Text>}
+          {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>{glyphs.cost}</Text>}
           <Text bold color={MONEY}>{turnCost}</Text>
           {perTurn !== null && tier <= 1 ? <Text dimColor>· med</Text> : null}
           {perTurn !== null && tier >= 2 ? <Text dimColor>·</Text> : null}
@@ -807,7 +831,7 @@ export const register: Register = (on, options) => {
           {tier <= 2 ? <Text bold>{usd(s.total)}</Text> : null}
         </Box>
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-          {Svg ? <Svg source={cacheIcon(cacheColor)} alt="cache" width={icon} height={icon} /> : <Text color={cacheColor}>⧗</Text>}
+          {Svg ? <Svg source={cacheIcon(cacheColor)} alt="cache" width={icon} height={icon} /> : <Text color={cacheColor}>{glyphs.cache}</Text>}
           <Text bold color={level ?? undefined}>{cacheText}</Text>
         </Box>
         {tier <= 3
@@ -825,7 +849,7 @@ export const register: Register = (on, options) => {
         <Box flexGrow={1} flexShrink={1} />
         {tier <= 1 && repo !== null ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
-            <Text dimColor>⎇</Text>
+            <Text dimColor>{Svg ? '⎇' : glyphs.branch}</Text>
             <Text bold color={repo.isDirty ? WARN : undefined} wrap="truncate-end">{branchLabel(repo)}</Text>
           </Box>
         ) : null}
@@ -839,6 +863,12 @@ export const register: Register = (on, options) => {
           {Svg ? <Svg source={contextIcon(s.context)} alt="context" width={icon} height={icon} /> : null}
           {Svg && tier === 0 ? (
             <Svg source={contextBar(s.context)} alt={`context ${s.context}%`} width={80} height={6} />
+          ) : null}
+          {!Svg && tier === 0 ? (
+            <Box key="context-bar" flexDirection="row" flexShrink={0}>
+              <Text color={terminalContextBar(s.context).color}>{terminalContextBar(s.context).filled}</Text>
+              <Text dimColor>{terminalContextBar(s.context).empty}</Text>
+            </Box>
           ) : null}
           <Text bold>{`${s.context}%`}</Text>
         </Box>

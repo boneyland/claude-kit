@@ -15,7 +15,7 @@ What every part of the band shows, when it appears, and how its numbers are work
 
 ## The band
 
-One row above the prompt, left to right:
+One row above the prompt, left to right. In the terminal the icons are emoji (⏱️ ⚡ 💰 ⏳ 🌿) or, with the *Terminal icons* setting, glyphs (`⏱ ⚡ $ ⧗ ⎇`) colored like the band. The desktop app draws its own ring icons.
 
 | Item | Shows | Notes |
 |---|---|---|
@@ -27,7 +27,7 @@ One row above the prompt, left to right:
 | **Limits** | `5h 24% ↻2h10m` `wk 91% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
-| **Context** | `◔ ▬▬▬ 63%` | How full the context window is. The bar is green, amber from 65% and red from 85%. |
+| **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 65%, yellow from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
 | **×** | | Hides the band for the rest of the session. `/session_data` brings it back. |
 
 Before a session's first answer the band only appears if your plan's limits are already known.
@@ -140,6 +140,7 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 **Settings** (under the plugin's options in `/plugin`):
 
 - *Turns kept when compacting* (`keepTurns`): 1–20, default 3.
+- *Terminal icons* (`terminalIcons`): `emoji`, the default, or `glyphs`. Emoji draw in their own colors, so the cache icon doesn't turn amber or red (its countdown still does), and each takes two columns. Glyphs follow the band's colors but need a font that has them.
 - *Band background* (`background`): a color behind the band to set it apart from the terminal. Takes hex (`#1e2430` or `#abc`), a color name (`blue`), or a theme key (see [Band background colors](#band-background-colors)). Empty, the default, keeps the terminal's background; anything else is ignored. If the band doesn't change right away, run `/reload-plugins`.
 
 ## Band background colors
