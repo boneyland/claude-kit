@@ -867,7 +867,7 @@ export const register: Register = (on, options) => {
           {!Svg && tier === 0 ? (
             <Box key="context-bar" flexDirection="row" flexShrink={0}>
               <Text color={terminalContextBar(s.context).color}>{terminalContextBar(s.context).filled}</Text>
-              <Text dimColor>{terminalContextBar(s.context).empty}</Text>
+              <Text color={terminalContextBar(s.context).color}>{terminalContextBar(s.context).empty}</Text>
             </Box>
           ) : null}
           <Text bold>{`${s.context}%`}</Text>
