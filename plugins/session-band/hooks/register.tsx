@@ -10,6 +10,7 @@ import {
   median,
   overheadWarning,
   predictUsd,
+  RECENT_TURNS,
   resumeCost,
   type SpendInputs,
   type SpendWarning,
@@ -116,7 +117,7 @@ const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
   baseline: null,
   isBaselineMeasured: false,
   scale: null,
-  stepsPerTurn: null,
+  recentSteps: [],
   summary: null,
   steps: 0,
   predicted: 0,
@@ -140,7 +141,7 @@ const spendInputs = (s: Spend): SpendInputs => ({
   context: s.context,
   baseline: s.baseline,
   scale: s.scale,
-  stepsPerTurn: s.stepsPerTurn,
+  recentSteps: s.recentSteps ?? [],
   summary: s.summary,
 })
 
@@ -428,15 +429,14 @@ const settleSpend = async ($: EngineInterface) => {
   const calibPredicted = sp.calibPredicted + sp.predicted
   const calibObserved = sp.calibObserved + Math.max(0, usd - sp.usdAtTurnStart)
   const scale = calibPredicted >= 0.02 ? Math.min(4, Math.max(0.25, calibObserved / calibPredicted)) : sp.scale
-  const stepsPerTurn =
-    sp.steps === 0 ? sp.stepsPerTurn : sp.stepsPerTurn === null ? sp.steps : sp.stepsPerTurn * 0.7 + sp.steps * 0.3
+  const recentSteps = sp.steps === 0 ? (sp.recentSteps ?? []) : [...(sp.recentSteps ?? []), sp.steps].slice(-RECENT_TURNS)
 
   let baseline = sp.baseline
   if (!sp.isBaselineMeasured) {
     const { context } = await $.session.usage({ breakdown: 'summary' })
     baseline = context.breakdown ? baselineFromBreakdown(context.breakdown.categories) : null
   }
-  await update($, spend, s => ({ ...s, calibPredicted, calibObserved, scale, stepsPerTurn, baseline }))
+  await update($, spend, s => ({ ...s, calibPredicted, calibObserved, scale, recentSteps, baseline }))
 }
 
 // Where the last `turns` turns begin: the index of the user message that opens the

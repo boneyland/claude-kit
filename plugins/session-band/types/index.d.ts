@@ -42,7 +42,8 @@ export type Spend = {
   isBaselineMeasured: boolean
   // The engine's cost over list price, null until a turn measured it.
   scale: number | null
-  stepsPerTurn: number | null
+  // Requests each recent main turn made, oldest first; the last RECENT_TURNS.
+  recentSteps: number[]
   // Median measured compaction summary, in tokens.
   summary: number | null
   // The running main turn: its requests, list price of every loop's responses, cost at its start.

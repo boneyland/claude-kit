@@ -66,7 +66,8 @@ export type SpendInputs = {
   baseline: number | null
   // Engine cost over list price; null until measured, required for unknown models.
   scale: number | null
-  stepsPerTurn: number | null
+  // Requests each recent main turn made: their median prices a turn, so one long run does not.
+  recentSteps: readonly number[]
   // Median tokens a compaction summary came to, measured; null until one ran.
   summary: number | null
 }
@@ -77,6 +78,10 @@ const MIN_OLD_TOKENS = 20_000
 const EXPIRED_MIN_SAVING = 0.1
 // The steady overhead: shown when the old context costs this much a turn.
 export const OVERHEAD_MIN_USD = 0.2
+// Turns seen before the overhead is priced: one turn says little about the next.
+export const MIN_TURNS = 3
+// How many recent turns' request counts are kept.
+export const RECENT_TURNS = 10
 
 const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
 const usd = (n: number) => `$${n.toFixed(2)}`
@@ -118,7 +123,9 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   const old = s.context - s.baseline
   if (old < MIN_OLD_TOKENS) return null
 
-  const steps = Math.max(1, s.stepsPerTurn ?? 1)
+  if (s.recentSteps.length < MIN_TURNS) return null
+  const steps = Math.max(1, median(s.recentSteps)!)
+  const mean = Math.round(s.recentSteps.reduce((a, b) => a + b, 0) / s.recentSteps.length)
   const perTurn = old * p.read * steps
   if (perTurn < OVERHEAD_MIN_USD) return null
 
@@ -127,7 +134,7 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
     return `${turns} turn${turns === 1 ? '' : 's'}`
   }
   const parts = [
-    `Old context ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${Math.round(steps)} req)`,
+    `Old context ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req median, ${mean} mean)`,
     `new session pays back in ${payback(s.baseline * p.write1h, perTurn)}`,
   ]
 

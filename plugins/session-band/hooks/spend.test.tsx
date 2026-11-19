@@ -9,7 +9,7 @@ const OPUS = {
   context: 150_000,
   baseline: 20_000,
   scale: null,
-  stepsPerTurn: 10,
+  recentSteps: [10, 10, 10],
   summary: null,
 }
 
@@ -28,11 +28,19 @@ test('an expired cache prices re-caching the context against a fresh session', a
 })
 
 test('the overhead names its cost a turn and when starting over pays back', async () => {
-  expect(overheadWarning(OPUS)?.text).toBe('Old context ≈ $0.26/turn (130k × 10 req) · new session pays back in 1 turn')
+  expect(overheadWarning(OPUS)?.text).toBe('Old context ≈ $0.26/turn (130k × 10 req median, 10 mean) · new session pays back in 1 turn')
   expect(overheadWarning({ ...OPUS, summary: 10_000 })?.text).toBe(
-    'Old context ≈ $0.26/turn (130k × 10 req) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns',
+    'Old context ≈ $0.26/turn (130k × 10 req median, 10 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns',
   )
-  expect(overheadWarning({ ...OPUS, stepsPerTurn: 2 })).toBe(null)
+  expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
+})
+
+test('the overhead waits for three turns and prices one at their median', async () => {
+  expect(overheadWarning({ ...OPUS, recentSteps: [77, 10] })).toBe(null)
+  // One long run moves the mean, not the price.
+  expect(overheadWarning({ ...OPUS, recentSteps: [77, 8, 10] })?.text).toBe(
+    'Old context ≈ $0.26/turn (130k × 10 req median, 32 mean) · new session pays back in 1 turn',
+  )
 })
 
 test('an unknown model waits for calibration; the scale follows the engine', async () => {
@@ -111,10 +119,10 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   const store: Record<string, unknown> = {}
   let usd = 0
   const steps: TurnUsage[][] = []
-  let spendNow: Record<string, number> = {}
+  let spendNow: Record<string, any> = {}
   let statsNow: Record<string, number> = {}
   on('state.set', (_, e, next) => {
-    if (e.key === 'spend') spendNow = e.value as unknown as Record<string, number>
+    if (e.key === 'spend') spendNow = e.value as unknown as Record<string, any>
     if (e.key === 'stats') statsNow = e.value as unknown as Record<string, number>
     return next(e)
   })
@@ -177,7 +185,7 @@ test('a fresh session measures B, the price scale and a compaction summary from 
 
   const after1 = spendNow
   expect(Math.round(after1.scale! * 1000) / 1000).toBe(2)
-  expect(after1.stepsPerTurn).toBe(2)
+  expect(after1.recentSteps).toEqual([2])
   expect(after1.context).toBe(20_006)
   expect(statsNow.turn).toBe(1)
 
