@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort and context fill; notifies before the cache expires.",
   "author": {
     "name": "johnnyvizz",
@@ -9,5 +9,15 @@
   "types": "./types/index.d.ts",
   "homepage": "https://github.com/boneyland/session-band",
   "repository": "https://github.com/boneyland/session-band",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "keepTurns": {
+      "type": "number",
+      "title": "Turns kept when compacting",
+      "description": "How many recent turns the band's compact button and `/session_data compact` keep word for word. Claude Code's own /compact and auto-compaction are not affected.",
+      "default": 3,
+      "min": 1,
+      "max": 20
+    }
+  }
 }

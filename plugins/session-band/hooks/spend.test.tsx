@@ -94,6 +94,7 @@ test('the band shows the overhead warning while idle and the cache is warm', asy
   const ui = await $.ui.mount(BAND())
   expect((await ui.find({ type: 'Text', text: /^Old context/ }))?.text).toMatch(/\$0\.26\/turn/)
   expect(await ui.find({ type: 'Button', key: 'dismiss-spend' })).not.toBe(undefined)
+  expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.label).toBe('compact, keep 3')
   await ui.unmount()
 })
 

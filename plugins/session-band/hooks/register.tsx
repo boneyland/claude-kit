@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, TurnUsage } from 'claude-code'
+import type { EngineInterface, Register, SessionCompactResult, SessionMessage, TurnUsage } from 'claude-code'
 
 import type { Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
 import {
@@ -436,12 +436,64 @@ const settleSpend = async ($: EngineInterface) => {
   await update($, spend, s => ({ ...s, calibPredicted, calibObserved, scale, stepsPerTurn, baseline }))
 }
 
-export const register: Register = on => {
-  // A compaction of the main conversation: its summary is measured on the next request.
+// Where the last `turns` turns begin: the index of the user message that opens the
+// earliest of them (one the person wrote, not a carrier of tool results); -1 when
+// the conversation has no earlier message to summarize.
+export const tailStart = (messages: readonly SessionMessage[], turns: number) => {
+  let seen = 0
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!
+    const isPrompt = m.role === 'user' && (m.toolResults?.length ?? 0) === 0 && m.text.trim() !== ''
+    if (isPrompt && ++seen === turns) return i > 0 ? i : -1
+  }
+  return -1
+}
+
+// A compaction that keeps the last `turns` turns: `summarize` gets the older
+// messages, and the kept ones follow its summary as they were.
+export const compactWithTail = async (
+  messages: readonly SessionMessage[],
+  turns: number,
+  summarize: (older: SessionMessage[]) => Promise<SessionCompactResult>,
+): Promise<SessionCompactResult> => {
+  const cut = tailStart(messages, turns)
+  if (cut === -1) return { skip: `Nothing before the last ${turns} turn${turns === 1 ? '' : 's'} to summarize.` }
+  const result = await summarize(messages.slice(0, cut))
+  if (result.messages === undefined) return result
+  const { tokensAfter: _, ...rest } = result
+  return { ...rest, messages: [...result.messages, ...messages.slice(cut)] }
+}
+
+// The compaction this mod started, and how many turns it keeps. Only that one call
+// is cut: /compact (`manual`), auto-compaction (`auto`), ahead-of-time compaction
+// (`precompute`) and other mods' calls pass through as Claude Code makes them.
+let keepTailTurns: number | null = null
+
+const compactKeepingTail = async ($: EngineInterface, turns: number): Promise<SessionCompactResult> => {
+  keepTailTurns = turns
+  try {
+    return await $.session.compact({
+      instructions: `The last ${turns} turn${turns === 1 ? ' is' : 's are'} kept word for word after this summary: summarize only what comes before.`,
+    })
+  } catch (error) {
+    return { skip: error instanceof Error ? error.message : String(error) }
+  } finally {
+    keepTailTurns = null
+  }
+}
+
+export const register: Register = (on, options) => {
+  const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
+
   on('session.compact', async ($, e, next) => {
-    const result = await next(e)
-    if (e.agentId === undefined && e.trigger !== 'precompute' && result.messages !== undefined) {
-      await update($, spend, sp => ({ ...sp, isCompactPending: true, dismissedAt: null }))
+    const isMain = e.agentId === undefined
+    const turns = isMain && e.trigger === 'plugin' ? keepTailTurns : null
+    const result =
+      turns === null ? await next(e) : await compactWithTail(e.messages, turns, older => next({ ...e, messages: older }))
+
+    // A plain compaction's summary is measured on the next request, for the /compact estimate.
+    if (result.messages !== undefined && isMain && e.trigger !== 'precompute') {
+      await update($, spend, sp => ({ ...sp, isCompactPending: turns === null, dismissedAt: null }))
     }
     return result
   })
@@ -468,7 +520,7 @@ export const register: Register = on => {
 
     await $.command.register({
       name: 'session_data',
-      description: 'Show or hide the session band; `demo <minutes>` previews the cache warning',
+      description: 'Show or hide the session band; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
     })
 
     await refreshGit($)
@@ -515,6 +567,22 @@ export const register: Register = on => {
       await update($, isHidden, () => false)
 
       return { text: `Cache demo: ${demo[1]} min left until the next answer resets it.` }
+    }
+
+    // `/session_data compact [turns]`: summarize all but the last turns, kept word for word.
+    const compact = e.args.trim().match(/^compact(?:\s+(\d+))?$/)
+    if (compact) {
+      const turns = compact[1] === undefined ? keepTurns : Math.max(1, Number(compact[1]))
+      // A command holds the turn it answers: the compaction starts once it has returned.
+      $.clock.after(0, async () => {
+        const result = await compactKeepingTail($, turns)
+        $.ui.toast(
+          result.messages === undefined
+            ? `Not compacted: ${result.skip}`
+            : `Compacted: a summary, then the last ${turns} turn${turns === 1 ? '' : 's'} word for word.`,
+        )
+      })
+      return { text: `Compacting, keeping the last ${turns} turn${turns === 1 ? '' : 's'}…` }
     }
 
     if (e.args.trim() === 'width') {
@@ -738,6 +806,16 @@ export const register: Register = on => {
           <Box flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap" overflow="hidden">
             <Text color={WARN} wrap="truncate-end">{warning.text}</Text>
             <Box flexGrow={1} flexShrink={1} />
+            {warning.kind === 'overhead' ? (
+              <Button
+                key="compact"
+                label={`compact, keep ${keepTurns}`}
+                onPress={async () => {
+                  const result = await compactKeepingTail($, keepTurns)
+                  if (result.messages === undefined) $.ui.toast(`Not compacted: ${result.skip}`)
+                }}
+              />
+            ) : null}
             {warning.kind === 'overhead' ? (
               <Button
                 key="dismiss-spend"
