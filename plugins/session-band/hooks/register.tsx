@@ -10,6 +10,7 @@ import {
   median,
   overheadWarning,
   predictUsd,
+  costPerTurn,
   RECENT_TURNS,
   resumeCost,
   type SpendInputs,
@@ -243,7 +244,14 @@ const saveLimits = async ($: EngineInterface, windows: readonly { kind: string; 
 
 // A session's figures, saved after each answer under `session:<id>`, so a session the
 // desktop app restarted or resumed draws its band at once instead of after its next answer.
-type Snapshot = { turn: number; total: number; speed: number | null; context: number; expiresAt: number | null }
+type Snapshot = {
+  turn: number
+  total: number
+  speed: number | null
+  context: number
+  expiresAt: number | null
+  recentCosts?: number[]
+}
 const SNAPSHOTS_KEPT = 50
 
 // The desktop app's id outlives the process; the engine's is the fallback elsewhere.
@@ -256,7 +264,14 @@ const saveSnapshot = async ($: EngineInterface) => {
   const s = await read($, stats)
   const { expiresAt } = await read($, cache)
   const key = await snapshotKey($)
-  const snapshot: Snapshot = { turn: s.turn, total: s.total, speed: s.speed, context: s.context, expiresAt }
+  const snapshot: Snapshot = {
+    turn: s.turn,
+    total: s.total,
+    speed: s.speed,
+    context: s.context,
+    expiresAt,
+    recentCosts: s.recentCosts ?? [],
+  }
   // Set again after a delete, the key moves last: the oldest sessions are pruned first.
   await $.store.delete(key)
   await $.store.set(key, snapshot)
@@ -287,6 +302,7 @@ const restore = async ($: EngineInterface) => {
     turn: snapshot.turn,
     speed: snapshot.speed,
     context: snapshot.context,
+    recentCosts: Array.isArray(snapshot.recentCosts) ? snapshot.recentCosts : [],
     total: costOffset + usd,
     costOffset,
   }))
@@ -681,6 +697,9 @@ export const register: Register = (on, options) => {
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
       await update($, turnClock, t => ({ ...t, startedAt: null }))
+      await update($, stats, st =>
+        st.turnCost === null ? st : { ...st, recentCosts: [...(st.recentCosts ?? []), st.turnCost].slice(-RECENT_TURNS) },
+      )
       await settleSpend($)
       await saveSnapshot($)
       await refreshGit($)
@@ -726,9 +745,10 @@ export const register: Register = (on, options) => {
     const clock = await read($, turnClock)
     const running = e.props.isWorking && clock.startedAt !== null ? elapsed(clock.seconds) : null
     const repo = await read($, git)
+    const sp = await read($, spend)
+    const perTurn = costPerTurn(s.recentCosts ?? [])
 
     // Shown while idle, when the next message is still the person's to decide.
-    const sp = await read($, spend)
     const warning: SpendWarning | null = e.props.isWorking
       ? null
       : secondsLeft === 0
@@ -770,6 +790,11 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>$</Text>}
           <Text bold color={MONEY}>{turnCost}</Text>
+          {perTurn !== null && tier <= 1 ? <Text dimColor>· med</Text> : null}
+          {perTurn !== null && tier >= 2 ? <Text dimColor>·</Text> : null}
+          {perTurn !== null ? <Text bold>{usd(perTurn.median)}</Text> : null}
+          {perTurn !== null ? <Text dimColor>{tier <= 1 ? '· avg' : '/'}</Text> : null}
+          {perTurn !== null ? <Text bold>{usd(perTurn.mean)}</Text> : null}
           {tier <= 2 ? <Text dimColor>|</Text> : null}
           {tier <= 2 ? <Text bold>{usd(s.total)}</Text> : null}
         </Box>

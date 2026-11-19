@@ -124,8 +124,7 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   if (old < MIN_OLD_TOKENS) return null
 
   if (s.recentSteps.length < MIN_TURNS) return null
-  const steps = Math.max(1, median(s.recentSteps)!)
-  const mean = Math.round(s.recentSteps.reduce((a, b) => a + b, 0) / s.recentSteps.length)
+  const { median: steps, mean } = stepsPerTurn(s.recentSteps)!
   const perTurn = old * p.read * steps
   if (perTurn < OVERHEAD_MIN_USD) return null
 
@@ -164,6 +163,27 @@ export const baselineFromBreakdown = (categories: readonly { name: string; token
   if (messages.length !== 1) return null
   return used.reduce((sum, c) => sum + (c.name === 'Messages' ? 0 : c.tokens), 0)
 }
+
+// Requests a main turn makes, over the recent turns: the median prices one, the
+// mean shows what long runs add. Null before the first turn.
+export const stepsPerTurn = (recent: readonly number[]) => {
+  if (recent.length === 0) return null
+  return {
+    median: Math.max(1, median(recent)!),
+    mean: Math.round(mean(recent)),
+  }
+}
+
+// What the recent main turns cost, in USD: the median is a typical turn, the
+// mean adds the long runs. Unrounded, unlike median(). Null before the first turn.
+export const costPerTurn = (recent: readonly number[]) => {
+  if (recent.length === 0) return null
+  const s = [...recent].sort((a, b) => a - b)
+  const m = Math.floor(s.length / 2)
+  return { median: s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2, mean: mean(recent) }
+}
+
+const mean = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 
 export const median = (xs: readonly number[]) => {
   if (xs.length === 0) return null

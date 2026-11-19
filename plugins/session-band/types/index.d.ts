@@ -5,6 +5,8 @@ export type Stats = {
   total: number
   context: number
   costAtStart: number
+  // What each recent main turn cost, oldest first; the last RECENT_TURNS.
+  recentCosts?: number[]
   // The saved total of an earlier launch when the engine's cost counts from this one.
   costOffset?: number
 }

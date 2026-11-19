@@ -1,7 +1,7 @@
 import type { TurnUsage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { baselineFromBreakdown, expiredWarning, overheadWarning, ratesFor } from './spend'
+import { baselineFromBreakdown, expiredWarning, overheadWarning, costPerTurn, ratesFor, stepsPerTurn } from './spend'
 
 // Opus 5.5: cache reads $0.20/M, 1-hour writes $8/M, output $20/M.
 const OPUS = {
@@ -41,6 +41,29 @@ test('the overhead waits for three turns and prices one at their median', async 
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 8, 10] })?.text).toBe(
     'Old context ≈ $0.26/turn (130k × 10 req median, 32 mean) · new session pays back in 1 turn',
   )
+})
+
+test('requests per turn read from the first turn, median beside mean', async () => {
+  expect(stepsPerTurn([])).toBe(null)
+  expect(stepsPerTurn([4])).toEqual({ median: 4, mean: 4 })
+  expect(stepsPerTurn([77, 8, 10])).toEqual({ median: 10, mean: 32 })
+})
+
+test('cost per turn: the median a typical turn, the mean with the long runs', async () => {
+  expect(costPerTurn([])).toBe(null)
+  expect(costPerTurn([0.3])).toEqual({ median: 0.3, mean: 0.3 })
+  expect(costPerTurn([0.1, 0.2, 2.1])?.median).toBe(0.2)
+  expect(Math.round(costPerTurn([0.1, 0.2, 2.1])!.mean * 1000) / 1000).toBe(0.8)
+  expect(Math.round(costPerTurn([0.1, 0.25, 0.3, 3])!.median * 1000) / 1000).toBe(0.275)
+})
+
+test('the band shows the median and mean cost per turn beside the last', async ($, on) => {
+  seedBand(on, { stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, recentCosts: [0.1, 0.3, 2] } })
+  const ui = await $.ui.mount(BAND())
+  expect((await ui.find({ type: 'Text', text: '· med' }))?.text).toBe('· med')
+  expect((await ui.find({ type: 'Text', text: '$0.30' }))?.text).toBe('$0.30')
+  expect((await ui.find({ type: 'Text', text: '$0.80' }))?.text).toBe('$0.80')
+  await ui.unmount()
 })
 
 test('an unknown model waits for calibration; the scale follows the engine', async () => {
@@ -120,10 +143,10 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   let usd = 0
   const steps: TurnUsage[][] = []
   let spendNow: Record<string, any> = {}
-  let statsNow: Record<string, number> = {}
+  let statsNow: Record<string, any> = {}
   on('state.set', (_, e, next) => {
     if (e.key === 'spend') spendNow = e.value as unknown as Record<string, any>
-    if (e.key === 'stats') statsNow = e.value as unknown as Record<string, number>
+    if (e.key === 'stats') statsNow = e.value as unknown as Record<string, any>
     return next(e)
   })
   on('store.get', (_, e) => ({ value: store[e.key] }))
@@ -188,6 +211,7 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   expect(after1.recentSteps).toEqual([2])
   expect(after1.context).toBe(20_006)
   expect(statsNow.turn).toBe(1)
+  expect(statsNow.recentCosts).toEqual([0.3592])
 
   // A subagent's run is not a turn of the band's.
   await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' })
@@ -199,4 +223,5 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   expect(spendNow.context).toBe(null)
   await turn('t2', [usage({ cache_creation_input_tokens: 29_997, ephemeral_1h_input_tokens: 29_997 })], 0.6)
   expect(store.summaries).toEqual([12_000 - 3])
+  expect(statsNow.recentCosts?.length).toBe(2)
 })
