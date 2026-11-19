@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Cache, Limit, Stats } from '../types'
+import type { Cache, Git, Limit, Stats, TurnClock } from '../types'
 
 // Responses shorter than this are mostly tool-call stubs: their timing is noise.
 const MIN_TOKENS = 20
@@ -51,6 +51,47 @@ const warned = atom({ plugin: 'session-band', key: 'warned' } as const, 0)
 
 // The effort level the main loop's last request carried; null where none was sent.
 const effort = atom({ plugin: 'session-band', key: 'effort' } as const, null as string | null)
+
+// The main loop's running turn: when it began and the seconds since, ticked each second.
+const turnClock = atom({ plugin: 'session-band', key: 'turnClock' } as const, { startedAt: null, seconds: 0 } as TurnClock)
+
+// The working tree's branch and whether it has changes; null outside a repository.
+const git = atom({ plugin: 'session-band', key: 'git' } as const, null as Git | null)
+
+// How often git is read between turns, for changes made outside the session.
+const GIT_POLL_MS = 15_000
+const BRANCH_MAX = 24
+
+// `git status --porcelain=v2 --branch`: the head line names the branch, any line
+// that is not a header is a change. A detached head shows its short commit.
+const parseGit = (stdout: string): Git | null => {
+  const lines = stdout.split('\n').filter(Boolean)
+  const head = lines.find(l => l.startsWith('# branch.head '))?.slice(14)
+  if (head === undefined) return null
+  const oid = lines.find(l => l.startsWith('# branch.oid '))?.slice(13)
+  const branch = head === '(detached)' ? (oid?.slice(0, 7) ?? 'detached') : head
+  return { branch, isDirty: lines.some(l => !l.startsWith('#')) }
+}
+
+// `--no-optional-locks` keeps status from taking index.lock, so it never races
+// the person's or Claude's own git commands. Rewritten only when it changed.
+const refreshGit = async ($: EngineInterface) => {
+  const result = await $.process
+    .run(['git', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], { timeoutMs: 5000 })
+    .catch(() => null)
+  const next = result === null || result.exitCode !== 0 ? null : parseGit(result.stdout)
+  const current = await read($, git)
+  if (current?.branch !== next?.branch || current?.isDirty !== next?.isDirty) await update($, git, () => next)
+}
+
+const elapsed = (seconds: number) => {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return h > 0 ? `${h}:${pad(m)}:${pad(seconds % 60)}` : `${m}:${pad(seconds % 60)}`
+}
+
+const branchLabel = ({ branch, isDirty }: Git) =>
+  `${branch.length > BRANCH_MAX ? `${branch.slice(0, BRANCH_MAX - 1)}…` : branch}${isDirty ? '*' : ''}`
 
 // `claude-sonnet-5-5` -> `sonnet-5-5`; a date suffix or context tag is dropped.
 const shortModel = (model: string) =>
@@ -290,7 +331,16 @@ export const register: Register = on => {
       description: 'Show or hide the session band; `demo <minutes>` previews the cache warning',
     })
 
+    await refreshGit($)
+    $.clock.every(GIT_POLL_MS, () => refreshGit($))
+
     $.clock.every(1000, async () => {
+      const { startedAt } = await read($, turnClock)
+      if (startedAt !== null) {
+        const seconds = Math.max(0, Math.floor(((await $.clock.now()) - startedAt) / 1000))
+        await update($, turnClock, t => (t.seconds === seconds ? t : { ...t, seconds }))
+      }
+
       const expiresAt = (await read($, cache)).expiresAt ?? (await read($, cacheModExpiresAt))
       if (expiresAt === null) return
 
@@ -351,6 +401,10 @@ export const register: Register = on => {
       return { ...s, turn: s.turn + 1, costAtStart: total, total }
     })
     await update($, isBusy, () => true)
+    if (e.agentId === undefined) {
+      const now = await $.clock.now()
+      await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
+    }
 
     return next(e)
   })
@@ -394,7 +448,9 @@ export const register: Register = on => {
       await update($, cache, () => ({ expiresAt: now + CACHE_TTL_MS, secondsLeft: CACHE_TTL_MS / 1000 }))
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
+      await update($, turnClock, t => ({ ...t, startedAt: null }))
       await saveSnapshot($)
+      await refreshGit($)
     }
 
     return result
@@ -434,6 +490,9 @@ export const register: Register = on => {
 
     const modelName = shortModel(await $.session.model())
     const effortLevel = await read($, effort)
+    const clock = await read($, turnClock)
+    const running = e.props.isWorking && clock.startedAt !== null ? elapsed(clock.seconds) : null
+    const repo = await read($, git)
 
     const now = await $.clock.now()
     // A window whose reset has passed since it was saved stands at 0 until the next reading.
@@ -457,6 +516,12 @@ export const register: Register = on => {
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
             {tier <= 1 ? <Text dimColor>Turn</Text> : <Text dimColor>#</Text>}
             <Text bold>{String(s.turn)}</Text>
+          </Box>
+        ) : null}
+        {running !== null ? (
+          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
+            {tier <= 1 ? <Text dimColor>⏱</Text> : null}
+            <Text bold>{running}</Text>
           </Box>
         ) : null}
         {tier <= 3 ? (
@@ -488,6 +553,12 @@ export const register: Register = on => {
             })
           : null}
         <Box flexGrow={1} flexShrink={1} />
+        {tier <= 1 && repo !== null ? (
+          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
+            <Text dimColor>⎇</Text>
+            <Text bold color={repo.isDirty ? WARN : undefined} wrap="truncate-end">{branchLabel(repo)}</Text>
+          </Box>
+        ) : null}
         {tier <= 2 ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
             <Text bold wrap="truncate-end">{modelName}</Text>

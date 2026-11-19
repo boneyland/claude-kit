@@ -22,7 +22,7 @@ const seed = {
 } as Record<string, unknown>
 
 test('the band shows the 5-hour and weekly limits, with resets when wide', async ($, on) => {
-  on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: undefined }))
+  on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
   on('clock.now', () => ({ value: NOW }))
   on('session.model', () => ({ value: 'claude-sonnet-5-5' }))
 

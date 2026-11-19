@@ -21,8 +21,19 @@ export type Limit = {
   resetsAt: string | null
 }
 
+// The main loop's running turn; startedAt null between turns.
+export type TurnClock = {
+  startedAt: number | null
+  seconds: number
+}
+
+export type Git = {
+  branch: string
+  isDirty: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null }
+    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null }
   }
 }
