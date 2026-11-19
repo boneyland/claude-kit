@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Cache, Stats } from '../types'
+import type { Cache, Limit, Stats } from '../types'
 
 // Responses shorter than this are mostly tool-call stubs: their timing is noise.
 const MIN_TOKENS = 20
@@ -37,6 +37,9 @@ const cache = atom({ plugin: 'session-band', key: 'cache' } as const, {
   secondsLeft: null,
 } as Cache)
 
+// The plan's rate-limit windows as the last response reported them; empty off a subscription.
+const limits = atom({ plugin: 'session-band', key: 'limits' } as const, [] as Limit[])
+
 // Closed with ×: stays hidden for the rest of the session.
 const isHidden = atom({ plugin: 'session-band', key: 'isHidden' } as const, false)
 
@@ -45,6 +48,13 @@ const isBusy = atom({ plugin: 'session-band', key: 'isBusy' } as const, false)
 
 // The smallest CACHE_NOTIFY_MINUTES already announced since the last answer; 0 none.
 const warned = atom({ plugin: 'session-band', key: 'warned' } as const, 0)
+
+// The effort level the main loop's last request carried; null where none was sent.
+const effort = atom({ plugin: 'session-band', key: 'effort' } as const, null as string | null)
+
+// `claude-sonnet-5-5` -> `sonnet-5-5`; a date suffix or context tag is dropped.
+const shortModel = (model: string) =>
+  model.replace(/^claude-/, '').replace(/\[.*\]$/, '').replace(/-\d{8}$/, '')
 
 // The Cache mod's own deadline: seeds ours after a reload missed the last turn.complete.
 const cacheModExpiresAt = atom({ plugin: 'Cache', key: 'expiresAt' } as const, null)
@@ -103,7 +113,7 @@ const usd = (n: number) => `$${n.toFixed(2)}`
 // Density by the band's width in cells, so the row shrinks instead of wrapping:
 // 0 full; 1 no context bar; 2 compact turn/speed; 3 turn cost only, smaller icons;
 // 4 no speed. Thresholds are minimum bodyColumns for each tier.
-const TIER_MIN = [78, 64, 52, 40] as const
+const TIER_MIN = [96, 80, 64, 50] as const
 const GAPS = [3, 2, 2, 1, 1] as const
 const tierFor = (columns: number) => {
   const i = TIER_MIN.findIndex(min => columns >= min)
@@ -113,15 +123,98 @@ const tierFor = (columns: number) => {
 // Last measured width, for `/session_data width` while tuning TIER_MIN; debug only.
 let lastColumns: number | null = null
 
-const refresh = async ($: EngineInterface) => {
-  const { cost, context } = await $.session.usage()
-  const total = cost?.usd ?? 0
+// The band's labels for the windows it shows, in this order.
+const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'wk' }
+const LIMIT_WARN = 70
+const LIMIT_ALERT = 90
+
+// The limits are the account's, not the session's: kept in $.store too, so every
+// session, new or resumed, draws them before its first answer.
+const LIMITS_KEY = 'limits'
+
+const saveLimits = async ($: EngineInterface, windows: readonly { kind: string; percentUsed: number; resetsAt?: string }[]) => {
+  const list = windows
+    .filter(w => w.kind in LIMIT_LABELS)
+    .map(w => ({ kind: w.kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt ?? null }))
+  if (list.length === 0) return
+  await update($, limits, () => list)
+  await $.store.set(LIMITS_KEY, list)
+}
+
+// A session's figures, saved after each answer under `session:<id>`, so a session the
+// desktop app restarted or resumed draws its band at once instead of after its next answer.
+type Snapshot = { turn: number; total: number; speed: number | null; context: number; expiresAt: number | null }
+const SNAPSHOTS_KEPT = 50
+
+// The desktop app's id outlives the process; the engine's is the fallback elsewhere.
+const snapshotKey = async ($: EngineInterface) => {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  return `session:${host !== undefined && HOST_SESSION.test(host) ? host : await $.session.id()}`
+}
+
+const saveSnapshot = async ($: EngineInterface) => {
+  const s = await read($, stats)
+  const { expiresAt } = await read($, cache)
+  const key = await snapshotKey($)
+  const snapshot: Snapshot = { turn: s.turn, total: s.total, speed: s.speed, context: s.context, expiresAt }
+  // Set again after a delete, the key moves last: the oldest sessions are pruned first.
+  await $.store.delete(key)
+  await $.store.set(key, snapshot)
+
+  const saved = (await $.store.keys()).filter(k => k.startsWith('session:'))
+  for (const old of saved.slice(0, Math.max(0, saved.length - SNAPSHOTS_KEPT))) await $.store.delete(old)
+}
+
+const restore = async ($: EngineInterface) => {
+  const usage = await $.session.usage()
+
+  if (usage.rateLimits.length > 0) await saveLimits($, usage.rateLimits)
+  else {
+    const kept = (await $.store.get(LIMITS_KEY)) as Limit[] | undefined
+    if (Array.isArray(kept) && kept.length > 0) await update($, limits, () => kept)
+  }
+
+  // A hot reload keeps $.state: only a fresh launch starts at turn 0.
+  if ((await read($, stats)).turn !== 0) return
+  const snapshot = (await $.store.get(await snapshotKey($))) as Snapshot | undefined
+  if (snapshot === undefined) return
+
+  const usd = usage.cost?.usd ?? 0
+  // Where the engine's cost restarted with this launch, the saved total is the base.
+  const costOffset = usd + 0.005 < snapshot.total ? snapshot.total : 0
   await update($, stats, s => ({
     ...s,
-    total,
-    turnCost: total - s.costAtStart,
-    context: context.percent ?? s.context,
+    turn: snapshot.turn,
+    speed: snapshot.speed,
+    context: snapshot.context,
+    total: costOffset + usd,
+    costOffset,
   }))
+  await update($, cache, c => (c.expiresAt === null ? { expiresAt: snapshot.expiresAt, secondsLeft: null } : c))
+}
+
+const limitColor = (percent: number) =>
+  percent >= LIMIT_ALERT ? ALERT : percent >= LIMIT_WARN ? WARN : undefined
+
+// Time until a window resets: 3d, 14h, 2h10m, 45m.
+const resetIn = (resetsAt: string | null, now: number) => {
+  if (resetsAt === null) return null
+  const minutes = Math.max(0, Math.round((Date.parse(resetsAt) - now) / 60_000))
+  if (Number.isNaN(minutes)) return null
+  if (minutes >= 48 * 60) return `${Math.round(minutes / 1440)}d`
+  if (minutes >= 10 * 60) return `${Math.round(minutes / 60)}h`
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h${pad(minutes % 60)}m`
+  return `${minutes}m`
+}
+
+const refresh = async ($: EngineInterface) => {
+  const { cost, context, rateLimits } = await $.session.usage()
+  await saveLimits($, rateLimits)
+  const usd = cost?.usd ?? 0
+  await update($, stats, s => {
+    const total = (s.costOffset ?? 0) + usd
+    return { ...s, total, turnCost: total - s.costAtStart, context: context.percent ?? s.context }
+  })
 }
 
 // Built by notifier/build.sh (macOS): posts the warning under Claude's icon.
@@ -190,6 +283,7 @@ const notifyCacheExpiry = async ($: EngineInterface, minutes: number) => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    await restore($)
 
     await $.command.register({
       name: 'session_data',
@@ -244,9 +338,18 @@ export const register: Register = on => {
     return { text: hidden ? 'Session band hidden.' : 'Session band shown.' }
   })
 
+  // A window moved a whole point, between turns too.
+  on('session.measure', async ($, e, next) => {
+    if (e.changed.includes('rateLimits')) await saveLimits($, e.rateLimits)
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
-    const total = (await $.session.usage()).cost?.usd ?? 0
-    await update($, stats, s => ({ ...s, turn: s.turn + 1, costAtStart: total, total }))
+    const usd = (await $.session.usage()).cost?.usd ?? 0
+    await update($, stats, s => {
+      const total = (s.costOffset ?? 0) + usd
+      return { ...s, turn: s.turn + 1, costAtStart: total, total }
+    })
     await update($, isBusy, () => true)
 
     return next(e)
@@ -254,6 +357,8 @@ export const register: Register = on => {
 
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined) return yield* next(e)
+
+    await update($, effort, () => (e.effort === undefined ? null : String(e.effort)))
 
     // Measured from the response's first item (its envelope, message_start), so
     // time-to-first-token is excluded but thinking that streams hidden or in one
@@ -289,6 +394,7 @@ export const register: Register = on => {
       await update($, cache, () => ({ expiresAt: now + CACHE_TTL_MS, secondsLeft: CACHE_TTL_MS / 1000 }))
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
+      await saveSnapshot($)
     }
 
     return result
@@ -296,7 +402,9 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const s = await read($, stats)
-    if (e.props.hasSurvey || s.turn === 0 || (await read($, isHidden))) return next(e)
+    const saved = await read($, limits)
+    // Before a session's first answer the band still draws when the plan's limits are known.
+    if (e.props.hasSurvey || (s.turn === 0 && saved.length === 0) || (await read($, isHidden))) return next(e)
 
     const ui = $.ui.resolve(e)
     const { Box, Button, Text } = ui
@@ -323,6 +431,17 @@ export const register: Register = on => {
     lastColumns = e.props.bodyColumns
     const tier = tierFor(e.props.bodyColumns)
     const icon = tier >= 3 ? 18 : 22
+
+    const modelName = shortModel(await $.session.model())
+    const effortLevel = await read($, effort)
+
+    const now = await $.clock.now()
+    // A window whose reset has passed since it was saved stands at 0 until the next reading.
+    const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
+      const w = saved.find(l => l.kind === kind)
+      if (w === undefined) return []
+      return w.resetsAt !== null && Date.parse(w.resetsAt) <= now ? [{ ...w, percentUsed: 0, resetsAt: null }] : [w]
+    })
 
     return (
       <Box
@@ -356,7 +475,25 @@ export const register: Register = on => {
           {Svg ? <Svg source={cacheIcon(cacheColor)} alt="cache" width={icon} height={icon} /> : <Text color={cacheColor}>⧗</Text>}
           <Text bold color={level ?? undefined}>{cacheText}</Text>
         </Box>
+        {tier <= 3
+          ? windows.map(w => {
+              const reset = tier === 0 ? resetIn(w.resetsAt, now) : null
+              return (
+                <Box key={w.kind} flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
+                  <Text dimColor>{LIMIT_LABELS[w.kind]}</Text>
+                  <Text bold color={limitColor(w.percentUsed)}>{`${Math.round(w.percentUsed)}%`}</Text>
+                  {reset !== null ? <Text dimColor>{`↻${reset}`}</Text> : null}
+                </Box>
+              )
+            })
+          : null}
         <Box flexGrow={1} flexShrink={1} />
+        {tier <= 2 ? (
+          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
+            <Text bold wrap="truncate-end">{modelName}</Text>
+            {tier <= 1 && effortLevel !== null ? <Text dimColor>{`· ${effortLevel}`}</Text> : null}
+          </Box>
+        ) : null}
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={contextIcon(s.context)} alt="context" width={icon} height={icon} /> : null}
           {Svg && tier === 0 ? (
