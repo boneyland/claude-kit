@@ -23,6 +23,13 @@
       "description": "Mod: band above the prompt with turn, speed, cost, prompt cache countdown, git branch, model, effort and context; spend warnings and a compact-keeping-recent-turns button; notifies before the cache expires.",
       "version": "0.7.0",
       "category": "mod"
+    },
+    {
+      "name": "prompt-index",
+      "source": "./plugins/prompt-index",
+      "description": "Mod: pane listing this session's prompts; click one to jump there, filter and step through matches, see which are on screen. /prompts or the footer button toggles it.",
+      "version": "0.1.0",
+      "category": "mod"
     }
   ]
 }

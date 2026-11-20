@@ -1,0 +1,13 @@
+{
+  "name": "prompt-index",
+  "version": "0.1.0",
+  "description": "A pane listing this session's prompts: click one to jump the transcript there, filter them, step through matches, and see which ones are on screen.",
+  "author": {
+    "name": "boneyland",
+    "url": "https://github.com/boneyland"
+  },
+  "types": "./types/index.d.ts",
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/prompt-index",
+  "repository": "https://github.com/boneyland/claude-kit",
+  "license": "MIT"
+}
