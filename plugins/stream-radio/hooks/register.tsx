@@ -80,6 +80,7 @@ export const register: Register = (on, options) => {
       return { text: 'Toggled pause.' }
     }
 
+    $.ui.log('stream-radio: starting')
     await stop()
     const mine = run
 
@@ -88,11 +89,14 @@ export const register: Register = (on, options) => {
     } catch {
       return { text: `Can't start "${player}". Install mpv (and yt-dlp for YouTube).` }
     }
+    $.ui.log('stream-radio: player found')
 
     // mpv's IPC socket, in the plugin's data folder; pause and resume go through it.
     const dir = (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA
+    $.ui.log(`stream-radio: data folder ${dir}`)
     const pipe = `${dir}/mpv-${mine}.sock`
     await $.process.run(['rm', '-f', pipe])
+    $.ui.log('stream-radio: spawning')
     control = pipe
 
     const argv = [
