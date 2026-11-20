@@ -33,6 +33,7 @@ const ROWS: SessionMessage[] = [
     toolUses: [],
     uuid: 'u3',
   },
+  { role: 'assistant', text: 'Opened the TUI skill.', toolUses: [], uuid: 'a3' },
   { role: 'user', text: '<local-command-stdout>hi</local-command-stdout>', toolUses: [], uuid: 'u4' },
   { role: 'user', text: 'add a scrollbar\nplease', toolUses: [], uuid: 'u5' },
 ]
@@ -45,6 +46,24 @@ test('promptLine keeps typed prompts and slash commands only', () => {
   expect(promptLine('<local-command-stdout>x</local-command-stdout>')).toBe(null)
   expect(promptLine('[Request interrupted by user]')).toBe(null)
   expect(promptLine('')).toBe(null)
+})
+
+test('a slash command is listed only when Claude answered it', () => {
+  const cmd = (name: string) => `<command-name>${name}</command-name>\n<command-message>x</command-message>\n<command-args></command-args>`
+  const rows: SessionMessage[] = [
+    { role: 'user', text: cmd('/plugin'), toolUses: [], uuid: 'c1' },
+    { role: 'user', text: '<local-command-stdout>(no content)</local-command-stdout>', toolUses: [], uuid: 'o1' },
+    { role: 'user', text: cmd('/reload-plugins'), toolUses: [], uuid: 'c2' },
+    { role: 'user', text: 'fix the bug', toolUses: [], uuid: 'p1' },
+    { role: 'assistant', text: 'Fixed.', toolUses: [], uuid: 'a1' },
+    { role: 'user', text: cmd('/superpowers:brainstorming'), toolUses: [], uuid: 'c3' },
+    { role: 'assistant', text: 'Using brainstorming.', toolUses: [], uuid: 'a2' },
+    { role: 'user', text: 'typed, not answered yet', toolUses: [], uuid: 'p2' },
+    { role: 'user', text: cmd('/my-skill'), toolUses: [], uuid: 'c4' },
+  ]
+  expect(promptsOf(rows, new Set()).map(p => p.id)).toEqual(['p1', 'c3', 'p2'])
+  // While a turn runs, the last command's reply is on its way.
+  expect(promptsOf(rows, new Set(), true).map(p => p.id)).toEqual(['p1', 'c3', 'p2', 'c4'])
 })
 
 test('step wraps round and starts from the cursor or the screen', () => {
@@ -165,7 +184,7 @@ test('a row on screen counts for the prompt whose section it is in', () => {
   const list = promptsOf(rows, new Set())
   expect(list.map(p => p.id)).toEqual(['u1', 'u3', 'u5'])
   const { map, order } = ownersOf(rows, list)
-  expect(order).toEqual(['u1', 'collapsed-u1', 'a1', 'collapsed-a1', 'u2', 'collapsed-u2', 'u3', 'collapsed-u3', 'u4', 'collapsed-u4', 'u5', 'collapsed-u5', 'a2', 'collapsed-a2', 'toolu_1'])
+  expect(order).toEqual(['u1', 'collapsed-u1', 'a1', 'collapsed-a1', 'u2', 'collapsed-u2', 'u3', 'collapsed-u3', 'a3', 'collapsed-a3', 'u4', 'collapsed-u4', 'u5', 'collapsed-u5', 'a2', 'collapsed-a2', 'toolu_1'])
   expect(map.get('a1')).toBe('u1')
   expect(map.get('toolu_1')).toBe('u5')
   expect(map.get('collapsed-a2')).toBe('u5')

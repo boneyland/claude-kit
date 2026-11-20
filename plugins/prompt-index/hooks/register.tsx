@@ -80,15 +80,26 @@ export const step = (
 // Never lets a failed read hold up the prompt or the turn it rides on.
 const refresh = ($: EngineInterface) => readPrompts($).catch(() => undefined)
 
-export const promptsOf = (rows: readonly SessionMessage[], skip: ReadonlySet<string>) => {
-  const list: Prompt[] = []
+// A slash command is kept only when Claude answered it (a skill, or a command
+// that sends a prompt): one Claude Code ran by itself (/plugin, /reload-plugins,
+// /exit) leaves no reply before the next prompt. The last command counts as
+// answered while a turn runs, its reply still coming. Typed prompts are all kept.
+export const promptsOf = (rows: readonly SessionMessage[], skip: ReadonlySet<string>, isTurnRunning = false) => {
+  const found: { prompt: Prompt; isCommand: boolean; isAnswered: boolean }[] = []
   for (const row of rows) {
+    if (row.role === 'assistant') {
+      const last = found[found.length - 1]
+      if (last !== undefined) last.isAnswered = true
+      continue
+    }
     if (row.role !== 'user' || row.uuid === undefined) continue
     if ((row.toolResults?.length ?? 0) > 0 || skip.has(row.uuid)) continue
     const text = promptLine(row.text)
-    if (text !== null) list.push({ id: row.uuid, text })
+    if (text !== null) found.push({ prompt: { id: row.uuid, text }, isCommand: COMMAND.test(row.text.trim()), isAnswered: false })
   }
-  return list
+  return found
+    .filter((f, i) => !f.isCommand || f.isAnswered || (isTurnRunning && i === found.length - 1))
+    .map(f => f.prompt)
 }
 
 // Which prompt's section each row is in, under the ids the transcript draws
@@ -180,10 +191,13 @@ export const sectionsOn = (
   return list.filter(p => ids.has(p.id))
 }
 
+// The main loop's turn is running: the last command's reply may not be written yet.
+let isTurnRunning = false
+
 const readPrompts = async ($: EngineInterface) => {
   const rows = await $.session.messages({ last: 4096 })
   if ('deny' in rows) return
-  const list = promptsOf(rows, notTyped)
+  const list = promptsOf(rows, notTyped, isTurnRunning)
   ;({ map: owners, order } = ownersOf(rows, list))
   await update($, prompts, () => list)
 }
@@ -284,9 +298,21 @@ export const register: Register = on => {
     return sent
   }).catch(($, e, next) => next(e))
 
+  // A turn starting answers the prompt or command before it: list it now.
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      isTurnRunning = true
+      await refresh($)
+    }
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId === undefined) await refresh($)
+    if (e.agentId === undefined) {
+      isTurnRunning = false
+      await refresh($)
+    }
     return done
   })
 

@@ -6,7 +6,7 @@ A Claude Code mod: a pane listing the prompts of the current session, as a stand
 - **Where you are**: the prompts whose sections are on screen, counting their replies and tool calls, are marked `▌` and drawn bright. The line under the buttons gives their numbers (`showing 4-7 of 40`).
 - **Filter and step**: type in the field to keep only matching prompts. Enter or `↓ next` jumps to the next match, `↑ prev` to the previous one, wrapping round at the ends.
 
-Slash commands you ran are listed as typed (`/tui`); tool results, command output and notifications are left out.
+Slash commands Claude answered are listed as typed (`/superpowers:brainstorming`): skills and commands that send a prompt. Commands Claude Code runs by itself with no reply (`/plugin`, `/reload-plugins`, `/exit`) are left out, as are tool results, command output and notifications. A command whose turn is still running is listed straight away.
 
 ## Install
 
