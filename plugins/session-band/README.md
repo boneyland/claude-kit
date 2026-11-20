@@ -16,7 +16,7 @@ See the [manual](MANUAL.md) for what each part shows, when the warnings and the 
 The warning is posted by a small helper app, built once on your Mac (needs Xcode's command line tools; the icon is taken from your installed Claude.app):
 
 ```bash
-notifier/build.sh
+plugins/session-band/notifier/build.sh
 ```
 
 It builds `notifier/Session Band.app` next to the script; on its first notification macOS asks whether to allow notifications from "Session Band". Build it in the folder the mod is loaded from, or copy the built app there. Without the helper (or on another OS) the mod falls back to Claude Code's own notification, which also reaches your phone over Remote Control but has no title or click-through; when you are already at the session that one is skipped and a toast says it instead.
@@ -32,16 +32,16 @@ It builds `notifier/Session Band.app` next to the script; on its first notificat
 At the prompt of a terminal session:
 
 ```
-/plugin install session-band --marketplace boneyland/session-band
+/plugin marketplace add boneyland/claude-kit
+/plugin install session-band@claude-kit
 ```
 
 From a shell:
 
 ```bash
-claude plugin install session-band --marketplace boneyland/session-band
+claude plugin marketplace add boneyland/claude-kit
+claude plugin install session-band@claude-kit
 ```
-
-Type `y` to add the marketplace, then pick a scope.
 
 ## Credits
 

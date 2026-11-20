@@ -7,8 +7,8 @@
     "url": "https://github.com/johnnyvizz"
   },
   "types": "./types/index.d.ts",
-  "homepage": "https://github.com/boneyland/session-band",
-  "repository": "https://github.com/boneyland/session-band",
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/session-band",
+  "repository": "https://github.com/boneyland/claude-kit",
   "license": "MIT",
   "userConfig": {
     "keepTurns": {
