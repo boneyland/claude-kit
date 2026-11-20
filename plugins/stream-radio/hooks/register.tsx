@@ -66,7 +66,10 @@ export const register: Register = (on, options) => {
     }
     if (parsed.kind === 'toggle') {
       if (!control) return { text: 'Nothing is playing.' }
-      await $.process.run(send(TOGGLE_PAUSE), { timeoutMs: 3000 }).catch(() => undefined)
+      const sent = await $.process
+        .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
+        .catch(() => undefined)
+      if (sent?.exitCode !== 0) return { text: 'The player is not ready yet.' }
       await update($, isPaused, paused => !paused)
 
       return { text: 'Toggled pause.' }
@@ -147,7 +150,23 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const { Box, Button } = $.ui.resolve(e)
     const title = await read($, playing)
-    if (!title) return next(e)
+    if (!title) {
+      // Idle: a button that starts the default stream, like a bare /stream.
+      if (!defaultUrl) return next(e)
+
+      return (
+        <Box flexDirection="row" gap={1}>
+          {await next(e)}
+          <Button
+            key="stream-radio"
+            label="▶ Play radio"
+            onPress={async () => {
+              await $.command.run({ command: 'stream' }).catch(() => undefined)
+            }}
+          />
+        </Box>
+      )
+    }
     const paused = await read($, isPaused)
     const shown = title.length > 60 ? `${title.slice(0, 59)}…` : title
 
@@ -159,8 +178,11 @@ export const register: Register = (on, options) => {
           label={`${paused ? '⏸' : '♪'} ${shown}`}
           onPress={async () => {
             if (!control) return
-            await $.process.run(send(TOGGLE_PAUSE), { timeoutMs: 3000 }).catch(() => undefined)
-            await update($, isPaused, was => !was)
+            const sent = await $.process
+              .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
+              .catch(() => undefined)
+            // Not listening yet (still connecting): leave the state alone.
+            if (sent?.exitCode === 0) await update($, isPaused, was => !was)
           }}
         />
       </Box>

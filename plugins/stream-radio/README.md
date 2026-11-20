@@ -9,7 +9,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream stop
 ```
 
-Clicking the title in the footer pauses and resumes too: `♪` while playing, `⏸` while paused. A paused live stream resumes where it paused, behind the live edge.
+With nothing playing the footer shows `▶ Play radio`: click it to start the default stream, no `/stream` needed. Clicking the title in the footer pauses and resumes too: `♪` while playing, `⏸` while paused. A paused live stream resumes where it paused, behind the live edge.
 
 The footer reads `♪ <title>` (cut at 60 characters).
 
