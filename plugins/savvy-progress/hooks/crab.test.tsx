@@ -48,3 +48,27 @@ test('a running agent\'s crab walks with the panel\'s tick; a narrow panel keeps
   expect((await legs()).legs).not.toBe(first.legs)
   expect((await legs(36)).hasMark).toBe(true)
 })
+
+test('agents sit two to a row when the panel is wide, with no bars', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `a${++n}` }))
+  for (const id of ['t1', 't2', 't3']) {
+    await $.agent.spawn({ tool_use_id: id, prompt: 'p', description: `Work ${id}`, subagentType: 'general-purpose', provider: 'engine', parentModel: 'claude-opus-5-5', background: false, fork: false } as never)
+  }
+  const mount = (cols: number) => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'Pane', requestId: 'savvy-agents', props: pane(cols) })
+
+  const wide = await mount(100)
+  // Three agents: a pair, then one.
+  const first = await wide.find({ type: 'Box', key: 'pair-a3' })
+  expect(first?.children.length).toBe(2)
+  expect(await wide.find({ type: 'Text', text: /[░]/ })).toBe(undefined)
+  expect(await wide.find({ type: 'Text', text: /ctx 0%/ })).toBeTruthy()
+  await wide.unmount()
+
+  const narrow = await mount(60)
+  expect(await narrow.find({ type: 'Box', key: 'pair-a3' })).toBe(undefined)
+  expect(await narrow.find({ type: 'Text', text: /Work t3/ })).toBeTruthy()
+  await narrow.unmount()
+})

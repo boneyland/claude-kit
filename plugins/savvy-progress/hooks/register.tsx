@@ -733,12 +733,6 @@ ${tile(0, s.cost, '≈' + fmtCost(t.cost))}${tile(1, s.tokens, fmtTokens(t.token
 const headerHeight = (title: string): number => (title ? 72 : 44)
 
 // The task's own progress when the worker reports steps; a finished run is full.
-const progressOf = (a: AgentRun): number | null => {
-  if (a.status === 'done') return 1
-  if (a.stepTotal) return Math.min(1, (a.stepDone ?? 0) / a.stepTotal)
-  return null
-}
-
 const ctxOf = (a: AgentRun): number => (a.contextMax ? Math.min(100, Math.round((a.contextTokens / a.contextMax) * 100)) : 0)
 
 const agentSvg = (W: number, a: AgentRun, at: number): string => {
@@ -751,12 +745,9 @@ const agentSvg = (W: number, a: AgentRun, at: number): string => {
   if (a.round > 1) meta.push(`${s.round} ${a.round}`)
   if (a.status === 'failed') meta.push(s.failed)
   const barW = textW
-  const progress = progressOf(a)
   const stats = `${s.ctx} ${ctx}% · ${fmtTokens(a.contextTokens)}  ≈${fmtCost(a.costUsd)}  ${fmtTime(elapsed(a, at))}`
   const steps = a.stepTotal ? `${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' · ' + a.stepNote : ''}` : ''
   const stepsW = Math.max(0, barW - textWidth(stats, 11) - 12)
-  // Without reported steps the bar falls back to the context, drawn grey.
-  const fillW = Math.round(barW * (progress ?? ctx / 100))
   return svg(
     W,
     66,
@@ -765,7 +756,6 @@ const agentSvg = (W: number, a: AgentRun, at: number): string => {
 <text ${startText(W, 42, 34)} font-family="${FONT}" font-size="11"><tspan fill="${color}">${xml(tier === 'other' ? a.type : tierWord(tier))}</tspan><tspan class="s">  ${xml(meta.join('  ·  '))}</tspan></text>
 ${steps && stepsW > 30 ? `<text class="t" ${startText(W, 42, 49)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${xml(fitText(steps, 11, stepsW))}</text>` : ''}
 <text class="s" ${endText(W, 42 + barW, 49, true)} font-family="${FONT}" font-size="11" font-variant-numeric="tabular-nums">${stats}</text>
-<rect class="k" x="${mx(W, 42, barW)}" y="55" width="${barW}" height="4" rx="2"/><rect${progress === null ? ' class="m"' : ''} x="${mx(W, 42, fillW)}" y="55" width="${fillW}" height="4" rx="2"${progress === null ? '' : ` fill="${color}"`}/>
 ${statusMark(mx(W, W - 8), 16, a.status, color)}
 <line class="ln" x1="0" y1="65.5" x2="${W}" y2="65.5"/>`,
   )
@@ -810,11 +800,6 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
 }
 
 // --- terminal drawing: the same rows in text.
-
-const ctxBar = (pct: number, width: number): string => {
-  const filled = Math.round((width * pct) / 100)
-  return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled))
-}
 
 const STATUS_GLYPH: Record<string, string> = { running: '●', done: '✓', failed: '✗', planned: '◷' }
 
@@ -1202,7 +1187,10 @@ export const register: Register = (on, options) => {
     // clock that already redraws its timers, and only while something runs).
     const cols = Math.max(24, e.props.bodyColumns || 40)
     const hasCrab = cols >= 40
-    const barW = Math.max(6, Math.min(20, cols - 34 - (hasCrab ? 10 : 0)))
+    // Two columns of agents when each still fits a crab and a full stats line.
+    const COLUMN_GAP = 2
+    const isTwoColumns = cols >= 94
+    const colW = isTwoColumns ? Math.floor((cols - COLUMN_GAP) / 2) : undefined
     const frame = Math.floor(at / 1000)
     const crab = (a: AgentRun) => (
       <Box key="crab" flexDirection="column" flexShrink={0}>
@@ -1221,9 +1209,9 @@ export const register: Register = (on, options) => {
       const tier = tierOf(a.type)
       const color = colorOf(tier)
       const ctx = ctxOf(a)
-      const progress = progressOf(a)
       const model = runModel(a)
-      const steps = a.stepTotal ? `${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' ' + a.stepNote : ''} · ` : ''
+      // The worker's own step report, in its tier's color: `3/5 writing tests`.
+      const steps = a.stepTotal ? `${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' ' + a.stepNote : ''}` : ''
       const lines = (
         <Box key="lines" flexDirection="column" flexGrow={1} flexShrink={1}>
           <Box flexDirection="row" gap={1}>
@@ -1240,20 +1228,32 @@ export const register: Register = (on, options) => {
           </Text>
           <Text wrap="truncate-end">
             {'  '}
-            {progress === null ? <Text dimColor>{ctxBar(ctx, barW)}</Text> : <Text color={color}>{ctxBar(progress * 100, barW)}</Text>}
+            {steps !== '' ? <Text color={color}>{steps}</Text> : null}
             <Text dimColor>
-              {' '}
-              {steps}{s.ctx} {ctx}% · {fmtTokens(a.contextTokens)} ≈{fmtCost(a.costUsd)} {fmtTime(elapsed(a, at))}
+              {steps !== '' ? ' · ' : ''}
+              {s.ctx} {ctx}% · {fmtTokens(a.contextTokens)} ≈{fmtCost(a.costUsd)} {fmtTime(elapsed(a, at))}
             </Text>
           </Text>
         </Box>
       )
       return (
-        <Box key={a.id} flexDirection="row" gap={1} marginBottom={1}>
+        <Box key={a.id} flexDirection="row" gap={1} marginBottom={1} {...(colW !== undefined ? { width: colW, flexShrink: 0 } : {})}>
           {hasCrab ? crab(a) : null}
           {lines}
         </Box>
       )
+    }
+
+    // Agents in reading order, left to right, two to a row when the panel is wide.
+    const grid = (list: AgentRun[]) => {
+      if (!isTwoColumns) return list.map(row)
+      const pairs: AgentRun[][] = []
+      for (let i = 0; i < list.length; i += 2) pairs.push(list.slice(i, i + 2))
+      return pairs.map(pair => (
+        <Box key={`pair-${pair[0]!.id}`} flexDirection="row" gap={COLUMN_GAP}>
+          {pair.map(row)}
+        </Box>
+      ))
     }
 
     return (
@@ -1284,9 +1284,9 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" marginTop={1}>
             {isEmpty && <Text dimColor>{s.empty}</Text>}
             {running.length > 0 && <Text dimColor>{s.running} · {running.length}</Text>}
-            {running.map(row)}
+            {grid(running)}
             {finished.length > 0 && toggleDone}
-            {!p.isDoneCollapsed && finished.map(row)}
+            {!p.isDoneCollapsed && grid(finished)}
             {planned.length > 0 && <Text dimColor>{s.planned} · {planned.length}</Text>}
             {planned.map(pl => {
               const tier = pl.tier in TIER_COLOR ? pl.tier : 'other'
