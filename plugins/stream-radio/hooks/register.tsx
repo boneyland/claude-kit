@@ -39,6 +39,9 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
     $.ui.status(undefined)
+    // State outlives a reload but the player does not: start from idle.
+    await update($, playing, () => '')
+    await update($, isPaused, () => false)
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
