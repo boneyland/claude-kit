@@ -11,6 +11,8 @@ const panel = atom({ plugin: 'savvy-progress', key: 'panel' } as const, {
   autoOpenedFor: '',
 })
 const now = atom({ plugin: 'savvy-progress', key: 'now' } as const, 0)
+// Whether the agents pane is up, for the footer button's label.
+const paneOpen = atom({ plugin: 'savvy-progress', key: 'isOpen' } as const, false)
 
 const TOOL = 'mcp__savvy-progress__progress'
 const STEP_TOOL = 'mcp__savvy-progress__step'
@@ -68,6 +70,8 @@ const STRINGS = {
     isPlanned: 'planned',
     opened: 'Agents panel opened.',
     closed: 'Agents panel closed.',
+    show: 'Agents',
+    hide: 'Hide agents',
     done: 'Done',
     plan: 'Plan',
     design: 'Design',
@@ -99,6 +103,8 @@ const STRINGS = {
     isPlanned: 'запланирована',
     opened: 'Панель агентов открыта.',
     closed: 'Панель агентов закрыта.',
+    show: 'Агенты',
+    hide: 'Скрыть агентов',
     done: 'Готово',
     plan: 'План',
     design: 'Дизайн',
@@ -130,6 +136,8 @@ const STRINGS = {
     isPlanned: 'מתוכנן',
     opened: 'חלונית הסוכנים נפתחה.',
     closed: 'חלונית הסוכנים נסגרה.',
+    show: 'סוכנים',
+    hide: 'הסתר סוכנים',
     done: 'הושלם',
     plan: 'תכנון',
     design: 'עיצוב',
@@ -775,11 +783,13 @@ async function togglePane($: EngineInterface): Promise<boolean> {
   const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
   if (isOpen) {
     await $.ui.close({ id: PANE })
+    await update($, paneOpen, () => false)
     return false
   }
   const at = await $.clock.now()
   await update($, now, () => at)
   await $.ui.open({ id: PANE, title: tr().pane })
+  await update($, paneOpen, () => true)
   return true
 }
 
@@ -848,6 +858,12 @@ export const register: Register = (on, options) => {
       name: 'agents-info',
       description: 'Show or hide the panel of subagents: running, finished and planned, with model, context, cost and time',
     })
+    // A pane kept up across a reload is still the engine's; match the button's label to it.
+    const isUp = await $.ui
+      .panes()
+      .then(panes => panes.some(pane => pane.id === PANE))
+      .catch(() => false)
+    await update($, paneOpen, () => isUp)
 
     // Ticks the running agents' clocks; quiet when nothing runs.
     $.clock.every(1000, () => {
@@ -859,6 +875,34 @@ export const register: Register = (on, options) => {
       })()
     })
     return started
+  })
+
+  // Keep the footer button's label in step however the pane opens or closes:
+  // the command, the band's crew button, an auto-open, or the pane's own close mark.
+  on('ui.open', { id: PANE }, async ($, e, next) => {
+    const opened = await next(e)
+    await update($, paneOpen, () => true)
+    return opened
+  })
+
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    await update($, paneOpen, () => false)
+    return closed
+  })
+
+  // A button at the right of the prompt footer that opens and closes the agents
+  // pane, as /agents-info does. The footer takes no keyboard focus: it is pressed
+  // with the mouse.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const { Box, Button } = $.ui.resolve(e)
+    const isUp = await read($, paneOpen)
+    return (
+      <Box flexDirection="row" gap={1}>
+        {await next(e)}
+        <Button key="savvy-agents-toggle" label={isUp ? tr().hide : tr().show} onPress={() => togglePane($)} />
+      </Box>
+    )
   })
 
   on('command.run', { command: 'agents-info' }, async ($, e) => {

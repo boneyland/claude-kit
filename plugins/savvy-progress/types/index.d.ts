@@ -53,6 +53,8 @@ declare module 'claude-code' {
       agents: AgentRun[]
       panel: Panel
       now: number
+      // Whether the agents pane is up, for the footer button's label.
+      isOpen: boolean
     }
   }
 }
