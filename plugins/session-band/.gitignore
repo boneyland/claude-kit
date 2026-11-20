@@ -7,5 +7,6 @@ tsconfig.json
 # Built locally by notifier/build.sh
 notifier/*.app/
 
-# Local notes for Claude Code on this machine
+# Claude Code
 CLAUDE.md
+.claude/
