@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionCompactResult, SessionMessage, TurnUsage } from 'claude-code'
+import type { EngineInterface, Register, SessionCompactResult, SessionMessage, Timer, TurnUsage } from 'claude-code'
 
 import type { Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
 import {
@@ -89,8 +89,10 @@ const parseGit = (stdout: string): Git | null => {
 
 // `--no-optional-locks` keeps status from taking index.lock, so it never races
 // the person's or Claude's own git commands; `core.fsmonitor=false` keeps a
-// repository's own config from running a command every poll. Rewritten only when it changed.
+// repository's own config from running a command every poll. Rewritten only when it
+// changed; skipped while the band is hidden, and read again when it is shown.
 const refreshGit = async ($: EngineInterface) => {
+  if (await read($, isHidden)) return
   const result = await $.process
     .run(['git', '-c', 'core.fsmonitor=false', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], {
       timeoutMs: 5000,
@@ -101,10 +103,11 @@ const refreshGit = async ($: EngineInterface) => {
   if (current?.branch !== next?.branch || current?.isDirty !== next?.isDirty) await update($, git, () => next)
 }
 
+// Whole minutes only, so the band redraws once a minute rather than every second.
 const elapsed = (seconds: number) => {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}:${pad(m)}:${pad(seconds % 60)}` : `${m}:${pad(seconds % 60)}`
+  return h > 0 ? `${h}h${pad(m)}m` : seconds < 60 ? '<1m' : `${m}m`
 }
 
 const branchLabel = ({ branch, isDirty }: Git) =>
@@ -361,6 +364,52 @@ const desktopSession = async ($: EngineInterface) => {
 // notifications not allowed), Claude Code's own notification, which also reaches
 // the phone over Remote Control; it is skipped while the person is at this session,
 // and then a toast says it instead.
+// The countdowns' one timer. The band shows whole minutes, so it wakes only at the
+// next minute either the turn timer or the cache countdown changes; the cache
+// notifications and the expiry fall on those minutes too. Nothing counting, no wake.
+let wake: Timer | null = null
+
+const tick = async ($: EngineInterface): Promise<void> => {
+  wake?.cancel()
+  wake = null
+  const now = await $.clock.now()
+  const next: number[] = []
+
+  const { startedAt } = await read($, turnClock)
+  if (startedAt !== null) {
+    const minutes = Math.floor(Math.max(0, now - startedAt) / 60_000)
+    await update($, turnClock, t => (t.seconds === minutes * 60 ? t : { ...t, seconds: minutes * 60 }))
+    next.push(startedAt + (minutes + 1) * 60_000)
+  }
+
+  const expiresAt = (await read($, cache)).expiresAt ?? ((await read($, cacheModExpiresAt)) as number | null)
+  if (expiresAt !== null) {
+    const left = Math.max(0, expiresAt - now) / 1000
+    // Minutes rounded up, stored that way: it changes, and redraws, once a minute.
+    const shown = Math.ceil(left / 60)
+    if (shown * 60 !== (await read($, cache)).secondsLeft) {
+      await update($, cache, c => ({ expiresAt: c.expiresAt ?? expiresAt, secondsLeft: shown * 60 }))
+    }
+    if (left > 0) next.push(expiresAt - (shown - 1) * 60_000)
+    await notifyIfDue($, left)
+  }
+
+  // A little past the minute, so the wake lands after the change, not just before it.
+  if (next.length > 0) wake = $.clock.after(Math.max(0, Math.min(...next) - now) + 20, () => void tick($))
+}
+
+const notifyIfDue = async ($: EngineInterface, left: number) => {
+  const due = CACHE_NOTIFY_MINUTES.filter(m => left > 0 && left <= m * 60)
+  if (due.length === 0 || (await read($, isBusy))) return
+
+  const minutes = Math.min(...due)
+  const last = await read($, warned)
+  if (last !== 0 && last <= minutes) return
+
+  await update($, warned, () => minutes)
+  await notifyCacheExpiry($, Math.ceil(left / 60))
+}
+
 const notifyCacheExpiry = async ($: EngineInterface, minutes: number) => {
   const project = (await $.session.cwd()).split('/').filter(Boolean).pop() ?? 'session'
   const cost = resumeCost(spendInputs(await read($, spend)))
@@ -587,31 +636,7 @@ export const register: Register = (on, options) => {
     await refreshGit($)
     $.clock.every(GIT_POLL_MS, () => refreshGit($))
 
-    $.clock.every(1000, async () => {
-      const { startedAt } = await read($, turnClock)
-      if (startedAt !== null) {
-        const seconds = Math.max(0, Math.floor(((await $.clock.now()) - startedAt) / 1000))
-        await update($, turnClock, t => (t.seconds === seconds ? t : { ...t, seconds }))
-      }
-
-      const expiresAt = (await read($, cache)).expiresAt ?? (await read($, cacheModExpiresAt))
-      if (expiresAt === null) return
-
-      const left = Math.max(0, Math.floor((expiresAt - (await $.clock.now())) / 1000))
-      if (left !== (await read($, cache)).secondsLeft) {
-        await update($, cache, c => ({ expiresAt: c.expiresAt ?? expiresAt, secondsLeft: left }))
-      }
-
-      const due = CACHE_NOTIFY_MINUTES.filter(m => left > 0 && left <= m * 60)
-      if (due.length === 0 || (await read($, isBusy))) return
-
-      const minutes = Math.min(...due)
-      const last = await read($, warned)
-      if (last !== 0 && last <= minutes) return
-
-      await update($, warned, () => minutes)
-      await notifyCacheExpiry($, Math.ceil(left / 60))
-    })
+    await tick($)
 
     return result
   })
@@ -626,6 +651,7 @@ export const register: Register = (on, options) => {
       await update($, cache, () => ({ expiresAt: now + seconds * 1000, secondsLeft: seconds }))
       await update($, warned, () => 0)
       await update($, isHidden, () => false)
+      await tick($)
 
       return { text: `Cache demo: ${demo[1]} min left until the next answer resets it.` }
     }
@@ -653,6 +679,7 @@ export const register: Register = (on, options) => {
 
     const hidden = !(await read($, isHidden))
     await update($, isHidden, () => hidden)
+    if (!hidden) await refreshGit($)
 
     return { text: hidden ? 'Session band hidden.' : 'Session band shown.' }
   })
@@ -676,6 +703,7 @@ export const register: Register = (on, options) => {
     await update($, isBusy, () => true)
     const now = await $.clock.now()
     await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
+    await tick($)
 
     return next(e)
   })
@@ -727,6 +755,7 @@ export const register: Register = (on, options) => {
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
       await update($, turnClock, t => ({ ...t, startedAt: null }))
+      await tick($)
       await update($, stats, st =>
         st.turnCost === null ? st : { ...st, recentCosts: [...(st.recentCosts ?? []), st.turnCost].slice(-RECENT_TURNS) },
       )
@@ -766,7 +795,7 @@ export const register: Register = (on, options) => {
       e.props.isWorking ? '…'
       : secondsLeft === null ? '—'
       : secondsLeft === 0 ? 'expired'
-      : `${pad(Math.floor(secondsLeft / 60))}:${pad(secondsLeft % 60)}`
+      : `${Math.ceil(secondsLeft / 60)}m`
 
     lastColumns = e.props.bodyColumns
     const tier = tierFor(e.props.bodyColumns)

@@ -20,12 +20,12 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | Item | Shows | Notes |
 |---|---|---|
 | **Turn** | `Turn 12` | Counts your prompts that ran a turn. A subagent's run is part of the turn that started it, not a turn of its own. |
-| **Timer** | `⏱ 1:23` | Only while a turn runs: time since it started. |
+| **Timer** | `⏱ 3m` | Only while a turn runs: whole minutes since it started (`<1m` in the first minute, `1h05m` past an hour). |
 | **Speed** | `80 tok/s` | Output speed of the last response, timed from its first streamed item, so time-to-first-token is left out. Responses under 20 tokens, under 0.5 s, or over 1000 tok/s are ignored as noise; the last good reading stays. |
 | **Cost** | `$0.12 · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost includes any subagents it ran. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
-| **Cache** | `42:17` | Time left on the 1-hour prompt cache since the last answer. See [below](#the-cache-countdown-and-frame). |
+| **Cache** | `43m` | Minutes left on the 1-hour prompt cache since the last answer, rounded up. See [below](#the-cache-countdown-and-frame). |
 | **Limits** | `5h 24% ↻2h10m` `wk 91% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
-| **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn; names over 24 characters are cut short. Not shown outside a repository. |
+| **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
 | **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 65%, yellow from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
 | **×** | | Hides the band for the rest of the session. `/session_data` brings it back. |

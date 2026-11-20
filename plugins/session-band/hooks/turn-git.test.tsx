@@ -8,6 +8,9 @@ const BAND = (isWorking: boolean, bodyColumns = 120) =>
     props: { hasSurvey: false, isWorking, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
   }) as const
 
+const RUN = (args: string) =>
+  ({ command: 'session_data', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
+
 const NOW = Date.parse('2026-11-20T10:00:00Z')
 
 const seed = (extra: Record<string, unknown>) =>
@@ -18,20 +21,20 @@ const seed = (extra: Record<string, unknown>) =>
     ...extra,
   }) as Record<string, unknown>
 
-test('a running turn shows its elapsed time; an idle band does not', async ($, on) => {
-  const state = seed({ turnClock: { startedAt: NOW - 83_000, seconds: 83 } })
+test('a running turn shows its elapsed minutes; an idle band does not', async ($, on) => {
+  const state = seed({ turnClock: { startedAt: NOW - 83_000, seconds: 60 } })
   on('state.get', (_, e) => (e.key in state ? { value: { value: state[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
   on('clock.now', () => ({ value: NOW }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
 
   for (const columns of [120, 40]) {
     const working = await $.ui.mount(BAND(true, columns))
-    expect((await working.find({ type: 'Text', text: '1:23' }))?.text).toBe('1:23')
+    expect((await working.find({ type: 'Text', text: '1m' }))?.text).toBe('1m')
     await working.unmount()
   }
 
   const idle = await $.ui.mount(BAND(false))
-  expect(await idle.find({ type: 'Text', text: '1:23' })).toBe(undefined)
+  expect(await idle.find({ type: 'Text', text: '1m' })).toBe(undefined)
   await idle.unmount()
 })
 
@@ -64,6 +67,10 @@ test('session start reads the branch and dirty state from git status', async ($,
   }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
+  on('store.delete', () => ({ value: undefined }))
+  on('store.keys', () => ({ value: [] }))
+  on('clock.every', () => ({ value: undefined }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
   on('env.get', () => ({ value: undefined }))
   on('session.id', () => ({ value: 'engine-id' }))
   on('clock.now', () => ({ value: NOW }))
@@ -88,4 +95,12 @@ test('session start reads the branch and dirty state from git status', async ($,
   const ui = await $.ui.mount(BAND(false))
   expect((await ui.find({ type: 'Text', text: 'main*' }))?.text).toBe('main*')
   await ui.unmount()
+
+  // Hidden, the band reads no git status; shown again, it reads it at once.
+  const before = runs.length
+  await $.command.run(RUN(''))
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(runs.length).toBe(before)
+  await $.command.run(RUN(''))
+  expect(runs.length).toBe(before + 1)
 })
