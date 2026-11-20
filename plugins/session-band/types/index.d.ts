@@ -9,6 +9,14 @@ export type Stats = {
   recentCosts?: number[]
   // The saved total of an earlier launch when the engine's cost counts from this one.
   costOffset?: number
+  // What the turn's subagents spent, a part of turnCost; absent before the first measure.
+  agentsCost?: number
+}
+
+// Each agent's cost (USD) when the main turn started, and as last seen, by agent id.
+export type AgentSpend = {
+  base: Record<string, number>
+  seen: Record<string, number>
 }
 
 export type Cache = {
@@ -62,6 +70,6 @@ export type Spend = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend }
+    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend }
   }
 }

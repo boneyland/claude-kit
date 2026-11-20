@@ -68,6 +68,20 @@ test('the band shows the median and mean cost per turn beside the last', async (
   await ui.unmount()
 })
 
+test('the band shows what the last turn\'s subagents spent beside its cost', async ($, on) => {
+  seedBand(on, { stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, agentsCost: 0.08 } })
+  const ui = await $.ui.mount(BAND())
+  expect((await ui.find({ type: 'Text', text: '(agents $0.08)' }))?.text).toBe('(agents $0.08)')
+  await ui.unmount()
+})
+
+test('no agents part when the turn ran no subagents', async ($, on) => {
+  seedBand(on, { stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, agentsCost: 0 } })
+  const ui = await $.ui.mount(BAND())
+  expect(await ui.find({ type: 'Text', text: /^\(agents/ })).toBe(undefined)
+  await ui.unmount()
+})
+
 test('an unknown model waits for calibration; the scale follows the engine', async () => {
   expect(expiredWarning({ ...OPUS, model: 'mystery' })).toBe(null)
   expect(expiredWarning({ ...OPUS, scale: 2 })?.text).toBe('Cache expired: next message re-caches 150k ≈ $2.40 · new session ≈ $0.32')
@@ -163,6 +177,8 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   on('command.register', () => ({ value: { command: 'session_data' } }))
   on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: [], cost: { usd } } }))
+  let agents: { id: string; usd: number }[] = []
+  on('agent.list', () => ({ value: agents.map(a => ({ id: a.id, cost: { usd: a.usd } })) as never }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.compact', (_, e) => ({ messages: e.messages }))
   on('clock.every', () => ({ value: undefined }))
@@ -215,6 +231,9 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   expect(statsNow.turn).toBe(1)
   expect(statsNow.recentCosts).toEqual([0.3592])
 
+  // No subagents yet: nothing spent by agents.
+  expect(statsNow.agentsCost).toBe(0)
+
   // A subagent's run is not a turn of the band's.
   await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' })
   expect(statsNow.turn).toBe(1)
@@ -226,4 +245,16 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   await turn('t2', [usage({ cache_creation_input_tokens: 29_997, ephemeral_1h_input_tokens: 29_997 })], 0.6)
   expect(store.summaries).toEqual([12_000 - 3])
   expect(statsNow.recentCosts?.length).toBe(2)
+
+  // An agent that ran before this turn counts only what it spends during it; one
+  // the engine drops before the turn ends keeps its last reading.
+  agents = [{ id: 'old', usd: 0.5 }]
+  await $.turn.start({ text: 'go', turnId: 't3' })
+  agents = [{ id: 'old', usd: 0.6 }, { id: 'new', usd: 0.05 }]
+  steps.push([usage({ cache_read_input_tokens: 30_000 })])
+  for await (const _ of $.turn.step({ turnId: 't3', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) void _
+  agents = [{ id: 'old', usd: 0.62 }]
+  usd = 1.2
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't3', reason: 'answer' })
+  expect(Math.round(statsNow.agentsCost * 1000) / 1000).toBe(0.17)
 })

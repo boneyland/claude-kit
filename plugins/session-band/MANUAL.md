@@ -22,12 +22,12 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | **Turn** | `Turn 12` | Counts your prompts that ran a turn. A subagent's run is part of the turn that started it, not a turn of its own. |
 | **Timer** | `⏱ 3m` | Only while a turn runs: whole minutes since it started (`<1m` in the first minute, `1h05m` past an hour). |
 | **Speed** | `80 tok/s` | Output speed of the last response, timed from its first streamed item, so time-to-first-token is left out. Responses under 20 tokens, under 0.5 s, or over 1000 tok/s are ignored as noise; the last good reading stays. |
-| **Cost** | `$0.12 · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost includes any subagents it ran. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
+| **Cost** | `$0.12 (agents $0.08) · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost is the change in the session cost Claude Code reports since you sent the prompt, so it includes any subagents it ran; `(agents …)` is their part, shown when it reaches a cent and the window is 80 columns or wider. It comes from each agent's own cost as Claude Code reports it, counting only what the agent spent during the turn. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
 | **Cache** | `43m` | Minutes left on the 1-hour prompt cache since the last answer, rounded up. See [below](#the-cache-countdown-and-frame). |
 | **Limits** | `5h 24% ↻2h10m` `wk 91% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
-| **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 65%, yellow from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
+| **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 45%, yellow from 45%, orange from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
 | **×** | | Hides the band for the rest of the session. `/session_data` brings it back. |
 
 Before a session's first answer the band only appears if your plan's limits are already known.
@@ -40,7 +40,7 @@ The row never wraps. As the window narrows it drops details instead:
 |---|---|
 | 96 and wider | Everything, including the context bar and the limit reset times. |
 | 80–95 | No context bar or reset times. |
-| 64–79 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45`; no branch and no effort level. |
+| 64–79 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no branch and no effort level. |
 | 50–63 | No turn number, session total or model; smaller icons. |
 | Under 50 | No speed and no limits. |
 

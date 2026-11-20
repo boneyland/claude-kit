@@ -1,7 +1,7 @@
 import type { SessionMessage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { bandBackground, compactWithTail, tailStart, terminalContextBar } from './register'
+import { bandBackground, compactWithTail, contextColor, tailStart, terminalContextBar } from './register'
 
 const prompt = (text: string): SessionMessage => ({ role: 'user', text, toolUses: [] })
 const reply = (text: string): SessionMessage => ({ role: 'assistant', text, toolUses: [] })
@@ -96,11 +96,14 @@ test('the background setting takes hex, color names and theme keys, nothing else
   expect(bandBackground(3)).toBe(undefined)
 })
 
-test('the terminal context bar fills ten cells: green, yellow from 65%, red from 85%', async () => {
+test('the context bar fills ten cells: green, yellow from 45%, orange from 65%, red from 85%', async () => {
   expect(terminalContextBar(0)).toEqual({ filled: '', empty: '░'.repeat(10), color: '#4caf6e' })
-  expect(terminalContextBar(64).color).toBe('#4caf6e')
-  expect(terminalContextBar(65)).toEqual({ filled: '█'.repeat(7), empty: '░'.repeat(3), color: '#e6c547' })
-  expect(terminalContextBar(84).color).toBe('#e6c547')
+  expect(terminalContextBar(44).color).toBe('#4caf6e')
+  expect(terminalContextBar(45).color).toBe('#e6c547')
+  expect(terminalContextBar(64).color).toBe('#e6c547')
+  expect(terminalContextBar(65)).toEqual({ filled: '█'.repeat(7), empty: '░'.repeat(3), color: '#e8913a' })
+  expect(terminalContextBar(84).color).toBe('#e8913a')
   expect(terminalContextBar(85).color).toBe('#e0605a')
   expect(terminalContextBar(130)).toEqual({ filled: '█'.repeat(10), empty: '', color: '#e0605a' })
+  for (const p of [10, 50, 70, 90]) expect(contextColor(p)).toBe(terminalContextBar(p).color)
 })

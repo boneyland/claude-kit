@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionCompactResult, SessionMessage, Timer, TurnUsage } from 'claude-code'
 
-import type { Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
+import type { AgentSpend, Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
 import {
   baselineFromBreakdown,
   contextOf,
@@ -133,6 +133,29 @@ const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
   isCompactPending: false,
 } as Spend)
 
+// Each agent's cost as `$.agent.list()` gave it when the main turn started, and as last seen.
+const agentSpend = atom({ plugin: 'session-band', key: 'agentSpend' } as const, { base: {}, seen: {} } as AgentSpend)
+
+// The running turn's subagent cost: what each agent's cost grew by since the turn
+// started. An agent the engine has dropped keeps its last reading.
+const sampleAgents = async ($: EngineInterface) => {
+  const list = await $.agent.list().catch(() => [])
+  const now: Record<string, number> = {}
+  for (const a of list) if (a.cost !== undefined) now[a.id] = a.cost.usd
+  await update($, agentSpend, a => ({ ...a, seen: { ...a.seen, ...now } }))
+  const { base, seen } = await read($, agentSpend)
+  const agentsCost = Object.entries(seen).reduce((sum, [id, usd]) => sum + Math.max(0, usd - (base[id] ?? 0)), 0)
+  await update($, stats, s => (s.agentsCost === agentsCost ? s : { ...s, agentsCost }))
+}
+
+const startAgentSpend = async ($: EngineInterface) => {
+  const list = await $.agent.list().catch(() => [])
+  const base: Record<string, number> = {}
+  for (const a of list) if (a.cost !== undefined) base[a.id] = a.cost.usd
+  await update($, agentSpend, () => ({ base, seen: base }))
+  await update($, stats, s => ({ ...s, agentsCost: 0 }))
+}
+
 // Kept across sessions: a fresh session's first request per project, and compaction summaries.
 const BASELINE_KEY = (cwd: string) => `baseline:${cwd}`
 const SUMMARIES_KEY = 'summaries'
@@ -204,8 +227,17 @@ const cacheIcon = (color: string) =>
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
+// The context fill's color, on both surfaces: green under 45%, yellow under 65%,
+// orange under 85%, red from 85%.
+const BAR_GREEN = '#4caf6e'
+const BAR_YELLOW = '#e6c547'
+const BAR_ORANGE = '#e8913a'
+const BAR_RED = '#e0605a'
+export const contextColor = (percent: number) =>
+  percent >= 85 ? BAR_RED : percent >= 65 ? BAR_ORANGE : percent >= 45 ? BAR_YELLOW : BAR_GREEN
+
 const contextBar = (percent: number) => {
-  const color = percent >= 85 ? '#e0846b' : percent >= 65 ? '#e2a94e' : MONEY
+  const color = contextColor(percent)
   const w = Math.round((Math.min(100, percent) / 100) * 80)
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 6" width="80" height="6">
     <rect width="80" height="6" rx="3" fill="${MUTED}" fill-opacity="0.3"/>
@@ -334,6 +366,7 @@ const refresh = async ($: EngineInterface) => {
     const total = (s.costOffset ?? 0) + usd
     return { ...s, total, turnCost: total - s.costAtStart, context: context.percent ?? s.context }
   })
+  await sampleAgents($)
 }
 
 // Built by notifier/build.sh (macOS): posts the warning under Claude's icon.
@@ -576,16 +609,13 @@ const TERMINAL_ICONS = {
 
 // The terminal's context bar: cells filled as the context fills.
 const BAR_CELLS = 10
-const BAR_GREEN = '#4caf6e'
-const BAR_YELLOW = '#e6c547'
-const BAR_RED = '#e0605a'
 export const terminalContextBar = (percent: number) => {
   const p = Math.min(100, Math.max(0, percent))
   const filled = Math.round((p / 100) * BAR_CELLS)
   return {
     filled: '█'.repeat(filled),
     empty: '░'.repeat(BAR_CELLS - filled),
-    color: p >= 85 ? BAR_RED : p >= 65 ? BAR_YELLOW : BAR_GREEN,
+    color: contextColor(p),
   }
 }
 
@@ -700,6 +730,7 @@ export const register: Register = (on, options) => {
       const total = (s.costOffset ?? 0) + usd
       return { ...s, turn: s.turn + 1, costAtStart: total, total }
     })
+    await startAgentSpend($)
     await update($, isBusy, () => true)
     const now = await $.clock.now()
     await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
@@ -711,7 +742,10 @@ export const register: Register = (on, options) => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined) {
       for await (const chunk of next(e)) {
-        if (chunk.kind === 'stop' && chunk.usage !== null) await recordUsage($, chunk.usage, false)
+        if (chunk.kind === 'stop' && chunk.usage !== null) {
+          await recordUsage($, chunk.usage, false)
+          await sampleAgents($)
+        }
         yield chunk
       }
       return
@@ -780,6 +814,8 @@ export const register: Register = (on, options) => {
     const Svg = !isTerminal && 'Svg' in ui ? ui.Svg : null
     const speed = s.speed === null ? '—' : `${s.speed} tok/s`
     const turnCost = s.turnCost === null ? '—' : usd(s.turnCost)
+    // The part of the turn's cost its subagents spent, once it reaches a cent.
+    const agentsCost = s.turnCost !== null && (s.agentsCost ?? 0) >= 0.005 ? s.agentsCost! : null
 
     const { secondsLeft } = await read($, cache)
     const level =
@@ -851,6 +887,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>{glyphs.cost}</Text>}
           <Text bold color={MONEY}>{turnCost}</Text>
+          {tier <= 1 && agentsCost !== null ? <Text dimColor>{`(agents ${usd(agentsCost)})`}</Text> : null}
           {perTurn !== null && tier <= 1 ? <Text dimColor>· med</Text> : null}
           {perTurn !== null && tier >= 2 ? <Text dimColor>·</Text> : null}
           {perTurn !== null ? <Text bold>{usd(perTurn.median)}</Text> : null}
