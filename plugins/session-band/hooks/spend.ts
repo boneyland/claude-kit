@@ -83,7 +83,15 @@ export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
 export const RECENT_TURNS = 10
 
-const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
+// 240, 2.4k, 84k, 1.2M: exact under a thousand, so a short answer never shows as 0k.
+const tokens = (n: number) =>
+  n >= 1e6
+    ? `${(n / 1e6).toFixed(1)}M`
+    : n >= 9_950
+      ? `${Math.round(n / 1000)}k`
+      : n >= 1000
+        ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+        : String(Math.round(n))
 const usd = (n: number) => `$${n.toFixed(2)}`
 
 // Prices per token for this session, scaled to what the engine's cost says.
