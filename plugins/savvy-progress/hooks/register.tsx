@@ -542,6 +542,35 @@ const crabBody = (f: Fill, armFront = 0, armCls?: string): void => {
   f(21, 22, 2, 4, CLAY, 'lb')
 }
 
+// The terminal's crab: 8×6 pixels as three rows of half-blocks (▀ ▄ █), a top
+// and a bottom pixel per cell. The hat takes the tier's color; the legs swap
+// between two frames. C clay, E eye, A the tier's accent, . empty.
+const TERM_CRAB_BODY = ['..AAAA..', '.CCCCCC.', 'CCECCECC', '.CCCCCC.']
+const TERM_CRAB_LEGS = [
+  ['C.C..C.C', 'C.C..C.C'],
+  ['.C.CC.C.', '.C.CC.C.'],
+]
+export type CrabCell = { ch: string; fg?: string; bg?: string }
+
+export const termCrab = (frame: number, accent: string): CrabCell[][] => {
+  const px = [...TERM_CRAB_BODY, ...TERM_CRAB_LEGS[frame % 2]!]
+  const color = (c: string) => (c === 'C' ? CLAY : c === 'E' ? INK : c === 'A' ? accent : undefined)
+  const rows: CrabCell[][] = []
+  for (let y = 0; y < px.length; y += 2) {
+    rows.push(
+      [...px[y]!].map((c, x) => {
+        const top = color(c)
+        const bottom = color(px[y + 1]![x]!)
+        if (top === undefined && bottom === undefined) return { ch: ' ' }
+        if (top === undefined) return { ch: '▄', fg: bottom }
+        if (bottom === undefined) return { ch: '▀', fg: top }
+        return top === bottom ? { ch: '█', fg: top } : { ch: '▀', fg: top, bg: bottom }
+      }),
+    )
+  }
+  return rows
+}
+
 // Pure CSS, run by the compositor: no redraws. Periods divide one second, so the
 // once-a-second redraw of a running row restarts them in phase. Every crab walks;
 // each costume adds its prop's own motion on top.
@@ -1157,9 +1186,26 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // Terminal: the same content in text rows.
+    // Terminal: the same content in text rows, each agent beside a crab when
+    // there is room. A running crab walks on the panel's one-second tick (the
+    // clock that already redraws its timers, and only while something runs).
     const cols = Math.max(24, e.props.bodyColumns || 40)
-    const barW = Math.max(6, Math.min(20, cols - 34))
+    const hasCrab = cols >= 40
+    const barW = Math.max(6, Math.min(20, cols - 34 - (hasCrab ? 9 : 0)))
+    const frame = Math.floor(at / 1000)
+    const crab = (a: AgentRun, accent: string) => (
+      <Box key="crab" flexDirection="column" flexShrink={0}>
+        {termCrab(a.status === 'running' ? frame : 0, accent).map((cells, y) => (
+          <Text key={`r${y}`}>
+            {cells.map((c, x) => (
+              <Text key={`c${x}`} color={c.fg} backgroundColor={c.bg}>
+                {c.ch}
+              </Text>
+            ))}
+          </Text>
+        ))}
+      </Box>
+    )
     const row = (a: AgentRun) => {
       const tier = tierOf(a.type)
       const color = colorOf(tier)
@@ -1167,10 +1213,10 @@ export const register: Register = (on, options) => {
       const progress = progressOf(a)
       const model = runModel(a)
       const steps = a.stepTotal ? `${a.stepDone ?? 0}/${a.stepTotal}${a.stepNote ? ' ' + a.stepNote : ''} · ` : ''
-      return (
-        <Box key={a.id} flexDirection="column" marginBottom={1}>
+      const lines = (
+        <Box key="lines" flexDirection="column" flexGrow={1} flexShrink={1}>
           <Box flexDirection="row" gap={1}>
-            <Text color={color}>▣</Text>
+            {hasCrab ? null : <Text color={color}>▣</Text>}
             <Text bold wrap="truncate-end">
               {a.description || a.type}
             </Text>
@@ -1189,6 +1235,12 @@ export const register: Register = (on, options) => {
               {steps}{s.ctx} {ctx}% · {fmtTokens(a.contextTokens)} ≈{fmtCost(a.costUsd)} {fmtTime(elapsed(a, at))}
             </Text>
           </Text>
+        </Box>
+      )
+      return (
+        <Box key={a.id} flexDirection="row" gap={1} marginBottom={1}>
+          {hasCrab ? crab(a, color) : null}
+          {lines}
         </Box>
       )
     }
