@@ -88,8 +88,17 @@ export type Tokens = {
   dismissedTurn: number
 }
 
+// The pace projection's readings of the plan windows, by kind: each [time ms, % used]
+// with the projections noted at 25/50/75% through; and the heads-up dismissed, `kind:resetsAt`.
+export type PaceWindow = {
+  resetsAt: number
+  samples: [number, number][]
+  checks: Partial<Record<'25' | '50' | '75', { blend: number; linear: number }>>
+}
+export type Pace = { windows: Partial<Record<'five_hour' | 'seven_day', PaceWindow>>; dismissed: string }
+
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens }
+    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens; pace: Pace }
   }
 }

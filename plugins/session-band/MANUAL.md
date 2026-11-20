@@ -25,7 +25,7 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | **Cost** | `$0.12 (agents $0.08) · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost is the change in the session cost Claude Code reports since you sent the prompt, so it includes any subagents it ran; `(agents …)` is their part, shown when it reaches a cent and the window is 80 columns or wider. It comes from each agent's own cost as Claude Code reports it, counting only what the agent spent during the turn. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
 | **Cache** | `43m · 96%` | Minutes left on the 1-hour prompt cache since the last answer, rounded up; see [below](#the-cache-countdown-and-frame). Then the last turn's **cache hit rate**: the share of its input read from the cache, which is billed at about a tenth of normal input. Amber under 80%, red when the turn had a [cache miss](#cache-miss). Long sessions sit above 90%; a turn that reads big files lowers it without anything being wrong. |
 | **Tokens** | `Σ 840k in · 21k out` | The session's input and output tokens, subagents included. Input counts every request's whole context (cached or not), so it grows fast: it is how much was *read*, not what it cost. Output is priced several times input (5× on most models), so it is the one to watch. |
-| **Limits** | `5h 24% ↻2h10m` `wk 91% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
+| **Limits** | `5h 24% →61% ↻2h10m` `wk 41% →78% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `→` is where the window [ends at this pace](#pace-projection) (80 columns and wider): dim normally, amber from 90%, red `→100%+` when it runs out before the reset. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
 | **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 45%, yellow from 45%, orange from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
@@ -72,6 +72,12 @@ Cache expired and overhead are about carrying a long context, and both compare a
 > `Cache expired: next message re-caches 180k ≈ $1.44 · new session ≈ $0.16`
 
 Shown once the cache has lapsed, when starting over would save at least $0.10. It compares writing the whole context back against writing only a new session's baseline. A `/compact` at this point costs more than either, because it also reads the uncached context.
+
+### Running out before the reset
+
+> `Heads up: at this pace you'll hit the weekly limit Mon 14:21, 20h before it resets`
+
+Shown when the [pace projection](#pace-projection) of the 5-hour or weekly window reaches 100% before it resets. When both do, the one that runs out first is shown. `×` hides it for the rest of that window. Unlike the other warnings, it also shows after the cache has expired, unless the expired-cache warning applies.
 
 ### Cache miss
 
@@ -139,6 +145,22 @@ The row says how many turns of overhead it takes to pay for the alternative:
 
 The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/session_data compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
 
+## Pace projection
+
+Where each plan window (5-hour and weekly) ends if you keep going at the current pace. It works from the plan's own `used %`, the same figure the band shows, not from token counts, so it fits any plan.
+
+- **Readings.** Every session saves a reading each time a window's percentage moves. Readings are shared across sessions and kept per window, so a projection draws on all of your usage, from any project. Usage from claude.ai or the desktop app shows up the next time a Claude Code session reads the limits.
+- **The projection** is `used + pace × time left`. The pace blends two rates:
+  - 60% weight: the **recent pace**, over the last hour of a 5-hour window or the last 24 hours of a week. A reading that hasn't changed since counts as no use since then, so a break brings the projection down.
+  - 40% weight: the **window's average**, the % used divided by the time since the window began. This is the straight line that tools like codeburn use.
+- **When it starts.** Nothing is shown for the first 30 minutes of a 5-hour window, or the first 12 hours of a week. Before the readings span 20 minutes (5-hour) or 6 hours (weekly), the window average is used alone.
+
+### Is it any good?
+
+`/session_data pace` shows each window's projection next to the straight-line projection, and how both have done so far. At 25%, 50% and 75% of each window, the mod notes what each one predicted. When the window resets, it compares those predictions with where usage really ended (the highest reading of the window) and keeps the last 40 windows. The output shows the average miss in percentage points for each model at each mark, so you can see which one does better for the way you work.
+
+A week has to finish before its first score, so give it a few windows. The 5-hour scores come much sooner.
+
 ## The compact button
 
 The overhead row carries a **`compact, keep N`** button. It compacts the conversation but keeps the last *N* turns word for word after the summary, so the work you're in the middle of isn't paraphrased. *N* is the *Turns kept when compacting* setting (default 3).
@@ -162,6 +184,7 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 |---|---|
 | `/session_data` | Show or hide the band. |
 | `/session_data compact [turns]` | Compact, keeping the last *turns* turns (default: the setting) word for word. |
+| `/session_data pace` | Each plan window's projection and how accurate past projections were. See [Pace projection](#pace-projection). |
 | `/session_data demo <minutes>` | Pretend the cache has that many minutes left, to preview the colors, frame and notifications. The next answer resets it. |
 | `/session_data width` | Print the band's measured width and tier (for debugging). |
 

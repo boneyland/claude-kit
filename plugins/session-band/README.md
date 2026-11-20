@@ -5,6 +5,7 @@ A Claude Code mod: one band above the prompt with the session at a glance.
 See the [manual](MANUAL.md) for what each part shows, when the warnings and the compact button appear, and how costs are worked out.
 
 - **Band**: turn number, a live timer for the running turn, output speed of the last response (tok/s), cost of the last turn with its subagents' part (beside the median and mean of the last 10 turns) and of the session, a countdown of the 1-hour prompt cache since the last answer, the git branch (`*` and amber when the working tree has changes), the current model and effort level, context fill, the last turn's cache hit rate, and the session's input and output tokens. The band gets an amber frame 20 minutes before the cache expires and a red one at 10. The row drops details as the window narrows instead of wrapping; `×` hides it for the rest of the session.
+- **Pace projection**: beside each plan limit, where the window ends at the current pace (`wk 41% →78%`), and a heads-up row when you're on track to run out before it resets ("at this pace you'll hit the weekly limit Mon 14:21, 20h before it resets"). `/session_data pace` shows the details and scores the projections against how each window really ended.
 - **Spend warnings**: a second row, while idle, when something costs more than it should.
   - *Cache miss*: the last turn re-wrote 20k+ tokens of context the cache should have held, for no reason the band knows of (not an expiry, compaction, model switch or new session). Usually a tool, MCP, CLAUDE.md or plugin change.
   - *Output-heavy turn*: the last turn wrote 30k+ output tokens; the row shows what they cost.
@@ -27,6 +28,7 @@ It builds `notifier/Session Band.app` next to the script; on its first notificat
 
 - `/session_data`: show or hide the band.
 - `/session_data compact [turns]`: compact the conversation, keeping the last turns (default: the *Turns kept when compacting* setting, 3) word for word after the summary. Claude Code's own `/compact`, auto-compaction and ahead-of-time compaction are left as they are.
+- `/session_data pace`: where the 5-hour and weekly windows end at this pace, and how accurate past projections were.
 - `/session_data demo <minutes>`: pretend the cache has that many minutes left, to preview the colors and the warning; the next answer resets it.
 
 ## Install

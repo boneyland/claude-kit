@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionCompactResult, SessionMessage, Timer, TurnUsage } from 'claude-code'
 
-import type { AgentSpend, Cache, Git, Limit, Spend, Stats, Tokens, TurnClock } from '../types'
+import type { AgentSpend, Cache, Git, Limit, Pace, Spend, Stats, Tokens, TurnClock } from '../types'
 import {
   baselineFromBreakdown,
   cacheMissWarning,
@@ -23,6 +23,20 @@ import {
   type SpendInputs,
   type SpendWarning,
 } from './spend'
+import {
+  addSample,
+  checkpoint,
+  describe,
+  describeAccuracy,
+  HISTORY_KEPT,
+  KINDS,
+  project,
+  runOutWarning,
+  type Kind,
+  type PaceRecord,
+  type PaceWindow,
+  type Projection,
+} from './pace'
 
 // Responses shorter than this are mostly tool-call stubs: their timing is noise.
 const MIN_TOKENS = 20
@@ -321,7 +335,57 @@ const saveLimits = async ($: EngineInterface, windows: readonly { kind: string; 
   if (list.length === 0) return
   await update($, limits, () => list)
   await $.store.set(LIMITS_KEY, list)
+  await recordPace($, list)
 }
+
+// The pace projection's readings, shared by every session through $.store: one
+// window per kind, and the finished windows' scores.
+const pace = atom({ plugin: 'session-band', key: 'pace' } as const, { windows: {}, dismissed: '' } as Pace)
+const PACE_KEY = (kind: Kind) => `pace:${kind}`
+const PACE_HISTORY_KEY = 'pace-history'
+
+const isKind = (kind: string): kind is Kind => (KINDS as readonly string[]).includes(kind)
+
+const loadPace = async ($: EngineInterface) => {
+  const windows: Pace['windows'] = {}
+  for (const kind of KINDS) {
+    const w = (await $.store.get(PACE_KEY(kind))) as PaceWindow | undefined
+    if (w !== undefined && Array.isArray(w.samples)) windows[kind] = w
+  }
+  await update($, pace, p => ({ ...p, windows }))
+}
+
+// A live reading of each window: added to the shared record (re-read first, as
+// another session may have written it), the projection noted at its marks, and a
+// window that reset scored against where it ended.
+const recordPace = async ($: EngineInterface, list: readonly Limit[]) => {
+  const now = await $.clock.now()
+  for (const l of list) {
+    if (!isKind(l.kind) || l.resetsAt === null) continue
+    const resetsAt = Date.parse(l.resetsAt)
+    if (Number.isNaN(resetsAt)) continue
+    const kept = ((await $.store.get(PACE_KEY(l.kind))) as PaceWindow | undefined) ?? null
+    const added = addSample(kept, l.kind, resetsAt, now, l.percentUsed)
+    const window = checkpoint(added.window, project(l.kind, added.window, now))
+    if (added.isChanged || window !== added.window) await $.store.set(PACE_KEY(l.kind), window)
+    if (added.finished !== null) {
+      const history = ((await $.store.get(PACE_HISTORY_KEY)) as PaceRecord[] | undefined) ?? []
+      const done = added.finished
+      if (!history.some(r => r.kind === done.kind && r.resetsAt === done.resetsAt)) {
+        await $.store.set(PACE_HISTORY_KEY, [...history, done].slice(-HISTORY_KEPT))
+      }
+    }
+    await update($, pace, p => ({ ...p, windows: { ...p.windows, [l.kind]: window } }))
+  }
+}
+
+// The machine's offset from UTC, in minutes, for the times the projection names.
+const localOffset = (t: number) => -new Date(t).getTimezoneOffset()
+
+const projectionsAt = (p: Pace, now: number) =>
+  Object.fromEntries(KINDS.map(kind => [kind, project(kind, p.windows[kind] ?? null, now)])) as Record<Kind, Projection | null>
+
+const PACE_WARN = 90
 
 // A session's figures, saved after each answer under `session:<id>`, so a session the
 // desktop app restarted or resumed draws its band at once instead of after its next answer.
@@ -369,6 +433,7 @@ const saveSnapshot = async ($: EngineInterface) => {
 }
 
 const restore = async ($: EngineInterface) => {
+  await loadPace($)
   const usage = await $.session.usage()
 
   if (usage.rateLimits.length > 0) await saveLimits($, usage.rateLimits)
@@ -722,7 +787,7 @@ export const register: Register = (on, options) => {
 
     await $.command.register({
       name: 'session_data',
-      description: 'Show or hide the session band; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
+      description: 'Show or hide the session band; `pace` projects the plan windows; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
     })
 
     await refreshGit($)
@@ -762,6 +827,22 @@ export const register: Register = (on, options) => {
         )
       })
       return { text: `Compacting, keeping the last ${turns} turn${turns === 1 ? '' : 's'}…` }
+    }
+
+    // `/session_data pace`: where each window ends at this pace, and how well past projections did.
+    if (e.args.trim() === 'pace') {
+      await loadPace($)
+      const now = await $.clock.now()
+      const projections = projectionsAt(await read($, pace), now)
+      const history = ((await $.store.get(PACE_HISTORY_KEY)) as PaceRecord[] | undefined) ?? []
+      const offset = localOffset(now)
+      return {
+        text: [
+          ...KINDS.map(kind => describe(projections[kind], kind, now, offset)),
+          '',
+          ...KINDS.map(kind => describeAccuracy(history, kind)),
+        ].join('\n'),
+      }
     }
 
     if (e.args.trim() === 'width') {
@@ -918,26 +999,37 @@ export const register: Register = (on, options) => {
     const sp = await read($, spend)
     const perTurn = costPerTurn(s.recentCosts ?? [])
 
+    const now = await $.clock.now()
+    const paceState = await read($, pace)
+    const projections = projectionsAt(paceState, now)
+    const offset = localOffset(now)
+    // The window that runs out first, unless its heads-up was dismissed this window.
+    const runOut = KINDS.map(kind => projections[kind])
+      .filter((p): p is Projection => p !== null && p.runOutAt !== null && paceState.dismissed !== `${p.kind}:${p.resetsAt}`)
+      .sort((a, b) => a.runOutAt! - b.runOutAt!)[0]
+    const paceWarning = runOutWarning(runOut ?? null, now, offset)
+
     const tk = await read($, tokens)
     const rate = tk.last === null ? null : hitRate(tk.last)
 
     // Shown while idle, when the next message is still the person's to decide: an
-    // expired cache first, then what the last turn did, then the steady overhead.
+    // expired cache first, then running out of a plan window, then what the last
+    // turn did, then the steady overhead.
     const isTurnDismissed = tk.dismissedTurn === s.turn
     const missWarning = cacheMissWarning(spendInputs(sp), tk.last, tk.lastCause)
     const isOverheadDismissed = sp.dismissedAt !== null && (sp.context ?? 0) < sp.dismissedAt + DISMISS_GROWTH
-    const warning: SpendWarning | null = e.props.isWorking
+    const warning: SpendWarning | { kind: 'pace'; text: string } | null = e.props.isWorking
       ? null
       : secondsLeft === 0
-        ? expiredWarning(spendInputs(sp))
-        : ((isTurnDismissed ? null : missWarning) ??
+        ? (expiredWarning(spendInputs(sp)) ?? paceWarning)
+        : (paceWarning ??
+          (isTurnDismissed ? null : missWarning) ??
           (isOverheadDismissed ? null : overheadWarning(spendInputs(sp))) ??
           (isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last)))
     const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
     const framed = level !== null && e.props.maxRows >= (warning === null ? 3 : 4)
 
-    const now = await $.clock.now()
     // A window whose reset has passed since it was saved stands at 0 until the next reading.
     const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
       const w = saved.find(l => l.kind === kind)
@@ -994,10 +1086,16 @@ export const register: Register = (on, options) => {
         {tier <= 3
           ? windows.map(w => {
               const reset = tier === 0 ? resetIn(w.resetsAt, now) : null
+              const p = tier <= 1 && isKind(w.kind) ? projections[w.kind] : null
               return (
                 <Box key={w.kind} flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
                   <Text dimColor>{LIMIT_LABELS[w.kind]}</Text>
                   <Text bold color={limitColor(w.percentUsed)}>{`${Math.round(w.percentUsed)}%`}</Text>
+                  {p !== null ? (
+                    <Text color={p.projected >= 100 ? ALERT : p.projected >= PACE_WARN ? WARN : undefined} dimColor={p.projected < PACE_WARN}>
+                      {`→${p.projected >= 100 ? '100%+' : `${Math.round(p.projected)}%`}`}
+                    </Text>
+                  ) : null}
                   {reset !== null ? <Text dimColor>{`↻${reset}`}</Text> : null}
                 </Box>
               )
@@ -1064,6 +1162,16 @@ export const register: Register = (on, options) => {
                 plain
                 dimColor
                 onPress={() => update($, spend, s => ({ ...s, dismissedAt: s.context }))}
+              />
+            ) : null}
+            {warning.kind === 'pace' && runOut !== undefined ? (
+              <Button
+                key="dismiss-pace"
+                label="×"
+                role="dismiss"
+                plain
+                dimColor
+                onPress={() => update($, pace, p => ({ ...p, dismissed: `${runOut.kind}:${runOut.resetsAt}` }))}
               />
             ) : null}
             {warning.kind === 'cache-miss' || warning.kind === 'output' ? (
