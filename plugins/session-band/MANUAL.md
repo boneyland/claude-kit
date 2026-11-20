@@ -76,6 +76,8 @@ Shown once the cache has lapsed, when starting over would save at least $0.10. I
 
 > `Old context ≈ $0.42/turn (130k × 16 req median, 18 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns`
 
+The `/compact` part appears only once a compaction's summary size has been measured; until then the row ends after the new-session payback. See [Payback](#payback) below.
+
 Shown while the cache is still warm. Even with caching, every request in a turn re-reads the whole context, so the old context has a steady cost each turn:
 
 ```
@@ -106,10 +108,14 @@ So the trigger is a cost, not a context size. The context size it takes depends 
 
 These are old-context sizes, before the price scale is applied. Short question-and-answer turns rarely show it; long tool-heavy turns show it sooner.
 
-**Payback.** The row says how many turns of overhead it takes to pay for the alternative:
+### Payback
+
+The row says how many turns of overhead it takes to pay for the alternative:
 
 - **New session:** the cost of caching a fresh baseline, divided by the overhead per turn.
-- **`/compact`** (once a compaction has been measured): reading the context once, writing the summary, and re-caching baseline plus summary, divided by what the summary saves each turn. Left out when the summary wouldn't be smaller than the old context.
+- **`/compact`:** reading the context once, writing the summary, and re-caching baseline plus summary, divided by what the summary saves each turn. Left out when the summary wouldn't be smaller than the old context.
+
+The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/session_data compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
 
 ## The compact button
 
