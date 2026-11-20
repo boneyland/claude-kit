@@ -68,8 +68,28 @@ export type Spend = {
   isCompactPending: boolean
 }
 
+// A main turn's tokens: input uncached, read from and written to the cache; output;
+// and the previous request's context it did not read from the cache.
+export type TurnTokens = { uncached: number; read: number; write: number; output: number; missed: number }
+
+// Token counts: the session's, every loop's; the running and the last main turn's.
+export type Tokens = {
+  input: number
+  output: number
+  turn: TurnTokens
+  last: TurnTokens | null
+  // The main loop's last request: its whole input, and its model.
+  prevContext: number | null
+  prevModel: string | null
+  // Why the running (and the last) turn re-wrote the cache, when the band knows: expired, compacted, model, fresh.
+  cause: string | null
+  lastCause: string | null
+  // The turn whose cache-miss or output warning was dismissed.
+  dismissedTurn: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend }
+    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens }
   }
 }

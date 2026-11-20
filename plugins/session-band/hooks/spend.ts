@@ -96,7 +96,7 @@ const unitPrices = (s: SpendInputs) => {
   return { input: r.input * k, read: r.read * k, output: r.output * k, write1h: 2 * r.input * k }
 }
 
-export type SpendWarning = { kind: 'expired' | 'overhead'; text: string }
+export type SpendWarning = { kind: 'expired' | 'overhead' | 'cache-miss' | 'output'; text: string }
 
 // After the cache lapsed the next message writes the whole context back at the
 // 1-hour rate; a fresh session writes only its baseline. (A /compact then costs
@@ -190,4 +190,60 @@ export const median = (xs: readonly number[]) => {
   const s = [...xs].sort((a, b) => a - b)
   const m = Math.floor(s.length / 2)
   return s.length % 2 ? s[m]! : Math.round((s[m - 1]! + s[m]!) / 2)
+}
+
+// ---------------------------------------------------------------------------
+// Token counts and the prompt cache's hit rate, and the warnings when they look off.
+
+// A main turn's tokens: input by where it came from, output, and the context the
+// previous request carried that this one did not read from the cache.
+export type TurnTokens = { uncached: number; read: number; write: number; output: number; missed: number }
+
+export const NO_TOKENS: TurnTokens = { uncached: 0, read: 0, write: 0, output: 0, missed: 0 }
+
+// The share of input served from the cache; null before any input.
+export const hitRate = (t: TurnTokens) => {
+  const all = t.uncached + t.read + t.write
+  return all === 0 ? null : t.read / all
+}
+
+// What one request missed: the previous request's context it should have read
+// from the cache. Null previous (a session's first request, after a compaction)
+// misses nothing.
+export const missedOf = (previous: number | null, u: StepUsage) =>
+  previous === null ? 0 : Math.max(0, previous - u.cache_read_input_tokens)
+
+// Below this much context re-written, a miss is not worth a word.
+export const MISS_MIN_TOKENS = 20_000
+// A turn writing this much output is shown, with what it cost.
+export const OUTPUT_WARN_TOKENS = 30_000
+// The band's hit rate turns amber below this.
+export const RATE_WARN = 0.8
+
+export const formatTokens = tokens
+
+// A turn re-wrote context the cache should have held, for no reason the band
+// knows of (an expired cache, a compaction, a model switch, a fresh session):
+// something in the prompt's prefix changed.
+export const cacheMissWarning = (s: SpendInputs, t: TurnTokens | null, cause: string | null): SpendWarning | null => {
+  if (t === null || cause !== null || t.missed < MISS_MIN_TOKENS) return null
+  const p = unitPrices(s)
+  const rate = hitRate(t)
+  const extra = p === null ? '' : ` ≈ ${usd(t.missed * (p.write1h - p.read))} extra`
+  return {
+    kind: 'cache-miss',
+    text: `Cache miss: last turn re-wrote ${tokens(t.missed)}${extra}${rate === null ? '' : ` (hit ${Math.round(rate * 100)}%)`} · a tool, MCP, CLAUDE.md or plugin change resets the cache`,
+  }
+}
+
+// A turn whose output alone ran long: output is priced several times input.
+export const outputWarning = (s: SpendInputs, t: TurnTokens | null): SpendWarning | null => {
+  if (t === null || t.output < OUTPUT_WARN_TOKENS) return null
+  const p = unitPrices(s)
+  const cost = p === null ? '' : ` ≈ ${usd(t.output * p.output)}`
+  const ratio = p === null ? null : Math.round(p.output / p.input)
+  return {
+    kind: 'output',
+    text: `Output-heavy turn: ${tokens(t.output)} tokens out${cost}${ratio === null ? '' : ` · output costs ${ratio}× input`}`,
+  }
 }

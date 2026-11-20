@@ -1,10 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionCompactResult, SessionMessage, Timer, TurnUsage } from 'claude-code'
 
-import type { AgentSpend, Cache, Git, Limit, Spend, Stats, TurnClock } from '../types'
+import type { AgentSpend, Cache, Git, Limit, Spend, Stats, Tokens, TurnClock } from '../types'
 import {
   baselineFromBreakdown,
+  cacheMissWarning,
   contextOf,
+  formatTokens,
+  hitRate,
+  missedOf,
+  NO_TOKENS,
+  outputWarning,
+  RATE_WARN,
   expiredWarning,
   formatUsd,
   median,
@@ -132,6 +139,45 @@ const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
   isFresh: false,
   isCompactPending: false,
 } as Spend)
+
+// Token counts and the cache's hit rate: the session's in and out, every loop's;
+// per main turn, input by source, output and what the cache missed.
+const tokens = atom({ plugin: 'session-band', key: 'tokens' } as const, {
+  input: 0,
+  output: 0,
+  turn: NO_TOKENS,
+  last: null,
+  prevContext: null,
+  prevModel: null,
+  cause: null,
+  lastCause: null,
+  dismissedTurn: -1,
+} as Tokens)
+
+// One response's tokens. A main-loop request that did not read the previous one's
+// context from the cache missed it; a model switch explains that miss.
+const recordTokens = async ($: EngineInterface, usage: TurnUsage, isMain: boolean) => {
+  const input = contextOf(usage)
+  await update($, tokens, tk => {
+    const session = { ...tk, input: tk.input + input, output: tk.output + usage.output_tokens }
+    if (!isMain) return session
+    const isNewModel = tk.prevModel !== null && tk.prevModel !== usage.model
+    const t = tk.turn
+    return {
+      ...session,
+      turn: {
+        uncached: t.uncached + usage.input_tokens,
+        read: t.read + usage.cache_read_input_tokens,
+        write: t.write + usage.cache_creation_input_tokens,
+        output: t.output + usage.output_tokens,
+        missed: t.missed + missedOf(tk.prevContext, usage),
+      },
+      prevContext: input,
+      prevModel: usage.model,
+      cause: tk.cause ?? (isNewModel ? 'model' : null),
+    }
+  })
+}
 
 // Each agent's cost as `$.agent.list()` gave it when the main turn started, and as last seen.
 const agentSpend = atom({ plugin: 'session-band', key: 'agentSpend' } as const, { base: {}, seen: {} } as AgentSpend)
@@ -286,6 +332,9 @@ type Snapshot = {
   context: number
   expiresAt: number | null
   recentCosts?: number[]
+  tokensIn?: number
+  tokensOut?: number
+  lastTurnTokens?: Tokens['last']
 }
 const SNAPSHOTS_KEPT = 50
 
@@ -298,6 +347,7 @@ const snapshotKey = async ($: EngineInterface) => {
 const saveSnapshot = async ($: EngineInterface) => {
   const s = await read($, stats)
   const { expiresAt } = await read($, cache)
+  const tk = await read($, tokens)
   const key = await snapshotKey($)
   const snapshot: Snapshot = {
     turn: s.turn,
@@ -306,6 +356,9 @@ const saveSnapshot = async ($: EngineInterface) => {
     context: s.context,
     expiresAt,
     recentCosts: s.recentCosts ?? [],
+    tokensIn: tk.input,
+    tokensOut: tk.output,
+    lastTurnTokens: tk.last,
   }
   // Set again after a delete, the key moves last: the oldest sessions are pruned first.
   await $.store.delete(key)
@@ -342,6 +395,14 @@ const restore = async ($: EngineInterface) => {
     costOffset,
   }))
   await update($, cache, c => (c.expiresAt === null ? { expiresAt: snapshot.expiresAt, secondsLeft: null } : c))
+  // A relaunch starts a new cache: the next request's miss is expected.
+  await update($, tokens, tk => ({
+    ...tk,
+    input: typeof snapshot.tokensIn === 'number' ? snapshot.tokensIn : tk.input,
+    output: typeof snapshot.tokensOut === 'number' ? snapshot.tokensOut : tk.output,
+    last: snapshot.lastTurnTokens ?? tk.last,
+    lastCause: 'fresh',
+  }))
 }
 
 const limitColor = (percent: number) =>
@@ -634,6 +695,7 @@ export const register: Register = (on, options) => {
     // The context the last request carried is gone: no warning until the next one says what is left.
     if (result.messages !== undefined && isMain && e.trigger !== 'precompute') {
       await update($, spend, sp => ({ ...sp, context: null, isCompactPending: turns === null, dismissedAt: null }))
+      await update($, tokens, tk => ({ ...tk, prevContext: null, cause: tk.cause ?? 'compacted' }))
     }
     return result
   })
@@ -726,6 +788,14 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) return next(e)
     const usd = (await $.session.usage()).cost?.usd ?? 0
     await update($, spend, sp => ({ ...sp, steps: 0, predicted: 0, usdAtTurnStart: usd }))
+    // A cache already past its lifetime makes this turn's re-write expected.
+    const { expiresAt } = await read($, cache)
+    const isExpired = expiresAt !== null && expiresAt <= (await $.clock.now())
+    await update($, tokens, tk => ({
+      ...tk,
+      turn: NO_TOKENS,
+      cause: isExpired ? 'expired' : tk.prevContext === null ? 'fresh' : null,
+    }))
     await update($, stats, s => {
       const total = (s.costOffset ?? 0) + usd
       return { ...s, turn: s.turn + 1, costAtStart: total, total }
@@ -743,6 +813,7 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) {
       for await (const chunk of next(e)) {
         if (chunk.kind === 'stop' && chunk.usage !== null) {
+          await recordTokens($, chunk.usage, false)
           await recordUsage($, chunk.usage, false)
           await sampleAgents($)
         }
@@ -764,6 +835,7 @@ export const register: Register = (on, options) => {
       }
 
       if (chunk.kind === 'stop' && chunk.usage !== null) {
+        await recordTokens($, chunk.usage, true)
         await recordUsage($, chunk.usage, true)
         const tokens = chunk.usage.output_tokens
         const seconds = ((await $.clock.now()) - startedAt) / 1000
@@ -789,6 +861,7 @@ export const register: Register = (on, options) => {
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
       await update($, turnClock, t => ({ ...t, startedAt: null }))
+      await update($, tokens, tk => ({ ...tk, last: tk.turn, lastCause: tk.cause }))
       await tick($)
       await update($, stats, st =>
         st.turnCost === null ? st : { ...st, recentCosts: [...(st.recentCosts ?? []), st.turnCost].slice(-RECENT_TURNS) },
@@ -845,14 +918,22 @@ export const register: Register = (on, options) => {
     const sp = await read($, spend)
     const perTurn = costPerTurn(s.recentCosts ?? [])
 
-    // Shown while idle, when the next message is still the person's to decide.
+    const tk = await read($, tokens)
+    const rate = tk.last === null ? null : hitRate(tk.last)
+
+    // Shown while idle, when the next message is still the person's to decide: an
+    // expired cache first, then what the last turn did, then the steady overhead.
+    const isTurnDismissed = tk.dismissedTurn === s.turn
+    const missWarning = cacheMissWarning(spendInputs(sp), tk.last, tk.lastCause)
+    const isOverheadDismissed = sp.dismissedAt !== null && (sp.context ?? 0) < sp.dismissedAt + DISMISS_GROWTH
     const warning: SpendWarning | null = e.props.isWorking
       ? null
       : secondsLeft === 0
         ? expiredWarning(spendInputs(sp))
-        : sp.dismissedAt !== null && (sp.context ?? 0) < sp.dismissedAt + DISMISS_GROWTH
-          ? null
-          : overheadWarning(spendInputs(sp))
+        : ((isTurnDismissed ? null : missWarning) ??
+          (isOverheadDismissed ? null : overheadWarning(spendInputs(sp))) ??
+          (isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last)))
+    const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
     const framed = level !== null && e.props.maxRows >= (warning === null ? 3 : 4)
 
@@ -899,7 +980,17 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={cacheIcon(cacheColor)} alt="cache" width={icon} height={icon} /> : <Text color={cacheColor}>{glyphs.cache}</Text>}
           <Text bold color={level ?? undefined}>{cacheText}</Text>
+          {rate !== null && tier <= 2 ? <Text dimColor>·</Text> : null}
+          {rate !== null && tier <= 2 ? <Text bold color={rateColor}>{`${Math.round(rate * 100)}%`}</Text> : null}
         </Box>
+        {tier <= 1 && tk.input + tk.output > 0 ? (
+          <Box key="tokens" flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
+            <Text dimColor>Σ</Text>
+            <Text bold>{tier === 0 ? `${formatTokens(tk.input)} in` : formatTokens(tk.input)}</Text>
+            <Text dimColor>{tier === 0 ? '·' : '/'}</Text>
+            <Text bold>{tier === 0 ? `${formatTokens(tk.output)} out` : formatTokens(tk.output)}</Text>
+          </Box>
+        ) : null}
         {tier <= 3
           ? windows.map(w => {
               const reset = tier === 0 ? resetIn(w.resetsAt, now) : null
@@ -973,6 +1064,16 @@ export const register: Register = (on, options) => {
                 plain
                 dimColor
                 onPress={() => update($, spend, s => ({ ...s, dismissedAt: s.context }))}
+              />
+            ) : null}
+            {warning.kind === 'cache-miss' || warning.kind === 'output' ? (
+              <Button
+                key="dismiss-turn"
+                label="×"
+                role="dismiss"
+                plain
+                dimColor
+                onPress={() => update($, tokens, t => ({ ...t, dismissedTurn: s.turn }))}
               />
             ) : null}
           </Box>

@@ -23,7 +23,8 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | **Timer** | `⏱ 3m` | Only while a turn runs: whole minutes since it started (`<1m` in the first minute, `1h05m` past an hour). |
 | **Speed** | `80 tok/s` | Output speed of the last response, timed from its first streamed item, so time-to-first-token is left out. Responses under 20 tokens, under 0.5 s, or over 1000 tok/s are ignored as noise; the last good reading stays. |
 | **Cost** | `$0.12 (agents $0.08) · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost is the change in the session cost Claude Code reports since you sent the prompt, so it includes any subagents it ran; `(agents …)` is their part, shown when it reaches a cent and the window is 80 columns or wider. It comes from each agent's own cost as Claude Code reports it, counting only what the agent spent during the turn. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
-| **Cache** | `43m` | Minutes left on the 1-hour prompt cache since the last answer, rounded up. See [below](#the-cache-countdown-and-frame). |
+| **Cache** | `43m · 96%` | Minutes left on the 1-hour prompt cache since the last answer, rounded up; see [below](#the-cache-countdown-and-frame). Then the last turn's **cache hit rate**: the share of its input read from the cache, which is billed at about a tenth of normal input. Amber under 80%, red when the turn had a [cache miss](#cache-miss). Long sessions sit above 90%; a turn that reads big files lowers it without anything being wrong. |
+| **Tokens** | `Σ 840k in · 21k out` | The session's input and output tokens, subagents included. Input counts every request's whole context (cached or not), so it grows fast: it is how much was *read*, not what it cost. Output is priced several times input (5× on most models), so it is the one to watch. |
 | **Limits** | `5h 24% ↻2h10m` `wk 91% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
@@ -39,9 +40,9 @@ The row never wraps. As the window narrows it drops details instead:
 | Width (columns) | What changes |
 |---|---|
 | 96 and wider | Everything, including the context bar and the limit reset times. |
-| 80–95 | No context bar or reset times. |
-| 64–79 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no branch and no effort level. |
-| 50–63 | No turn number, session total or model; smaller icons. |
+| 80–95 | No context bar or reset times; tokens as `Σ 840k/21k`. |
+| 64–79 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no branch, effort level or tokens. |
+| 50–63 | No turn number, session total, model or hit rate; smaller icons. |
 | Under 50 | No speed and no limits. |
 
 The cost (with its median and mean), cache countdown, context and timer stay at every width.
@@ -62,15 +63,36 @@ With 10 and then 5 minutes left, while idle, you get a system notification: `Pro
 
 ## Spend warnings
 
-A second row under the band, **only while idle**, when carrying the long context costs more than starting over. There are two kinds; at most one shows at a time.
+A second row under the band, **only while idle**, when something costs more than it should. At most one shows at a time, in this order: cache expired, [cache miss](#cache-miss), overhead, [output-heavy turn](#output-heavy-turn).
 
-Both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
+Cache expired and overhead are about carrying a long context, and both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
 
 ### Cache expired
 
 > `Cache expired: next message re-caches 180k ≈ $1.44 · new session ≈ $0.16`
 
 Shown once the cache has lapsed, when starting over would save at least $0.10. It compares writing the whole context back against writing only a new session's baseline. A `/compact` at this point costs more than either, because it also reads the uncached context.
+
+### Cache miss
+
+> `Cache miss: last turn re-wrote 84k ≈ $0.66 extra (hit 10%) · a tool, MCP, CLAUDE.md or plugin change resets the cache`
+
+Each request in the main session should read the previous request's whole context from the cache. Whatever part it didn't read, and wrote again instead, is a **miss**. The row shows when the last turn missed 20k tokens or more, with what the re-write cost over reading it. That is the 1-hour write price minus the read price, so it is an estimate.
+
+It stays quiet when the band knows the cause:
+
+- the cache had expired (that's the warning above)
+- the conversation was compacted
+- the model changed
+- the session is new, restarted or resumed
+
+Anything else means the start of the prompt changed: tools or MCP servers connecting or dropping, a CLAUDE.md edit, plugins reloaded, or a setting that changes the system prompt. Subagents start their own caches, so they never count. `×` hides it until the next turn.
+
+### Output-heavy turn
+
+> `Output-heavy turn: 34k tokens out ≈ $0.68 · output costs 5× input`
+
+Shown when the last main turn wrote 30k output tokens or more, with their cost. Long answers, big file writes and heavy thinking add up here. `×` hides it until the next turn.
 
 ### Overhead
 
