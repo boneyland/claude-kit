@@ -6,18 +6,15 @@ import { termCrab } from './register'
 const PLUGIN = 'savvy-progress'
 const text = (rows: { ch: string }[][]) => rows.map(r => r.map(c => c.ch).join(''))
 
-test('the terminal crab is three rows of half-blocks that walk in two frames', () => {
-  const a = termCrab(0, '#123456')
-  const b = termCrab(1, '#123456')
-  // Hat over the head; claws, eyes and body; four legs.
-  expect(text(a)).toEqual([' ▄▀▀▀▀▄ ', '▀█▀██▀█▀', '█ █  █ █'])
-  expect(text(b)[2]).toBe(' █ ██ █ ')
-  // The legs move; the body and hat stay.
-  expect(text(a).slice(0, 2)).toEqual(text(b).slice(0, 2))
-  expect(text(a)[2]).not.toBe(text(b)[2])
-  // The hat is the tier's color over the clay head.
-  expect(a[0]!.find(c => c.bg === '#D97757')?.fg).toBe('#123456')
-  expect(termCrab(2, '#123456')).toEqual(a)
+test('the terminal crab is Claude Code\'s Clawd, walking in two frames', () => {
+  const a = termCrab(0)
+  const b = termCrab(1)
+  // The logo as Claude Code draws it.
+  expect(text(a)).toEqual([' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '])
+  // Arms up, legs across.
+  expect(text(b)).toEqual(['▗▐▛███▜▌▖', ' ▜█████▛ ', '  ▝▝ ▘▘  '])
+  expect(a.flat().filter(c => c.ch !== ' ').every(c => c.fg === '#D97757')).toBe(true)
+  expect(termCrab(2)).toEqual(a)
 })
 
 const pane = (bodyColumns: number) => ({ title: '', isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} }) as const
@@ -45,7 +42,7 @@ test('a running agent\'s crab walks with the panel\'s tick; a narrow panel keeps
     return { legs: JSON.stringify(box?.children[2]), hasMark: mark !== undefined }
   }
   const first = await legs()
-  expect(first.legs).toContain('█')
+  expect(first.legs).toContain('▘')
   expect(first.hasMark).toBe(false)
   await clock.advance(1000)
   expect((await legs()).legs).not.toBe(first.legs)

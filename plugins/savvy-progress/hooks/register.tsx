@@ -542,31 +542,42 @@ const crabBody = (f: Fill, armFront = 0, armCls?: string): void => {
   f(21, 22, 2, 4, CLAY, 'lb')
 }
 
-// The terminal's crab: 8×6 pixels as three rows of half-blocks (▀ ▄ █), a top
-// and a bottom pixel per cell. The hat takes the tier's color; the legs swap
-// between two frames. C clay, E eye, A the tier's accent, . empty.
-const TERM_CRAB_BODY = ['..AAAA..', '.CCCCCC.', 'CCECCECC', '.CCCCCC.']
-const TERM_CRAB_LEGS = [
-  ['C.C..C.C', 'C.C..C.C'],
-  ['.C.CC.C.', '.C.CC.C.'],
+// The terminal's Clawd, as Claude Code's own logo draws it (▐▛███▜▌ / ▝▜█████▛▘ /
+// ▘▘ ▝▝): 18×6 pixels in quadrant blocks, 2×2 a cell, three rows. The eyes are
+// notches in the body. Walking swaps the legs and raises the arms. # clay.
+const TERM_CRAB: readonly (readonly string[])[] = [
+  [
+    '...############...',
+    '...##.######.##...',
+    '.################.',
+    '...############...',
+    '....#.#....#.#....',
+    '..................',
+  ],
+  [
+    '...############...',
+    '.#.##.######.##.#.',
+    '..##############..',
+    '...############...',
+    '.....#.#..#.#.....',
+    '..................',
+  ],
 ]
-export type CrabCell = { ch: string; fg?: string; bg?: string }
+// By the cell's filled quarters: top-left 1, top-right 2, bottom-left 4, bottom-right 8.
+const QUADRANTS = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█']
+export type CrabCell = { ch: string; fg?: string }
 
-export const termCrab = (frame: number, accent: string): CrabCell[][] => {
-  const px = [...TERM_CRAB_BODY, ...TERM_CRAB_LEGS[frame % 2]!]
-  const color = (c: string) => (c === 'C' ? CLAY : c === 'E' ? INK : c === 'A' ? accent : undefined)
+export const termCrab = (frame: number): CrabCell[][] => {
+  const px = TERM_CRAB[frame % 2]!
+  const on = (x: number, y: number) => px[y]![x] === '#'
   const rows: CrabCell[][] = []
   for (let y = 0; y < px.length; y += 2) {
-    rows.push(
-      [...px[y]!].map((c, x) => {
-        const top = color(c)
-        const bottom = color(px[y + 1]![x]!)
-        if (top === undefined && bottom === undefined) return { ch: ' ' }
-        if (top === undefined) return { ch: '▄', fg: bottom }
-        if (bottom === undefined) return { ch: '▀', fg: top }
-        return top === bottom ? { ch: '█', fg: top } : { ch: '▀', fg: top, bg: bottom }
-      }),
-    )
+    const cells: CrabCell[] = []
+    for (let x = 0; x < px[0]!.length; x += 2) {
+      const q = (on(x, y) ? 1 : 0) | (on(x + 1, y) ? 2 : 0) | (on(x, y + 1) ? 4 : 0) | (on(x + 1, y + 1) ? 8 : 0)
+      cells.push(q === 0 ? { ch: ' ' } : { ch: QUADRANTS[q]!, fg: CLAY })
+    }
+    rows.push(cells)
   }
   return rows
 }
@@ -1191,14 +1202,14 @@ export const register: Register = (on, options) => {
     // clock that already redraws its timers, and only while something runs).
     const cols = Math.max(24, e.props.bodyColumns || 40)
     const hasCrab = cols >= 40
-    const barW = Math.max(6, Math.min(20, cols - 34 - (hasCrab ? 9 : 0)))
+    const barW = Math.max(6, Math.min(20, cols - 34 - (hasCrab ? 10 : 0)))
     const frame = Math.floor(at / 1000)
-    const crab = (a: AgentRun, accent: string) => (
+    const crab = (a: AgentRun) => (
       <Box key="crab" flexDirection="column" flexShrink={0}>
-        {termCrab(a.status === 'running' ? frame : 0, accent).map((cells, y) => (
+        {termCrab(a.status === 'running' ? frame : 0).map((cells, y) => (
           <Text key={`r${y}`}>
             {cells.map((c, x) => (
-              <Text key={`c${x}`} color={c.fg} backgroundColor={c.bg}>
+              <Text key={`c${x}`} color={c.fg}>
                 {c.ch}
               </Text>
             ))}
@@ -1239,7 +1250,7 @@ export const register: Register = (on, options) => {
       )
       return (
         <Box key={a.id} flexDirection="row" gap={1} marginBottom={1}>
-          {hasCrab ? crab(a, color) : null}
+          {hasCrab ? crab(a) : null}
           {lines}
         </Box>
       )
