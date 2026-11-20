@@ -1,6 +1,6 @@
 # stream-radio
 
-Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) from Claude Code, and show what is playing in the status line under the prompt.
+Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
 
 ```
 /stream https://www.youtube.com/watch?v=tRsQsTMvPNg
@@ -8,7 +8,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream stop
 ```
 
-The status line reads `♪ <title>`.
+The footer reads `♪ <title>` (cut at 60 characters).
 
 ## Requirements
 

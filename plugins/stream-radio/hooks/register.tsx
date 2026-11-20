@@ -1,13 +1,18 @@
+import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import { parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
+
+// What the footer shows; empty when nothing plays.
+const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
 
 type Options = { defaultUrl?: string; volume?: number; player?: string }
 
 export const register: Register = (on, options) => {
   const { defaultUrl = '', volume = 60, player = 'mpv' } = options as Options
   // The running player's stream: ending its loop kills the child.
-  let current: { return: () => Promise<unknown> } | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let current: { return: (value: any) => Promise<unknown> } | undefined
   let run = 0
 
   // Ends the running player (if any); the caller clears the status line.
@@ -15,7 +20,7 @@ export const register: Register = (on, options) => {
     run += 1
     const old = current
     current = undefined
-    await old?.return()
+    await old?.return(undefined)
   }
 
   on('session.start', async ($, e, next) => {
@@ -30,7 +35,7 @@ export const register: Register = (on, options) => {
 
   on('session.end', async ($, e, next) => {
     await stop()
-    $.ui.status(undefined)
+    await update($, playing, () => '')
 
     return next(e)
   })
@@ -40,7 +45,7 @@ export const register: Register = (on, options) => {
     if (parsed.kind === 'error') return { text: parsed.text }
     if (parsed.kind === 'stop') {
       await stop()
-      $.ui.status(undefined)
+      await update($, playing, () => '')
 
       return { text: 'Stopped.' }
     }
@@ -65,7 +70,7 @@ export const register: Register = (on, options) => {
       return { text: `Can't start "${player}". Install mpv (and yt-dlp for YouTube).` }
     }
 
-    $.ui.status('♪ connecting…')
+    await update($, playing, () => 'connecting…')
     const stream = $.process.spawn({ argv })
     current = stream
     void (async () => {
@@ -81,7 +86,7 @@ export const register: Register = (on, options) => {
           const track = parseNowPlaying(text)
           if (track && track.title !== lastTitle) {
             lastTitle = track.title
-            $.ui.status(`♪ ${track.title}`)
+            await update($, playing, () => track.title)
           }
         }
       } catch {
@@ -89,12 +94,27 @@ export const register: Register = (on, options) => {
       }
       if (mine !== run) return
       current = undefined
-      $.ui.status(undefined)
+      await update($, playing, () => '')
       if (!lastTitle && lastError) {
         $.ui.toast(`stream failed: ${lastError.slice(0, 200)}`)
       }
     })()
 
     return { text: `Streaming ${parsed.url}. /stream stop to end it.` }
+  })
+
+  // The track, dim, at the right of the prompt footer after the engine's own labels.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const title = await read($, playing)
+    if (!title) return next(e)
+    const shown = title.length > 60 ? `${title.slice(0, 59)}…` : title
+
+    return (
+      <Box flexDirection="row" gap={1}>
+        {await next(e)}
+        <Text dimColor>♪ {shown}</Text>
+      </Box>
+    )
   })
 }
