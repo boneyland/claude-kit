@@ -59,6 +59,8 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'stream' }, async ($, e) => {
+    // A throwing hook is skipped and /stream then says nothing useful: say why.
+    try {
     const parsed = parseArgs(e.args, defaultUrl)
     if (parsed.kind === 'error') return { text: parsed.text }
     if (parsed.kind === 'stop') {
@@ -146,6 +148,9 @@ export const register: Register = (on, options) => {
     })()
 
     return { text: `Streaming ${parsed.url}. Click the footer title or /stream pause to pause, /stream stop to end it.` }
+    } catch (error) {
+      return { text: `stream-radio failed: ${error instanceof Error ? error.message : String(error)}` }
+    }
   })
 
   // The track at the right of the prompt footer after the engine's own labels;
