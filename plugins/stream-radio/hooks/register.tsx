@@ -178,8 +178,10 @@ export const register: Register = (on, options) => {
           <Button
             key="stream-radio"
             label="▶ Play radio"
-            onPress={async () => {
-              await $.command.run({ command: 'stream' }).catch(() => undefined)
+            // Not awaited: the command runs on this same hook worker, which a
+            // handler waiting on it would block.
+            onPress={() => {
+              void $.command.run({ command: 'stream' }).catch(() => undefined)
             }}
           />
         </Box>
