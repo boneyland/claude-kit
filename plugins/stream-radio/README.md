@@ -5,8 +5,11 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 ```
 /stream https://www.youtube.com/watch?v=tRsQsTMvPNg
 /stream            # plays the default stream (Claude FM lofi)
+/stream pause      # pause or resume
 /stream stop
 ```
+
+Clicking the title in the footer pauses and resumes too: `♪` while playing, `⏸` while paused. A paused live stream resumes where it paused, behind the live edge.
 
 The footer reads `♪ <title>` (cut at 60 characters).
 
@@ -14,6 +17,7 @@ The footer reads `♪ <title>` (cut at 60 characters).
 
 - `mpv`
 - `yt-dlp` on the PATH, for YouTube links (mpv calls it)
+- `python3`, to send pause and resume to mpv
 
 ## Now playing
 

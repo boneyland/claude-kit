@@ -5,6 +5,7 @@ declare module 'claude-code' {
   interface PluginState {
     'stream-radio': {
       playing: Playing
+      isPaused: boolean
     }
   }
 }
