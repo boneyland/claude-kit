@@ -149,17 +149,28 @@ The `/compact` estimate needs a measured summary size, so it is missing until a 
 
 Where each plan window (5-hour and weekly) ends if you keep going at the current pace. It works from the plan's own `used %`, the same figure the band shows, not from token counts, so it fits any plan.
 
-- **Readings.** Every session saves a reading each time a window's percentage moves. Readings are shared across sessions and kept per window, so a projection draws on all of your usage, from any project. Usage from claude.ai or the desktop app shows up the next time a Claude Code session reads the limits.
-- **The projection** is `used + pace × time left`. The pace blends two rates:
-  - 60% weight: the **recent pace**, over the last hour of a 5-hour window or the last 24 hours of a week. A reading that hasn't changed since counts as no use since then, so a break brings the projection down.
-  - 40% weight: the **window's average**, the % used divided by the time since the window began. This is the straight line that tools like codeburn use.
-- **When it starts.** Nothing is shown for the first 30 minutes of a 5-hour window, or the first 12 hours of a week. Before the readings span 20 minutes (5-hour) or 6 hours (weekly), the window average is used alone.
+**Readings.** Every session saves a reading each time a window's percentage moves. Readings are shared across sessions and projects. Usage from claude.ai or the desktop app shows up the next time a Claude Code session reads the limits. Between two readings, use is taken to be spread evenly.
+
+**Models.** Four forecasts of where the window ends:
+
+| Model | Forecast | Shown |
+|---|---|---|
+| **Smoothed** | `used + rate × time left`, where the rate is exponentially smoothed: each stretch of the window counts, weighted by `e^(−age/τ)`. τ is 1 hour for the 5-hour window and 1 day for the week, so a break brings it down gradually and an old burst fades. This is simple exponential smoothing of the usage rate. | The 5-hour window, and the week until the profile is ready. |
+| **Straight line** | `used ÷ time elapsed × window length`: the window's run rate. This is what tools like codeburn use. | Scored only. |
+| **Last window** | `used +` what the previous window used from this same point to its end. This is the *seasonal naive* baseline: a model that can't beat it isn't worth having. For the week it needs the week just before. | Scored only. |
+| **Weekly profile** | Learned from finished weeks: points used in each hour of the week, in local time, averaged. The forecast is `used + level × the profile's expected use until the reset`. The **level** is this week's use so far against the profile's (clamped between 0.5× and 2×), so a busier week scales the rest up. It's multiplicative seasonality: Holt–Winters' idea, by hour of week. | The week, once 2 weeks are learned. |
+
+The band's `→` and the heads-up use the *shown* model. Its run-out time is when it reaches 100%: at the smoothed rate, or hour by hour through the profile.
+
+**When it starts.** Nothing is shown for the first 30 minutes of a 5-hour window or the first 12 hours of a week.
 
 ### Is it any good?
 
-`/session_data pace` shows each window's projection next to the straight-line projection, and how both have done so far. At 25%, 50% and 75% of each window, the mod notes what each one predicted. When the window resets, it compares those predictions with where usage really ended (the highest reading of the window) and keeps the last 40 windows. The output shows the average miss in percentage points for each model at each mark, so you can see which one does better for the way you work.
+`/session_data pace` shows each window's forecast from every model, and how each has done. At 25%, 50% and 75% of each window, the mod notes every model's forecast. When the window resets, it compares those forecasts with where usage really ended (the highest reading of the window) and keeps the last 40 windows. Forecasting texts call this rolling-origin evaluation. The score is each model's mean absolute miss in percentage points, at each mark, with the number of windows scored.
 
-A week has to finish before its first score, so give it a few windows. The 5-hour scores come much sooner.
+A week has to finish before its first score, and the profile needs two finished weeks before it's shown. The 5-hour scores come within a day.
+
+Reference: Hyndman & Athanasopoulos, *Forecasting: Principles and Practice* (3rd ed., free online), for exponential smoothing (ch. 8), seasonal naive baselines and evaluation (ch. 5).
 
 ## The compact button
 

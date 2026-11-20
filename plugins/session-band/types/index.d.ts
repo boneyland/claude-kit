@@ -89,13 +89,20 @@ export type Tokens = {
 }
 
 // The pace projection's readings of the plan windows, by kind: each [time ms, % used]
-// with the projections noted at 25/50/75% through; and the heads-up dismissed, `kind:resetsAt`.
+// with each model's forecast noted at 25/50/75% through.
 export type PaceWindow = {
   resetsAt: number
   samples: [number, number][]
-  checks: Partial<Record<'25' | '50' | '75', { blend: number; linear: number }>>
+  checks: Partial<Record<'25' | '50' | '75', Partial<Record<'smooth' | 'linear' | 'snaive' | 'profile', number>>>>
 }
-export type Pace = { windows: Partial<Record<'five_hour' | 'seven_day', PaceWindow>>; dismissed: string }
+// The current and the last finished window by kind; the hour-of-week profile
+// learned from finished weeks; and the heads-up dismissed, `kind:resetsAt`.
+export type Pace = {
+  windows: Partial<Record<'five_hour' | 'seven_day', PaceWindow>>
+  prev: Partial<Record<'five_hour' | 'seven_day', PaceWindow>>
+  profile: { points: number[]; weeks: number } | null
+  dismissed: string
+}
 
 declare module 'claude-code' {
   interface PluginState {

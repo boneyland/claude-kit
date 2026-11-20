@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort, context fill, cache hit rate and token counts, plan-limit pace projection; warns on running out before a reset, cache misses and output-heavy turns; notifies before the cache expires.",
   "author": {
     "name": "johnnyvizz",

@@ -30,11 +30,13 @@ import {
   describeAccuracy,
   HISTORY_KEPT,
   KINDS,
+  learnWeek,
   project,
   runOutWarning,
   type Kind,
   type PaceRecord,
   type PaceWindow,
+  type Profile,
   type Projection,
 } from './pace'
 
@@ -340,20 +342,36 @@ const saveLimits = async ($: EngineInterface, windows: readonly { kind: string; 
 
 // The pace projection's readings, shared by every session through $.store: one
 // window per kind, and the finished windows' scores.
-const pace = atom({ plugin: 'session-band', key: 'pace' } as const, { windows: {}, dismissed: '' } as Pace)
+const pace = atom({ plugin: 'session-band', key: 'pace' } as const, { windows: {}, prev: {}, profile: null, dismissed: '' } as Pace)
 const PACE_KEY = (kind: Kind) => `pace:${kind}`
+const PACE_PREV_KEY = (kind: Kind) => `pace-prev:${kind}`
 const PACE_HISTORY_KEY = 'pace-history'
+const PACE_PROFILE_KEY = 'pace-profile'
+
+const isWindow = (w: unknown): w is PaceWindow => typeof w === 'object' && w !== null && Array.isArray((w as PaceWindow).samples)
+const isProfile = (p: unknown): p is Profile =>
+  typeof p === 'object' && p !== null && Array.isArray((p as Profile).points) && (p as Profile).points.length === 168 && typeof (p as Profile).weeks === 'number'
 
 const isKind = (kind: string): kind is Kind => (KINDS as readonly string[]).includes(kind)
 
 const loadPace = async ($: EngineInterface) => {
   const windows: Pace['windows'] = {}
+  const prev: Pace['prev'] = {}
   for (const kind of KINDS) {
-    const w = (await $.store.get(PACE_KEY(kind))) as PaceWindow | undefined
-    if (w !== undefined && Array.isArray(w.samples)) windows[kind] = w
+    const w = await $.store.get(PACE_KEY(kind))
+    if (isWindow(w)) windows[kind] = w
+    const old = await $.store.get(PACE_PREV_KEY(kind))
+    if (isWindow(old)) prev[kind] = old
   }
-  await update($, pace, p => ({ ...p, windows }))
+  const profile = await $.store.get(PACE_PROFILE_KEY)
+  await update($, pace, p => ({ ...p, windows, prev, profile: isProfile(profile) ? profile : null }))
 }
+
+const contextOfPace = (p: Pace, kind: Kind, now: number) => ({
+  prev: p.prev?.[kind] ?? null,
+  profile: p.profile ?? null,
+  offsetMinutes: localOffset(now),
+})
 
 // A live reading of each window: added to the shared record (re-read first, as
 // another session may have written it), the projection noted at its marks, and a
@@ -364,17 +382,28 @@ const recordPace = async ($: EngineInterface, list: readonly Limit[]) => {
     if (!isKind(l.kind) || l.resetsAt === null) continue
     const resetsAt = Date.parse(l.resetsAt)
     if (Number.isNaN(resetsAt)) continue
-    const kept = ((await $.store.get(PACE_KEY(l.kind))) as PaceWindow | undefined) ?? null
+    const stored = await $.store.get(PACE_KEY(l.kind))
+    const kept = isWindow(stored) ? stored : null
     const added = addSample(kept, l.kind, resetsAt, now, l.percentUsed)
-    const window = checkpoint(added.window, project(l.kind, added.window, now))
-    if (added.isChanged || window !== added.window) await $.store.set(PACE_KEY(l.kind), window)
-    if (added.finished !== null) {
+
+    // A window that reset: scored, kept as the last window, and a finished week learned.
+    if (added.finished !== null && kept !== null) {
       const history = ((await $.store.get(PACE_HISTORY_KEY)) as PaceRecord[] | undefined) ?? []
       const done = added.finished
       if (!history.some(r => r.kind === done.kind && r.resetsAt === done.resetsAt)) {
         await $.store.set(PACE_HISTORY_KEY, [...history, done].slice(-HISTORY_KEPT))
+        await $.store.set(PACE_PREV_KEY(l.kind), kept)
+        if (l.kind === 'seven_day') {
+          const profile = await $.store.get(PACE_PROFILE_KEY)
+          await $.store.set(PACE_PROFILE_KEY, learnWeek(isProfile(profile) ? profile : null, kept, localOffset(now)))
+        }
       }
+      await loadPace($)
     }
+
+    const ctx = contextOfPace(await read($, pace), l.kind, now)
+    const window = checkpoint(added.window, project(l.kind, added.window, now, ctx))
+    if (added.isChanged || window !== added.window) await $.store.set(PACE_KEY(l.kind), window)
     await update($, pace, p => ({ ...p, windows: { ...p.windows, [l.kind]: window } }))
   }
 }
@@ -383,7 +412,7 @@ const recordPace = async ($: EngineInterface, list: readonly Limit[]) => {
 const localOffset = (t: number) => -new Date(t).getTimezoneOffset()
 
 const projectionsAt = (p: Pace, now: number) =>
-  Object.fromEntries(KINDS.map(kind => [kind, project(kind, p.windows[kind] ?? null, now)])) as Record<Kind, Projection | null>
+  Object.fromEntries(KINDS.map(kind => [kind, project(kind, p.windows[kind] ?? null, now, contextOfPace(p, kind, now))])) as Record<Kind, Projection | null>
 
 const PACE_WARN = 90
 
