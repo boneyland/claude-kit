@@ -24,14 +24,14 @@
       "type": "string",
       "title": "Open the agents panel",
       "description": "savvy: when a savvy-flow worker starts or a plan is reported; any: also when any other subagent starts",
-      "default": "savvy",
+      "default": "any",
       "options": [
         "savvy",
         "any"
       ]
     }
   },
-  "homepage": "https://github.com/johnnyvizz/claude-kit/tree/main/plugins/savvy-progress",
-  "repository": "https://github.com/johnnyvizz/claude-kit",
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/session-band",
+  "repository": "https://github.com/boneyland/claude-kit",
   "license": "MIT"
 }

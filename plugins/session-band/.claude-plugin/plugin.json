@@ -22,7 +22,8 @@
     "background": {
       "type": "string",
       "title": "Band background",
-      "description": "A color behind the band, to set it apart from the terminal: hex (#1e2430), a color name (blue) or a theme key (subtle). Empty keeps the terminal's background.",
+      "description": "A color behind the band, to set it apart from the terminal: hex (#1e2430), a color name (blue), a theme key (subtle) or userMessageBackground. Empty keeps the terminal's background.",
+      "options": ["", "userMessageBackground"],
       "default": ""
     },
     "terminalIcons": {
