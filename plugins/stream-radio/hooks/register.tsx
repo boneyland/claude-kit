@@ -80,47 +80,52 @@ export const register: Register = (on, options) => {
       return { text: 'Toggled pause.' }
     }
 
-    $.ui.log('stream-radio: starting')
-    await stop()
+    // Answer at once: the first start after a reload is slow, and a hook that
+    // takes too long is reported as unanswered. The startup runs in the background.
+    const old = current
+    current = undefined
+    control = undefined
+    run += 1
     const mine = run
-
-    try {
-      await $.process.run([player, '--version'], { timeoutMs: 5000 })
-    } catch {
-      return { text: `Can't start "${player}". Install mpv (and yt-dlp for YouTube).` }
-    }
-    $.ui.log('stream-radio: player found')
-
-    // mpv's IPC socket, in the plugin's data folder; pause and resume go through it.
-    const dir = (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA
-    $.ui.log(`stream-radio: data folder ${dir}`)
-    const pipe = `${dir}/mpv-${mine}.sock`
-    await $.process.run(['rm', '-f', pipe])
-    $.ui.log('stream-radio: spawning')
-    control = pipe
-
-    const argv = [
-      player,
-      '--no-video',
-      '--no-input-terminal',
-      `--input-ipc-server=${pipe}`,
-      '--ytdl-format=bestaudio/best',
-      `--volume=${Math.round(volume)}`,
-      '--msg-level=all=error,statusline=status',
-      `--term-status-msg=${STATUS_FORMAT}`,
-      '--',
-      parsed.url,
-    ]
-
-    await update($, isPaused, () => false)
-    await update($, playing, () => 'connecting…')
-    const stream = $.process.spawn({ argv })
-    current = stream
     void (async () => {
       let lastError = ''
       let lastTitle = ''
       let lastPaused = false
+      let pipe = ''
       try {
+        await old?.return(undefined)
+        await update($, isPaused, () => false)
+        await update($, playing, () => 'connecting…')
+
+        try {
+          await $.process.run([player, '--version'], { timeoutMs: 5000 })
+        } catch {
+          await update($, playing, () => '')
+          $.ui.toast(`Can't start "${player}". Install mpv (and yt-dlp for YouTube).`)
+          return
+        }
+
+        // mpv's IPC socket, in the plugin's data folder; pause and resume go through it.
+        const dir = (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA
+        pipe = `${dir}/mpv-${mine}.sock`
+        await $.process.run(['rm', '-f', pipe])
+        if (mine !== run) return
+        control = pipe
+
+        const argv = [
+          player,
+          '--no-video',
+          '--no-input-terminal',
+          `--input-ipc-server=${pipe}`,
+          '--ytdl-format=bestaudio/best',
+          `--volume=${Math.round(volume)}`,
+          '--msg-level=all=error,statusline=status',
+          `--term-status-msg=${STATUS_FORMAT}`,
+          '--',
+          parsed.url,
+        ]
+        const stream = $.process.spawn({ argv })
+        current = stream
         for await (const { stream: from, text } of stream) {
           if (mine !== run) return
           if (from === 'stderr') {
@@ -137,10 +142,11 @@ export const register: Register = (on, options) => {
             await update($, isPaused, () => track.isPaused)
           }
         }
-      } catch {
+      } catch (error) {
         // a child that cannot start or was killed ends the loop; reported below
+        lastError ||= error instanceof Error ? error.message : String(error)
       } finally {
-        await $.process.run(['rm', '-f', pipe]).catch(() => undefined)
+        if (pipe) await $.process.run(['rm', '-f', pipe]).catch(() => undefined)
       }
       if (mine !== run) return
       current = undefined
@@ -151,7 +157,7 @@ export const register: Register = (on, options) => {
       }
     })()
 
-    return { text: `Streaming ${parsed.url}. Click the footer title or /stream pause to pause, /stream stop to end it.` }
+    return { text: `Starting ${parsed.url}. Click the footer title or /stream pause to pause, /stream stop to end it.` }
     } catch (error) {
       return { text: `stream-radio failed: ${error instanceof Error ? error.message : String(error)}` }
     }
