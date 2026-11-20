@@ -64,7 +64,7 @@ With 10 and then 5 minutes left, while idle, you get a system notification: `Pro
 
 A second row under the band, **only while idle**, when carrying the long context costs more than starting over. There are two kinds; at most one shows at a time.
 
-Both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 20k tokens.
+Both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
 
 ### Cache expired
 
@@ -74,7 +74,7 @@ Shown once the cache has lapsed, when starting over would save at least $0.10. I
 
 ### Overhead
 
-> `Old context ≈ $0.26/turn (130k × 10 req median, 12 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns`
+> `Old context ≈ $0.42/turn (130k × 16 req median, 18 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns`
 
 Shown while the cache is still warm. Even with caching, every request in a turn re-reads the whole context, so the old context has a steady cost each turn:
 
@@ -89,20 +89,20 @@ The row appears only when **all** of these hold:
 1. No turn is running, and the cache hasn't expired.
 2. Prices are known: the model is in the price table, or its price scale has been measured (see [How costs are measured](#how-costs-are-measured)).
 3. The baseline is known.
-4. The **old context** is at least 20k tokens: that's the **context minus what a new session would start with**.
+4. The **old context** is at least 60k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
-6. The overhead is **$0.20 a turn or more**.
+6. The overhead is **$0.40 a turn or more**.
 7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
 
 So the trigger is a cost, not a context size. The context size it takes depends on the model's cache-read price and on how many requests your turns make:
 
 | Median requests per turn | Opus 5.5, Fable 5.2 ($0.20/M) | Sonnet 5.5 ($0.10/M) |
 |---|---|---|
-| 1 | ~1M (effectively never) | ~2M (never) |
-| 3 | ~333k | ~667k |
-| 5 | ~200k | ~400k |
-| 10 | ~100k | ~200k |
-| 20 | ~50k | ~100k |
+| 1 | ~2M (never) | ~4M (never) |
+| 5 | ~400k | ~800k |
+| 10 | ~200k | ~400k |
+| 16 | ~125k | ~250k |
+| 20 | ~100k | ~200k |
 
 These are old-context sizes, before the price scale is applied. Short question-and-answer turns rarely show it; long tool-heavy turns show it sooner.
 

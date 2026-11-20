@@ -9,7 +9,7 @@ const OPUS = {
   context: 150_000,
   baseline: 20_000,
   scale: null,
-  recentSteps: [10, 10, 10],
+  recentSteps: [16, 16, 16],
   summary: null,
 }
 
@@ -25,12 +25,14 @@ test('an expired cache prices re-caching the context against a fresh session', a
   expect(expiredWarning(OPUS)?.text).toBe('Cache expired: next message re-caches 150k ≈ $1.20 · new session ≈ $0.16')
   // Little carried: nothing to say.
   expect(expiredWarning({ ...OPUS, context: 30_000 })).toBe(null)
+  // 50k above the baseline is still early in a session.
+  expect(expiredWarning({ ...OPUS, context: 70_000 })).toBe(null)
 })
 
 test('the overhead names its cost a turn and when starting over pays back', async () => {
-  expect(overheadWarning(OPUS)?.text).toBe('Old context ≈ $0.26/turn (130k × 10 req median, 10 mean) · new session pays back in 1 turn')
+  expect(overheadWarning(OPUS)?.text).toBe('Old context ≈ $0.42/turn (130k × 16 req median, 16 mean) · new session pays back in 1 turn')
   expect(overheadWarning({ ...OPUS, summary: 10_000 })?.text).toBe(
-    'Old context ≈ $0.26/turn (130k × 10 req median, 10 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns',
+    'Old context ≈ $0.42/turn (130k × 16 req median, 16 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns',
   )
   expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
 })
@@ -38,8 +40,8 @@ test('the overhead names its cost a turn and when starting over pays back', asyn
 test('the overhead waits for three turns and prices one at their median', async () => {
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 10] })).toBe(null)
   // One long run moves the mean, not the price.
-  expect(overheadWarning({ ...OPUS, recentSteps: [77, 8, 10] })?.text).toBe(
-    'Old context ≈ $0.26/turn (130k × 10 req median, 32 mean) · new session pays back in 1 turn',
+  expect(overheadWarning({ ...OPUS, recentSteps: [77, 16, 20] })?.text).toBe(
+    'Old context ≈ $0.52/turn (130k × 20 req median, 38 mean) · new session pays back in 1 turn',
   )
 })
 
@@ -123,7 +125,7 @@ const seedBand = (on: On, extra: Record<string, unknown>) => {
 test('the band shows the overhead warning while idle and the cache is warm', async ($, on) => {
   seedBand(on, {})
   const ui = await $.ui.mount(BAND())
-  expect((await ui.find({ type: 'Text', text: /^Old context/ }))?.text).toMatch(/\$0\.26\/turn/)
+  expect((await ui.find({ type: 'Text', text: /^Old context/ }))?.text).toMatch(/\$0\.42\/turn/)
   expect(await ui.find({ type: 'Button', key: 'dismiss-spend' })).not.toBe(undefined)
   expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.label).toBe('compact, keep 3')
   await ui.unmount()

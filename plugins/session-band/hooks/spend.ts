@@ -73,11 +73,11 @@ export type SpendInputs = {
 }
 
 // Below this much carried context, nothing is worth saying.
-const MIN_OLD_TOKENS = 20_000
+const MIN_OLD_TOKENS = 60_000
 // The expired cache: shown when starting over saves at least this much.
 const EXPIRED_MIN_SAVING = 0.1
 // The steady overhead: shown when the old context costs this much a turn.
-export const OVERHEAD_MIN_USD = 0.2
+export const OVERHEAD_MIN_USD = 0.4
 // Turns seen before the overhead is priced: one turn says little about the next.
 export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
