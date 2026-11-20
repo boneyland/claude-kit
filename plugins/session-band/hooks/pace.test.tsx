@@ -56,7 +56,7 @@ test('a busy last day weighs more in the smoothed pace, and names when it runs o
   expect(Math.round(p.models.linear!)).toBe(70)
   expect(p.ratePerHour.toFixed(2)).toBe('0.82')
   expect(when(p.runOutAt!, NOW, 0)).toBe('Mon 23:39')
-  expect(runOutWarning(p, NOW, 0)?.text).toBe("Heads up: at this pace you'll hit the weekly limit Mon 23:39, 10h before it resets")
+  expect(runOutWarning(p, NOW, 0)?.text).toBe('Heads up: weekly limit runs out Mon 23:39, 10h before reset')
 })
 
 test('idle since the last reading slows the smoothed pace', () => {
@@ -71,7 +71,7 @@ test('too early in a window says nothing; the 5-hour window too', () => {
   const five: PaceWindow = { resetsAt: NOW + 3 * H, samples: [[NOW - H, 15], [NOW, 40]], checks: {} }
   const p = project('five_hour', five, NOW, NONE)!
   expect(Math.round(p.projected)).toBe(107)
-  expect(runOutWarning(p, NOW, 0)?.text).toBe("Heads up: at this pace you'll hit the 5-hour limit 12:41, 19m before it resets")
+  expect(runOutWarning(p, NOW, 0)?.text).toBe('Heads up: 5-hour limit runs out 12:41, 19m before reset')
 })
 
 // Weeks from Sunday 00:00 UTC; 2026-11-15 is a Sunday.
@@ -189,6 +189,32 @@ test('the band shows each window\'s projection and a heads-up that can be dismis
   // The projection stays beside the limit.
   expect(await again.find({ type: 'Text', text: '→100%+' })).toBeTruthy()
   await again.unmount()
+})
+
+test('a turn warning comes before the heads-up, both side by side when wide', async ($, on) => {
+  const busy = week([[NOW - D - H, 0], [NOW, 30]])
+  const state: Record<string, unknown> = {
+    stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38 },
+    cache: { expiresAt: NOW + 50 * 60_000, secondsLeft: 3000 },
+    isHidden: false,
+    limits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: new Date(NOW + 4 * D).toISOString() }],
+    pace: { windows: { seven_day: busy }, prev: {}, profile: null, dismissed: '' },
+    tokens: { input: 1000, output: 34_000, turn: {}, last: { uncached: 0, read: 0, write: 0, output: 34_000, missed: 0 }, prevContext: null, prevModel: null, cause: null, lastCause: null, dismissedTurn: -1 },
+  }
+  let version = 1
+  on('state.get', (_, e) => ({ value: { value: state[e.key], version } }))
+  on('state.set', (_, e) => ((state[e.key] = e.value), { value: { isSet: true, version: ++version } }))
+  on('clock.now', () => ({ value: NOW }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+
+  const wide = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 200 } })
+  expect(await wide.find({ type: 'Text', text: /^Output-heavy/ })).toBeTruthy()
+  expect(await wide.find({ type: 'Text', text: /^Heads up/ })).toBeTruthy()
+  await wide.unmount()
+  const narrow = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 100 } })
+  expect(await narrow.find({ type: 'Text', text: /^Output-heavy/ })).toBeTruthy()
+  expect(await narrow.find({ type: 'Text', text: /^Heads up/ })).toBe(undefined)
+  await narrow.unmount()
 })
 
 test('live readings are saved for every session, and a reset scores the window', async ($, on: On) => {

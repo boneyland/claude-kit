@@ -63,7 +63,7 @@ With 10 and then 5 minutes left, while idle, you get a system notification: `Pro
 
 ## Spend warnings
 
-A second row under the band, **only while idle**, when something costs more than it should. At most one shows at a time, in this order: cache expired, [cache miss](#cache-miss), overhead, [output-heavy turn](#output-heavy-turn).
+A second row under the band, **only while idle**, when something costs more than it should. They are ranked in this order: cache expired, [cache miss](#cache-miss), [output-heavy turn](#output-heavy-turn), [running out before the reset](#running-out-before-the-reset), overhead. The row shows the top one, and the next one beside it, after a dim `│`, when both fit the window's width. Each has its own `×`; the cache miss and output-heavy warnings share one.
 
 Cache expired and overhead are about carrying a long context, and both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
 
@@ -75,9 +75,9 @@ Shown once the cache has lapsed, when starting over would save at least $0.10. I
 
 ### Running out before the reset
 
-> `Heads up: at this pace you'll hit the weekly limit Mon 14:21, 20h before it resets`
+> `Heads up: weekly limit runs out Mon 14:21, 20h before reset`
 
-Shown when the [pace projection](#pace-projection) of the 5-hour or weekly window reaches 100% before it resets. When both do, the one that runs out first is shown. `×` hides it for the rest of that window. Unlike the other warnings, it also shows after the cache has expired, unless the expired-cache warning applies.
+Shown when the [pace projection](#pace-projection) of the 5-hour or weekly window reaches 100% before it resets. When both do, the one that runs out first is shown. `×` hides it for the rest of that window. Unlike the other warnings, it also shows after the cache has expired, beside or instead of the expired-cache warning.
 
 ### Cache miss
 

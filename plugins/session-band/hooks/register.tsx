@@ -1042,19 +1042,33 @@ export const register: Register = (on, options) => {
     const rate = tk.last === null ? null : hitRate(tk.last)
 
     // Shown while idle, when the next message is still the person's to decide: an
-    // expired cache first, then running out of a plan window, then what the last
-    // turn did, then the steady overhead.
+    // expired cache first, then what the last turn did, then running out of a plan
+    // window, then the steady overhead. Two side by side when both fit.
     const isTurnDismissed = tk.dismissedTurn === s.turn
     const missWarning = cacheMissWarning(spendInputs(sp), tk.last, tk.lastCause)
     const isOverheadDismissed = sp.dismissedAt !== null && (sp.context ?? 0) < sp.dismissedAt + DISMISS_GROWTH
-    const warning: SpendWarning | { kind: 'pace'; text: string } | null = e.props.isWorking
-      ? null
+    type Warning = SpendWarning | { kind: 'pace'; text: string }
+    const ranked: (Warning | null)[] = e.props.isWorking
+      ? []
       : secondsLeft === 0
-        ? (expiredWarning(spendInputs(sp)) ?? paceWarning)
-        : (paceWarning ??
-          (isTurnDismissed ? null : missWarning) ??
-          (isOverheadDismissed ? null : overheadWarning(spendInputs(sp))) ??
-          (isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last)))
+        ? [expiredWarning(spendInputs(sp)), paceWarning]
+        : [
+            isTurnDismissed ? null : missWarning,
+            isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last),
+            paceWarning,
+            isOverheadDismissed ? null : overheadWarning(spendInputs(sp)),
+          ]
+    const candidates = ranked.filter((w): w is Warning => w !== null)
+    // A warning's width: its text, its buttons with their gaps.
+    const compactLabel = `compact, keep ${keepTurns}`
+    const widthOf = (w: Warning) => w.text.length + 2 + (w.kind === 'overhead' ? compactLabel.length + 5 : 0)
+    // Padding and the frame's sides; the separator between two.
+    const room = e.props.bodyColumns - 4
+    const warnings =
+      candidates.length >= 2 && widthOf(candidates[0]!) + 3 + widthOf(candidates[1]!) <= room
+        ? candidates.slice(0, 2)
+        : candidates.slice(0, 1)
+    const warning = warnings[0] ?? null
     const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
     const framed = level !== null && e.props.maxRows >= (warning === null ? 3 : 4)
@@ -1171,48 +1185,62 @@ export const register: Register = (on, options) => {
         {row}
         {warning !== null ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap" overflow="hidden">
-            <Text color={WARN} wrap="truncate-end">{warning.text}</Text>
-            <Box flexGrow={1} flexShrink={1} />
-            {warning.kind === 'overhead' ? (
-              <Button
-                key="compact"
-                label={`compact, keep ${keepTurns}`}
-                onPress={async () => {
-                  const result = await compactKeepingTail($, keepTurns)
-                  if (result.messages === undefined) $.ui.toast(`Not compacted: ${result.skip}`)
-                }}
-              />
-            ) : null}
-            {warning.kind === 'overhead' ? (
-              <Button
-                key="dismiss-spend"
-                label="×"
-                role="dismiss"
-                plain
-                dimColor
-                onPress={() => update($, spend, s => ({ ...s, dismissedAt: s.context }))}
-              />
-            ) : null}
-            {warning.kind === 'pace' && runOut !== undefined ? (
-              <Button
-                key="dismiss-pace"
-                label="×"
-                role="dismiss"
-                plain
-                dimColor
-                onPress={() => update($, pace, p => ({ ...p, dismissed: `${runOut.kind}:${runOut.resetsAt}` }))}
-              />
-            ) : null}
-            {warning.kind === 'cache-miss' || warning.kind === 'output' ? (
-              <Button
-                key="dismiss-turn"
-                label="×"
-                role="dismiss"
-                plain
-                dimColor
-                onPress={() => update($, tokens, t => ({ ...t, dismissedTurn: s.turn }))}
-              />
-            ) : null}
+            {warnings.flatMap((w, i) => {
+              const isLast = i === warnings.length - 1
+              // Both turn warnings go with one dismissal: one ×, on the later.
+              const hasTurnDismiss =
+                (w.kind === 'cache-miss' || w.kind === 'output') &&
+                !warnings.slice(i + 1).some(o => o.kind === 'cache-miss' || o.kind === 'output')
+              return [
+                ...(i > 0 ? [<Text key={`sep-${w.kind}`} dimColor>│</Text>] : []),
+                <Text key={`warn-${w.kind}`} color={WARN} wrap="truncate-end">{w.text}</Text>,
+                ...(isLast ? [<Box key="spacer" flexGrow={1} flexShrink={1} />] : []),
+                ...(w.kind === 'overhead'
+                  ? [
+                      <Button
+                        key="compact"
+                        label={compactLabel}
+                        onPress={async () => {
+                          const result = await compactKeepingTail($, keepTurns)
+                          if (result.messages === undefined) $.ui.toast(`Not compacted: ${result.skip}`)
+                        }}
+                      />,
+                      <Button
+                        key="dismiss-spend"
+                        label="×"
+                        role="dismiss"
+                        plain
+                        dimColor
+                        onPress={() => update($, spend, s => ({ ...s, dismissedAt: s.context }))}
+                      />,
+                    ]
+                  : []),
+                ...(w.kind === 'pace' && runOut !== undefined
+                  ? [
+                      <Button
+                        key="dismiss-pace"
+                        label="×"
+                        role="dismiss"
+                        plain
+                        dimColor
+                        onPress={() => update($, pace, p => ({ ...p, dismissed: `${runOut.kind}:${runOut.resetsAt}` }))}
+                      />,
+                    ]
+                  : []),
+                ...(hasTurnDismiss
+                  ? [
+                      <Button
+                        key="dismiss-turn"
+                        label="×"
+                        role="dismiss"
+                        plain
+                        dimColor
+                        onPress={() => update($, tokens, t => ({ ...t, dismissedTurn: s.turn }))}
+                      />,
+                    ]
+                  : []),
+              ]
+            })}
           </Box>
         ) : null}
       </Box>

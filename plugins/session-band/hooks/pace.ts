@@ -296,7 +296,7 @@ export const runOutWarning = (p: Projection | null, now: number, offsetMinutes: 
     text:
       p.used >= 100
         ? `The ${LABEL[p.kind]} limit is used up until ${when(p.resetsAt, now, offsetMinutes)}`
-        : `Heads up: at this pace you'll hit the ${LABEL[p.kind]} limit ${when(p.runOutAt, now, offsetMinutes)}, ${span(p.resetsAt - p.runOutAt)} before it resets`,
+        : `Heads up: ${LABEL[p.kind]} limit runs out ${when(p.runOutAt, now, offsetMinutes)}, ${span(p.resetsAt - p.runOutAt)} before reset`,
   }
 }
 
