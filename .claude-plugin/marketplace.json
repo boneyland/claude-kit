@@ -30,6 +30,13 @@
       "description": "Mod: pane listing this session's prompts; click one to jump there, filter and step through matches, see which are on screen. /prompts or the footer button toggles it. Slash commands Claude didn't answer (/plugin, /exit) are left out.",
       "version": "0.2.0",
       "category": "mod"
+    },
+    {
+      "name": "stream-radio",
+      "source": "./plugins/stream-radio",
+      "description": "Mod: /stream <url> plays a YouTube stream's audio through mpv and shows what is playing in the status line.",
+      "version": "0.1.0",
+      "category": "mod"
     }
   ]
 }

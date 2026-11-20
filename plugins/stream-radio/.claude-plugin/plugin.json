@@ -1,0 +1,34 @@
+{
+  "name": "stream-radio",
+  "version": "0.1.0",
+  "description": "Play any YouTube (or other mpv-supported) stream's audio from Claude Code with /stream <url>, and show what is playing in the status line.",
+  "author": {
+    "name": "johnnyvizz",
+    "url": "https://github.com/johnnyvizz"
+  },
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/stream-radio",
+  "repository": "https://github.com/boneyland/claude-kit",
+  "license": "MIT",
+  "userConfig": {
+    "defaultUrl": {
+      "type": "string",
+      "title": "Default stream",
+      "description": "What a bare /stream plays. Empty: /stream needs a URL.",
+      "default": "https://www.youtube.com/watch?v=tRsQsTMvPNg"
+    },
+    "volume": {
+      "type": "number",
+      "title": "Volume",
+      "description": "Player volume, 0 to 100.",
+      "default": 60,
+      "min": 0,
+      "max": 100
+    },
+    "player": {
+      "type": "string",
+      "title": "Player command",
+      "description": "The mpv executable. YouTube also needs yt-dlp on the PATH.",
+      "default": "mpv"
+    }
+  }
+}
