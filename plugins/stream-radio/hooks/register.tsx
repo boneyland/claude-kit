@@ -20,6 +20,9 @@ const TOGGLE_PAUSE = '{"command":["cycle","pause"]}'
 type Options = { defaultUrl?: string; volume?: number; player?: string }
 type Config = { volume: number; player: string }
 
+// URLs that only played with the android client; they start with it directly.
+const needsAndroid = new Set<string>()
+
 // The running player's stream: ending its loop kills the child.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let current: { return: (value: any) => Promise<unknown> } | undefined
@@ -44,8 +47,11 @@ function send(json: string): string[] {
 // Starts playing `url`. Returns at once: the first start after a reload is slow,
 // and a hook that takes too long is reported as unanswered, so the startup runs
 // in the background.
-function start($: EngineInterface, config: Config, url: string) {
+function start($: EngineInterface, config: Config, url: string, retryClient?: string) {
   const { player, volume } = config
+  // YouTube refuses the default client's stream URLs for some content (403);
+  // the android client gets through, with muxed AAC and no audio-only Opus.
+  const client = retryClient ?? (needsAndroid.has(url) ? 'android' : undefined)
   const old = current
   current = undefined
   control = undefined
@@ -89,6 +95,9 @@ function start($: EngineInterface, config: Config, url: string) {
         '--keep-open=no',
         `--input-ipc-server=${pipe}`,
         '--ytdl-format=bestaudio/best',
+        ...(client
+          ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`]
+          : []),
         `--volume=${Math.round(volume)}`,
         '--msg-level=all=error,statusline=status',
         `--term-status-msg=${STATUS_FORMAT}`,
@@ -110,7 +119,10 @@ function start($: EngineInterface, config: Config, url: string) {
         const track = parseNowPlaying(complete)
         if (track && track.title !== lastTitle) {
           // The first title means it really plays: remember it for the button.
-          if (!lastTitle) await update($, lastUrl, () => url)
+          if (!lastTitle) {
+            await update($, lastUrl, () => url)
+            if (client) needsAndroid.add(url)
+          }
           lastTitle = track.title
           await update($, playing, () => track.title)
         }
@@ -134,6 +146,13 @@ function start($: EngineInterface, config: Config, url: string) {
     current = undefined
     control = undefined
     await update($, playing, () => '')
+    if (!lastTitle && !client) {
+      // Nothing played with the default client: try once with android.
+      $.ui.log(`stream-radio: ${url} would not play; retrying with the android client`)
+      start($, config, url, 'android')
+
+      return
+    }
     if (!lastTitle) {
       // Nothing ever played: say so where it stays (a toast alone is easy to miss).
       const why = lastError
