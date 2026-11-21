@@ -173,11 +173,12 @@ export const register: Register = (on, options) => {
       }
       if (parsed.kind === 'toggle') {
         if (!control) return { text: 'Nothing is playing.' }
+        const target = !(await read($, isPaused))
         const sent = await $.process
           .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
           .catch(() => undefined)
         if (sent?.exitCode !== 0) return { text: 'The player is not ready yet.' }
-        await update($, isPaused, paused => !paused)
+        await update($, isPaused, () => target)
 
         return { text: 'Toggled pause.' }
       }
@@ -229,11 +230,15 @@ export const register: Register = (on, options) => {
           label={`${icon} ${shown}`}
           onPress={async () => {
             if (!control) return
+            // Decide the new state before sending, and write that value, not a
+            // flip: mpv's own status line reports the change while the send is
+            // still running, and a late flip would undo it.
+            const target = !(await read($, isPaused))
             const sent = await $.process
               .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
               .catch(() => undefined)
             // Not listening yet (still connecting): leave the state alone.
-            if (sent?.exitCode === 0) await update($, isPaused, was => !was)
+            if (sent?.exitCode === 0) await update($, isPaused, () => target)
           }}
         />
       </Box>
