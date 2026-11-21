@@ -63,3 +63,49 @@ test('a YouTube URL does not get the folder filter', async ($, on) => {
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
+
+test('the panel marks a subfolder in a local playlist', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = { release: () => undefined as void }
+  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('fs.exists', () => ({ value: true }) as never)
+  on('fs.stat', (_$, e) => ({ value: { kind: e.path.endsWith('Live') ? 'dir' : 'file', size: 0, mtimeMs: 0 } }) as never)
+  on('process.run', (_$, e) => {
+    const argv = [...e.argv]
+    const command = argv[0] === 'python3' ? (JSON.parse(argv[5]!) as unknown[]) : []
+    const data =
+      command[1] === 'playlist'
+        ? [
+            { filename: '/m/Album/01 Intro.flac', title: 'Intro', current: true },
+            { filename: '/m/Album/02 Song.flac' },
+            { filename: '/m/Album/Live' },
+          ]
+        : null
+    return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
+  })
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout', text: 'NP\tIntro\t\t\tno\t3\t\tEND' } as never
+    await new Promise<void>(resolve => (world.release = resolve))
+    return { value: { code: 0, signal: null } } as never
+  })
+
+  await $.command.run({ command: 'stream', args: '/m/Album' } as never)
+  await clock.advance(10)
+  const pane = await $.ui.mount({
+    plugin: 'stream-radio',
+    component: 'Pane',
+    requestId: 'stream-radio',
+    surface: 'terminal',
+    props: { title: 'Radio', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as const)
+  expect((await pane.find({ type: 'Button', key: 'item-0' }))?.props.label).toBe('▶ 1. Intro')
+  expect((await pane.find({ type: 'Button', key: 'item-1' }))?.props.label).toBe('  2. 02 Song.flac')
+  expect((await pane.find({ type: 'Button', key: 'item-2' }))?.props.label).toBe('  3. 📁 Live/')
+  expect((await pane.find({ type: 'Input', key: 'url' }))?.props.submitLabel).toBe('Enter to play')
+  await pane.unmount()
+
+  world.release()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})

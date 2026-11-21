@@ -158,6 +158,28 @@ async function mpv($: EngineInterface, command: readonly unknown[]): Promise<{ d
   }
 }
 
+// Local paths already found to be folders or not; a path's kind does not change
+// while it plays, and the list is read again at each song.
+const isFolder = new Map<string, boolean>()
+
+// A playlist entry as the panel lists it: its title, else its file name; a
+// local folder (one mpv opens only when it gets there) as `📁 Name/`.
+async function entryName($: EngineInterface, e: { filename?: string; title?: string }): Promise<string> {
+  if (e.title) return e.title
+  if (!e.filename) return '?'
+  const name = baseName(e.filename)
+  if (!e.filename.startsWith('/')) return name
+  let folder = isFolder.get(e.filename)
+  if (folder === undefined) {
+    folder = await $.fs
+      .stat(e.filename)
+      .then(st => st.kind === 'dir')
+      .catch(() => false)
+    isFolder.set(e.filename, folder)
+  }
+  return folder ? `📁 ${name}/` : name
+}
+
 // What the panel lists: the playlist's entries, else the file's chapters (a
 // video of several songs), else nothing to pick from.
 async function refreshQueue($: EngineInterface) {
@@ -167,7 +189,7 @@ async function refreshQueue($: EngineInterface) {
     const entries = list as { filename?: string; title?: string; current?: boolean }[]
     next = {
       kind: 'playlist',
-      items: entries.map(e => e.title || (e.filename ? baseName(e.filename) : '?')),
+      items: await Promise.all(entries.map(e => entryName($, e))),
       current: entries.findIndex(e => e.current),
     }
   } else {
@@ -641,7 +663,7 @@ export const register: Register = (on, options) => {
         <Input
           key="url"
           placeholder="URL, or a file or folder path"
-          submitLabel="play"
+          submitLabel="Enter to play"
           onSubmit={(value: string) => {
             return act(async () => {
               const parsed = await locate($, value.trim(), '')
