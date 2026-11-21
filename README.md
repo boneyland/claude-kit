@@ -6,10 +6,11 @@ My public skills and mods for [Claude Code](https://claude.com/claude-code), in 
 | --- | --- | --- |
 | [savvy-flow](plugins/savvy-flow) | skill + agents | `/savvy-flow <task>`: the session model plans, delegates to tiered worker subagents and reviews their work. |
 | [savvy-progress](plugins/savvy-progress) | mod | A progress bar above the prompt and a live agents panel. Made for savvy-flow, shows any subagents. |
-| [session-band](plugins/session-band) | mod | A band above the prompt: turn, speed, cost, prompt cache countdown, git branch, model and context; warns when a long context costs more than starting over, and notifies before the cache expires. |
-| [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv and shows what is playing at the right of the prompt footer. |
+| [session-band](plugins/session-band) | mod | A band above the prompt: turn, speed, cost, prompt cache countdown, plan-limit pace, git branch, context, cache hit rate and tokens, with the model and effort on a second row. Warns on spend (cache misses, output-heavy turns, a long context costing more than starting over, running out before a reset), offers a compact-keeping-recent-turns button, and notifies before the cache expires. |
+| [prompt-index](plugins/prompt-index) | mod | A pane listing the session's prompts: click one to jump there, filter, step through matches, see which are on screen. `/prompts` or the footer button toggles it. |
+| [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv. A footer button shows the song and its progress and opens a menu (pause, stop, play last or default, type a URL); it retries with yt-dlp's android client when YouTube refuses. |
 
-savvy-flow and savvy-progress work on their own and light up together: with both installed, the flow drives the bar and workers report their progress to the panel.
+savvy-flow and savvy-progress work on their own and light up together: with both installed, the flow drives the bar and workers report their progress to the panel. The other mods are independent of each other.
 
 ## Install
 
@@ -21,11 +22,14 @@ In Claude Code:
 /plugin marketplace add boneyland/claude-kit
 /plugin install savvy-flow@claude-kit
 /plugin install savvy-progress@claude-kit
+/plugin install session-band@claude-kit
+/plugin install prompt-index@claude-kit
+/plugin install stream-radio@claude-kit
 ```
 
 Restart the session afterwards. Plugin skills and agents are namespaced: the skill is `/savvy-flow:savvy-flow`, the agents `savvy-flow:savvy-careful` and so on.
 
-### By hand
+### Manually
 
 ```bash
 git clone https://github.com/boneyland/claude-kit.git ~/claude-kit
@@ -59,7 +63,7 @@ or for every session (including the desktop app) through `env` in `~/.claude/set
 
 `git pull` in the clone updates a mod loaded this way; copied skills need copying again.
 
-Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude Code API: tested on Claude Code 2.1.286, and it may change between releases. If a mod installed from the marketplace does not show up, load it by hand as above.
+Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude Code API: tested on Claude Code 2.1.330, and it may change between releases. If a mod installed from the marketplace does not show up, load it manually as above.
 
 ## Layout
 

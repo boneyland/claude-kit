@@ -34,7 +34,7 @@
     {
       "name": "stream-radio",
       "source": "./plugins/stream-radio",
-      "description": "Mod: /stream <url> plays a YouTube stream's audio through mpv and shows what is playing at the right of the prompt footer.",
+      "description": "Mod: /stream <url> plays a YouTube stream's audio through mpv and a footer button shows the song and progress and opens a menu to pause, stop, replay or enter a URL.",
       "version": "0.9.1",
       "category": "mod"
     }
