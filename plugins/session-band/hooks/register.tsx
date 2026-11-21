@@ -1063,7 +1063,16 @@ export const register: Register = (on, options) => {
     const compactLabel = `compact, keep ${keepTurns}`
     const widthOf = (w: Warning) => w.text.length + 2 + (w.kind === 'overhead' ? compactLabel.length + 5 : 0)
     // Padding and the frame's sides; the separator between two.
-    const room = e.props.bodyColumns - 4
+    // The model and effort sit at the right of the second row, before the warnings' room.
+    const modelBox =
+      tier <= 2 ? (
+        <Box key="model" flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
+          <Text bold wrap="truncate-end">{modelName}</Text>
+          {tier <= 1 && effortLevel !== null ? <Text dimColor>{`· ${effortLevel}`}</Text> : null}
+        </Box>
+      ) : null
+    const modelWidth = tier <= 2 ? modelName.length + (tier <= 1 && effortLevel !== null ? effortLevel.length + 3 : 0) + 1 : 0
+    const room = e.props.bodyColumns - 4 - modelWidth
     const warnings =
       candidates.length >= 2 && widthOf(candidates[0]!) + 3 + widthOf(candidates[1]!) <= room
         ? candidates.slice(0, 2)
@@ -1071,7 +1080,8 @@ export const register: Register = (on, options) => {
     const warning = warnings[0] ?? null
     const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
-    const framed = level !== null && e.props.maxRows >= (warning === null ? 3 : 4)
+    const hasSecondRow = warning !== null || modelBox !== null
+    const framed = level !== null && e.props.maxRows >= (hasSecondRow ? 4 : 3)
 
     // A window whose reset has passed since it was saved stands at 0 until the next reading.
     const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
@@ -1151,12 +1161,6 @@ export const register: Register = (on, options) => {
             <Text bold color={repo.isDirty ? WARN : undefined} wrap="truncate-end">{branchLabel(repo)}</Text>
           </Box>
         ) : null}
-        {tier <= 2 ? (
-          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
-            <Text bold wrap="truncate-end">{modelName}</Text>
-            {tier <= 1 && effortLevel !== null ? <Text dimColor>{`· ${effortLevel}`}</Text> : null}
-          </Box>
-        ) : null}
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={contextIcon(s.context)} alt="context" width={icon} height={icon} /> : null}
           {Svg && tier === 0 ? (
@@ -1183,7 +1187,7 @@ export const register: Register = (on, options) => {
         {...(framed ? { borderStyle: 'round', borderColor: level } : {})}
       >
         {row}
-        {warning !== null ? (
+        {hasSecondRow ? (
           <Box flexDirection="row" alignItems="center" columnGap={1} flexWrap="nowrap" overflow="hidden">
             {warnings.flatMap((w, i) => {
               const isLast = i === warnings.length - 1
@@ -1241,6 +1245,8 @@ export const register: Register = (on, options) => {
                   : []),
               ]
             })}
+            {warning === null ? <Box key="spacer" flexGrow={1} flexShrink={1} /> : null}
+            {modelBox}
           </Box>
         ) : null}
       </Box>

@@ -27,7 +27,7 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | **Tokens** | `Σ 840k in · 21k out` | The session's input and output tokens, subagents included. Input counts every request's whole context (cached or not), so it grows fast: it is how much was *read*, not what it cost. Output is priced several times input (5× on most models), so it is the one to watch. |
 | **Limits** | `5h 24% →61% ↻2h10m` `wk 41% →78% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `→` is where the window [ends at this pace](#pace-projection) (80 columns and wider): dim normally, amber from 90%, red `→100%+` when it runs out before the reset. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
-| **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. |
+| **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. Shown at the right of the second row, which is always there while the model is shown; warnings go on its left. |
 | **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 45%, yellow from 45%, orange from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
 | **×** | | Hides the band for the rest of the session. `/session_data` brings it back. |
 
@@ -63,7 +63,7 @@ With 10 and then 5 minutes left, while idle, you get a system notification: `Pro
 
 ## Spend warnings
 
-A second row under the band, **only while idle**, when something costs more than it should. They are ranked in this order: cache expired, [cache miss](#cache-miss), [output-heavy turn](#output-heavy-turn), [running out before the reset](#running-out-before-the-reset), overhead. The row shows the top one, and the next one beside it, after a dim `│`, when both fit the window's width. Each has its own `×`; the cache miss and output-heavy warnings share one.
+The second row under the band holds the model at its right. While idle, its left shows a warning when something costs more than it should. They are ranked in this order: cache expired, [cache miss](#cache-miss), [output-heavy turn](#output-heavy-turn), [running out before the reset](#running-out-before-the-reset), overhead. The row shows the top one, and the next one beside it, after a dim `│`, when both fit the window's width. Each has its own `×`; the cache miss and output-heavy warnings share one.
 
 Cache expired and overhead are about carrying a long context, and both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
 
