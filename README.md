@@ -29,6 +29,21 @@ In Claude Code:
 
 Restart the session afterwards. Plugin skills and agents are namespaced: the skill is `/savvy-flow:savvy-flow`, the agents `savvy-flow:savvy-careful` and so on.
 
+### With the `claude` CLI
+
+The same, from a shell:
+
+```bash
+claude plugin marketplace add boneyland/claude-kit
+claude plugin install savvy-flow@claude-kit
+claude plugin install savvy-progress@claude-kit
+claude plugin install session-band@claude-kit
+claude plugin install prompt-index@claude-kit
+claude plugin install stream-radio@claude-kit
+```
+
+Start a new session afterwards to load them.
+
 ### Manually
 
 ```bash
@@ -64,6 +79,23 @@ or for every session (including the desktop app) through `env` in `~/.claude/set
 `git pull` in the clone updates a mod loaded this way; copied skills need copying again.
 
 Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude Code API: tested on Claude Code 2.1.330, and it may change between releases. If a mod installed from the marketplace does not show up, load it manually as above.
+
+## Update
+
+**Installed from the marketplace**: refresh the catalog, then update each plugin. From a shell:
+
+```bash
+claude plugin marketplace update claude-kit
+claude plugin update savvy-flow@claude-kit
+claude plugin update savvy-progress@claude-kit
+claude plugin update session-band@claude-kit
+claude plugin update prompt-index@claude-kit
+claude plugin update stream-radio@claude-kit
+```
+
+Restart the session to apply it. `claude plugin list` shows the installed versions, and the catalog (`.claude-plugin/marketplace.json`) the latest ones.
+
+**Loaded manually**: `git pull` in the clone, then `/reload-plugins` or a new session for a mod. A skill copied into `~/.claude/skills` and `~/.claude/agents` needs copying again after the pull (the `cp` commands above).
 
 ## Layout
 
