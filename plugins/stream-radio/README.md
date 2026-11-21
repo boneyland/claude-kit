@@ -33,7 +33,7 @@ The footer reads `3:42 <title>`, at most 40 columns: how far into the current so
 
 The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives, Claude FM included, only have a fixed title, so expect that rather than a track name.
 
-A video with chapters shows the current chapter first: `3:42 03. Song name · Album title`. Videos that hold several songs or pieces usually name each one in a chapter, so this is the track name. The panel lists the chapters to pick from.
+A video with chapters shows only the current chapter in the footer: `3:42 03. Song name`; the panel shows the video's title under it. Videos that hold several songs or pieces usually name each one in a chapter, so this is the track name. The panel lists the chapters to pick from.
 
 ## When YouTube refuses
 

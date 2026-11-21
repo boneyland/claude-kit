@@ -68,3 +68,23 @@ test('a long title scrolls in a 40-column label while the time stays put', async
   await $.command.run({ command: 'stream', args: 'stop' } as never).catch(() => undefined)
   await clock.advance(SCROLL_STEP * 3)
 })
+
+test('a video with chapters shows only the chapter in the footer', async ($, on) => {
+  const clock = mock.clock(on)
+  on('process.run', () => ({ value: { exitCode: 0, stdout: 'null', stderr: '' } }) as never)
+  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
+  let release: () => void = () => undefined
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout', text: 'NP\tDebussy & Hokusai | Classical Music\t\t\tno\t76\tNocturne, L. 82\tEND' } as never
+    await new Promise<void>(resolve => (release = resolve))
+    return { value: { code: 0, signal: null } } as never
+  })
+  await $.command.run({ command: 'stream', args: 'https://example.com/v' } as never)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } })
+  expect((await ui.find({ type: 'Button', key: 'stream-radio' }))?.props.label).toBe('1:16 Nocturne, L. 82')
+  await ui.unmount()
+  release()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})

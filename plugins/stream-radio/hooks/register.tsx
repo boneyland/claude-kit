@@ -120,8 +120,9 @@ async function labelParts($: EngineInterface) {
   // A file in a playlist shows how far along it is; a live stream has no end.
   const progress = done >= 0 ? formatTime(done) : ''
   const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
-  // A video of several songs names each in a chapter: that comes first.
-  const name = part ? `${part} · ${title}` : title
+  // A video of several songs names each in a chapter: the footer shows that
+  // alone; the panel has the video title under it.
+  const name = part || title
   return { prefix: `${icon} `, name, paused }
 }
 
