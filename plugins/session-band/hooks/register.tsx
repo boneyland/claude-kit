@@ -1197,20 +1197,11 @@ export const register: Register = (on, options) => {
               const hasTurnDismiss =
                 (w.kind === 'cache-miss' || w.kind === 'output') &&
                 !warnings.slice(i + 1).some(o => o.kind === 'cache-miss' || o.kind === 'output')
+              // The warning's own × sits at its left, away from the band's hide ×.
               return [
                 ...(i > 0 ? [<Text key={`sep-${w.kind}`} dimColor>│</Text>] : []),
-                <Text key={`warn-${w.kind}`} color={WARN} wrap="truncate-end">{w.text}</Text>,
-                ...(isLast ? [<Box key="spacer" flexGrow={1} flexShrink={1} />] : []),
                 ...(w.kind === 'overhead'
                   ? [
-                      <Button
-                        key="compact"
-                        label={compactLabel}
-                        onPress={async () => {
-                          const result = await compactKeepingTail($, keepTurns)
-                          if (result.messages === undefined) $.ui.toast(`Not compacted: ${result.skip}`)
-                        }}
-                      />,
                       <Button
                         key="dismiss-spend"
                         label="×"
@@ -1242,6 +1233,20 @@ export const register: Register = (on, options) => {
                         plain
                         dimColor
                         onPress={() => update($, tokens, t => ({ ...t, dismissedTurn: s.turn }))}
+                      />,
+                    ]
+                  : []),
+                <Text key={`warn-${w.kind}`} color={WARN} wrap="truncate-end">{w.text}</Text>,
+                ...(isLast ? [<Box key="spacer" flexGrow={1} flexShrink={1} />] : []),
+                ...(w.kind === 'overhead'
+                  ? [
+                      <Button
+                        key="compact"
+                        label={compactLabel}
+                        onPress={async () => {
+                          const result = await compactKeepingTail($, keepTurns)
+                          if (result.messages === undefined) $.ui.toast(`Not compacted: ${result.skip}`)
+                        }}
                       />,
                     ]
                   : []),

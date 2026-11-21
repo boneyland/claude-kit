@@ -63,7 +63,7 @@ With 10 and then 5 minutes left, while idle, you get a system notification: `Pro
 
 ## Spend warnings
 
-The second row under the band holds the model at its right. While idle, its left shows a warning when something costs more than it should. They are ranked in this order: cache expired, [cache miss](#cache-miss), [output-heavy turn](#output-heavy-turn), [running out before the reset](#running-out-before-the-reset), overhead. The row shows the top one, and the next one beside it, after a dim `│`, when both fit the window's width. Each has its own `×`; the cache miss and output-heavy warnings share one.
+The second row under the band holds the model at its right. While idle, its left shows a warning when something costs more than it should. They are ranked in this order: cache expired, [cache miss](#cache-miss), [output-heavy turn](#output-heavy-turn), [running out before the reset](#running-out-before-the-reset), overhead. The row shows the top one, and the next one beside it, after a dim `│`, when both fit the window's width. Each has its own `×`, at the left of its text (the band's hide `×` is at the right end); the cache miss and output-heavy warnings share one.
 
 Cache expired and overhead are about carrying a long context, and both compare against the **baseline**: what a new session in this project starts with (system prompt, tools, CLAUDE.md and so on). The **old context** is everything above the baseline, the part a new session wouldn't carry. Neither warning shows while the old context is under 60k tokens.
 
