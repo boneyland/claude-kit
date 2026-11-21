@@ -168,12 +168,14 @@ async function mpv($: EngineInterface, command: readonly unknown[]): Promise<{ d
 const isFolder = new Map<string, boolean>()
 
 // A playlist entry as the panel lists it: its title, else its file name; a
-// local folder (one mpv opens only when it gets there) as `📁 Name/`.
-async function entryName($: EngineInterface, e: { filename?: string; title?: string }): Promise<string> {
+// local folder (one mpv opens only when it gets there, as from a playlist
+// file) as `📁 Name/`. Under `root`, the folder played whole, mpv has read every
+// subfolder already, so an entry there is a file and needs no look.
+async function entryName($: EngineInterface, e: { filename?: string; title?: string }, root: string): Promise<string> {
   if (e.title) return e.title
   if (!e.filename) return '?'
   const name = baseName(e.filename)
-  if (!e.filename.startsWith('/')) return name
+  if (!e.filename.startsWith('/') || (root && e.filename.startsWith(`${root}/`))) return name
   let folder = isFolder.get(e.filename)
   if (folder === undefined) {
     folder = await $.fs
@@ -188,6 +190,29 @@ async function entryName($: EngineInterface, e: { filename?: string; title?: str
 // What the panel lists: the playlist's entries, else the file's chapters (a
 // video of several songs), else nothing to pick from.
 async function refreshQueue($: EngineInterface) {
+  const before = await read($, queue)
+  const next = await readQueue($, before)
+  await update($, queue, () => next)
+  // A new folder starts shut; the current song's folders open when it changes,
+  // so it shows, and a folder shut by hand stays shut until then.
+  if (next.root !== before.root) await update($, openFolders, () => [])
+  if (next.root && (next.current !== before.current || next.root !== before.root)) {
+    const path = next.paths[next.current] ?? ''
+    await update($, openFolders, open => [...new Set([...open, ...foldersOf(path, next.root)])])
+  }
+}
+
+// The queue as mpv has it now. A playlist of the same length as last read is
+// the same playlist (a new URL starts from no queue): only the position is
+// asked for, a small reply, instead of every entry again.
+async function readQueue($: EngineInterface, before: Queue): Promise<Queue> {
+  if (before.kind === 'playlist') {
+    const count = (await mpv($, ['get_property', 'playlist-count']))?.data
+    if (count === before.items.length) {
+      const pos = (await mpv($, ['get_property', 'playlist-pos']))?.data
+      return { ...before, current: typeof pos === 'number' ? pos : -1 }
+    }
+  }
   const list = (await mpv($, ['get_property', 'playlist']))?.data
   let next: Queue = NO_QUEUE
   if (Array.isArray(list) && list.length > 1) {
@@ -198,7 +223,7 @@ async function refreshQueue($: EngineInterface) {
     const root = url.startsWith('/') && paths.some(p => p.startsWith(`${url.replace(/\/$/, '')}/`)) ? url.replace(/\/$/, '') : ''
     next = {
       kind: 'playlist',
-      items: await Promise.all(entries.map(e => entryName($, e))),
+      items: await Promise.all(entries.map(e => entryName($, e, root))),
       current: entries.findIndex(e => e.current),
       paths,
       root,
@@ -216,15 +241,7 @@ async function refreshQueue($: EngineInterface) {
       }
     }
   }
-  const before = await read($, queue)
-  await update($, queue, () => next)
-  // A new folder starts shut; the current song's folders open when it changes,
-  // so it shows, and a folder shut by hand stays shut until then.
-  if (next.root !== before.root) await update($, openFolders, () => [])
-  if (next.root && (next.current !== before.current || next.root !== before.root)) {
-    const path = next.paths[next.current] ?? ''
-    await update($, openFolders, open => [...new Set([...open, ...foldersOf(path, next.root)])])
-  }
+  return next
 }
 
 // Plays entry `index` of the queue, unpaused.

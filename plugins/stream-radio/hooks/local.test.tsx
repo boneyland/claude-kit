@@ -64,7 +64,7 @@ test('a YouTube URL does not get the folder filter', async ($, on) => {
   await clock.advance(10)
 })
 
-test('the panel marks a subfolder in a local playlist', async ($, on) => {
+test('the panel marks a folder listed in a playlist file', async ($, on) => {
   const clock = mock.clock(on)
   const world = { release: () => undefined as void }
   on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
@@ -90,7 +90,8 @@ test('the panel marks a subfolder in a local playlist', async ($, on) => {
     return { value: { code: 0, signal: null } } as never
   })
 
-  await $.command.run({ command: 'stream', args: '/m/Album' } as never)
+  // A playlist file can name a folder, which mpv opens only when it gets there.
+  await $.command.run({ command: 'stream', args: '/m/mix.m3u' } as never)
   await clock.advance(10)
   const pane = await $.ui.mount({
     plugin: 'stream-radio',
@@ -172,6 +173,70 @@ test('subfolders fold: the current song\'s opens by itself, a click shuts and op
   expect(await label('item-3')).toBe('    1. C')
 
   world.release()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('a song change asks mpv for the position only, and files under the folder are not looked at', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = { sent: [] as unknown[][], stats: 0, pos: 0, say: (_: string) => undefined as void, end: () => undefined as void }
+  const playlist = ['/m/Album/01 A.flac', '/m/Album/Disc 2/01 B.flac', '/m/Album/Disc 2/02 C.flac'].map(filename => ({ filename }))
+  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('fs.exists', () => ({ value: true }) as never)
+  on('fs.stat', () => ((world.stats += 1), { value: { kind: 'file', size: 0, mtimeMs: 0 } }) as never)
+  on('process.run', (_$, e) => {
+    const argv = [...e.argv]
+    if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
+    const command = JSON.parse(argv[5]!) as unknown[]
+    world.sent.push(command)
+    const data =
+      command[1] === 'playlist'
+        ? playlist.map((p, i) => (i === world.pos ? { ...p, current: true } : p))
+        : command[1] === 'playlist-count'
+          ? playlist.length
+          : command[1] === 'playlist-pos'
+            ? world.pos
+            : null
+    return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
+  })
+  on('process.spawn', async function* () {
+    const lines = ['NP\t01 A.flac\t\t\tno\t1\t\tEND']
+    let wake: () => void = () => undefined
+    let isOver = false
+    world.say = line => (lines.push(line), wake())
+    world.end = () => ((isOver = true), wake())
+    while (!isOver) {
+      while (lines.length > 0) yield { stream: 'stdout', text: lines.shift()! } as never
+      if (!isOver) await new Promise<void>(resolve => (wake = resolve))
+    }
+    return { value: { code: 0, signal: null } } as never
+  })
+
+  await $.command.run({ command: 'stream', args: '/m/Album' } as never)
+  await clock.advance(10)
+  world.pos = 1
+  world.say('NP\t01 B.flac\t\t\tno\t1\t\tEND')
+  await clock.advance(10)
+  world.pos = 2
+  world.say('NP\t02 C.flac\t\t\tno\t1\t\tEND')
+  await clock.advance(10)
+
+  // The whole list once, at the start; then the position at each song.
+  expect(world.sent.filter(c => c[1] === 'playlist').length).toBe(1)
+  expect(world.sent.filter(c => c[1] === 'playlist-pos').length).toBe(2)
+  expect(world.stats).toBe(0)
+  const pane = await $.ui.mount({
+    plugin: 'stream-radio',
+    component: 'Pane',
+    requestId: 'stream-radio',
+    surface: 'terminal',
+    props: { title: 'Radio', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
+  } as const)
+  expect((await pane.find({ type: 'Button', key: 'item-2' }))?.props.label).toBe('▶   2. 02 C.flac')
+  await pane.unmount()
+
+  world.end()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
