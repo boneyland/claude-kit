@@ -212,7 +212,22 @@ const readPrompts = async ($: EngineInterface) => {
   await update($, prompts, () => list)
 }
 
-const jump = async ($: EngineInterface, id: string) => {
+// Where a jump to `id` lands. A compaction's summary row is not drawn in the
+// transcript, so a jump to it goes to the first prompt after it (the last one
+// before it when none follows); undefined when there is nowhere to go.
+export const jumpTarget = (list: readonly Prompt[], id: string): string | undefined => {
+  const at = list.findIndex(p => p.id === id)
+  if (at === -1 || list[at]!.text !== COMPACT) return id
+  const isTurn = (p: Prompt) => p.text !== COMPACT
+  return (list.slice(at + 1).find(isTurn) ?? list.slice(0, at).findLast(isTurn))?.id
+}
+
+const jump = async ($: EngineInterface, wanted: string) => {
+  const id = jumpTarget(await read($, prompts), wanted)
+  if (id === undefined) {
+    $.ui.toast('Nothing to jump to yet.')
+    return
+  }
   await update($, cursor, () => id)
   try {
     const moved = await $.ui.scroll({ to: { requestId: id }, block: 'start' })

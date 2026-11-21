@@ -1,7 +1,7 @@
 import type { SessionMessage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { inView, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step } from './register'
+import { inView, jumpTarget, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step } from './register'
 
 const PANE = {
   plugin: 'prompt-index',
@@ -46,6 +46,15 @@ test('promptLine keeps typed prompts and slash commands only', () => {
   expect(promptLine('<local-command-stdout>x</local-command-stdout>')).toBe(null)
   expect(promptLine('[Request interrupted by user]')).toBe(null)
   expect(promptLine('')).toBe(null)
+})
+
+test('a jump to the /compact entry lands on the prompt after it, else the one before', () => {
+  const p = (id: string, text: string) => ({ id, text })
+  const list = [p('a', 'one'), p('c', '/compact'), p('b', 'two')]
+  expect(jumpTarget(list, 'c')).toBe('b')
+  expect(jumpTarget(list, 'a')).toBe('a')
+  expect(jumpTarget([p('a', 'one'), p('c', '/compact')], 'c')).toBe('a')
+  expect(jumpTarget([p('c', '/compact')], 'c')).toBeUndefined()
 })
 
 test('the summary a compaction leaves is listed as /compact', () => {
