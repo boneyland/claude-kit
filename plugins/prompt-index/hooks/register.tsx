@@ -33,6 +33,9 @@ let order: string[] = []
 // The section ids last drawn, so the pane redraws only when they change.
 let drawnSections = ''
 
+// What the row a compaction leaves is listed as; it is not a turn.
+const COMPACT = '/compact'
+
 // A slash command is stored as tags; show it as typed.
 const COMMAND = /<command-name>([^<]*)<\/command-name>[\s\S]*?(?:<command-args>([^<]*)<\/command-args>)?/
 
@@ -42,7 +45,7 @@ export const promptLine = (text: string): string | null => {
   const trimmed = text.trim()
   if (trimmed === '' || trimmed.startsWith('[Request interrupted')) return null
   // /compact leaves its summary as a user row; list it as the command that made it.
-  if (trimmed.startsWith('This session is being continued from a previous conversation')) return '/compact'
+  if (trimmed.startsWith('This session is being continued from a previous conversation')) return COMPACT
   // A prompt with pasted text starts with a tag but is still the person's prompt:
   // dropping it would leave its reply to the command before it.
   if (trimmed.startsWith('<pasted_content')) {
@@ -359,9 +362,13 @@ export const register: Register = on => {
     const hits = matches(list, q)
     const isFiltered = q.trim() !== ''
     const width = Math.max(10, e.props.bodyColumns)
-    const digits = String(list.length).length
+    // A turn is numbered; a /compact is a landmark between turns, without a number.
+    const numbers = new Map<string, number>()
+    for (const p of list) if (p.text !== COMPACT) numbers.set(p.id, numbers.size + 1)
+    const total = numbers.size
+    const digits = String(total).length
     const sections = new Set(sectionsOn(list, owners, onScreenNow()).map(p => p.id))
-    const shownNumbers = list.map((p, i) => (sections.has(p.id) ? i + 1 : 0)).filter(n => n > 0)
+    const shownNumbers = list.map(p => (sections.has(p.id) ? (numbers.get(p.id) ?? 0) : 0)).filter(n => n > 0)
 
     // `typed` is the field's text on Enter, which may not be stored yet.
     // Returns its promise so the handler holds the press until the jump: the
@@ -379,7 +386,7 @@ export const register: Register = on => {
       else await jump($, target.id)
     }
 
-    const where = showing(shownNumbers, list.length)
+    const where = showing(shownNumbers, total)
 
     return (
       <Box flexDirection="column">
@@ -408,14 +415,14 @@ export const register: Register = on => {
           <Text dimColor>No prompt matches.</Text>
         )}
         {hits.map(p => {
-          const n = list.indexOf(p) + 1
+          const n = numbers.get(p.id)
           const isShown = sections.has(p.id)
           const isCursor = p.id === from
           return (
             <Button key={p.id} plain onPress={() => jump($, p.id)}>
               <Text color={isShown ? 'suggestion' : undefined}>{isShown ? '▌' : ' '}</Text>
-              <Text dimColor>{String(n).padStart(digits)} </Text>
-              <Text bold={isCursor} dimColor={!isShown && !isCursor}>
+              <Text dimColor>{(n === undefined ? '' : String(n)).padStart(digits)} </Text>
+              <Text bold={isCursor} dimColor={n === undefined || (!isShown && !isCursor)}>
                 {cut(p.text, width - digits - 3)}
               </Text>
             </Button>
