@@ -9,6 +9,8 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream pause      # pause or resume
 /stream next       # next song in a playlist (or chapter); /stream prev goes back
 /stream vol 40     # volume 0-100, or vol up / vol down by 5
+/stream shuffle    # shuffle the playlist, or put it back in order
+/stream repeat     # cycle repeat: all (default), one song, off; or repeat all | one | off
 /stream panel      # open or close the panel
 /stream last       # plays again what played last, from where it got to (across sessions too)
 /stream stop
@@ -20,7 +22,7 @@ With nothing playing the footer shows `▶ Play radio`: click it to play again w
 
 `/stream` (and the panel's field) takes a path as well as a URL: a file, a folder or a playlist file (`.m3u`, `.pls`, anything mpv reads). Write it as `~/Music/…`, an absolute path, a `file://` URL, or a path relative to the session's folder; quotes around a path with spaces are fine. A folder plays its sound and video files as a playlist, folders inside it included, and skips cover art and other files. The panel lists them as a tree: each subfolder is a row (`▸ 📁 Disc 2/ · 12`, with how many songs it holds) that a click opens or shuts, and the songs inside are indented and numbered from 1 within their folder. The folder of the song playing opens by itself when the song changes; shut by hand, it carries the `▶`. Files show by file name: mpv reads a local file's tags only when it plays it. Prev and Next go through every song in order. A path that does not exist is reported and nothing starts.
 
-Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/stream last`) picks up where it got to: the same song in a playlist and the same time in it, so a chapter too. That survives a plugin reload, which stops the player, and a new session: the place is saved every 10 seconds and at each song change or stop. Typing a URL plays it from the start. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, whether it is paused and its place in the playlist (the time stays in the footer, so the panel redraws only when something in it changes), with Prev, Pause or Resume, Next and Stop; the volume with − and +; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
+Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/stream last`) picks up where it got to: the same song in a playlist and the same time in it, so a chapter too. That survives a plugin reload, which stops the player, and a new session: the place is saved every 10 seconds and at each song change or stop. Typing a URL plays it from the start. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, whether it is paused and its place in the playlist (the time stays in the footer, so the panel redraws only when something in it changes), with Prev, Pause or Resume, Next and Stop; the volume with − and +; Shuffle (for a playlist) and Repeat; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
 
 The footer reads `3:42 <title>`, at most 40 columns: how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one. The icon and time stay put; a title too long for what is left scrolls sideways four characters a second, resting a moment at its start each time round, and holds still while paused.
 
@@ -52,7 +54,7 @@ For some content (some album playlists, for one) YouTube answers the stream URL 
 | `scrollMs` | 1000 | milliseconds between those redraws, 100 at least |
 | `toggleOnly` | off | the footer song button pauses and resumes at once instead of opening the panel (`/stream panel` still opens it) |
 
-Playlists play through and repeat. The plugin overrides `loop-file` and `keep-open` from your `mpv.conf` for its own player, so a config that loops one file doesn't repeat one song. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
+Playlists play through and repeat by default; Repeat in the panel or `/stream repeat` makes it one song or off, and that choice is kept across sessions. Shuffle applies to the playing playlist and is off again when something new starts. The plugin sets `loop-file`, `loop-playlist` and `keep-open` for its own player from Repeat, whatever your `mpv.conf` says. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
 
 ## Install
 

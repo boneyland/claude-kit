@@ -33,6 +33,10 @@ declare module 'claude-code' {
       // The reply to the panel's last action; empty for none.
       notice: string
       // The player's volume, 0 to 100.
+      // all, one or off; kept across sessions.
+      repeat: 'all' | 'one' | 'off'
+      // Whether the playing playlist is shuffled.
+      isShuffled: boolean
       volume: number
       // Where the last URL got to, kept across a reload.
       resumeAt: Resume

@@ -61,6 +61,13 @@ export function formatTime(total: number): string {
 export const VOLUME_STEP = 5
 export const clampVolume = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
 
+// Whether the playlist starts over at its end (all), the song plays again (one),
+// or playback ends (off).
+export type Repeat = 'all' | 'one' | 'off'
+export const nextRepeat = (r: Repeat): Repeat => (r === 'all' ? 'one' : r === 'one' ? 'off' : 'all')
+// mpv's loop-file and loop-playlist for a repeat mode.
+export const loopsFor = (r: Repeat) => ({ file: r === 'one' ? 'inf' : 'no', playlist: r === 'off' ? 'no' : 'inf' })
+
 export type Command =
   | { kind: 'stop' }
   | { kind: 'toggle' }
@@ -68,6 +75,9 @@ export type Command =
   | { kind: 'next' }
   | { kind: 'prev' }
   | { kind: 'panel' }
+  | { kind: 'shuffle' }
+  // mode: absent cycles all → one → off
+  | { kind: 'repeat'; mode?: Repeat }
   // to: a level from 0 to 100; by: a step up or down from where it is
   | { kind: 'volume'; to?: number; by?: number }
   // url: an http(s) URL, or an absolute path when isLocal
@@ -78,7 +88,7 @@ export type Command =
 // for a relative path.
 export type Where = { home: string; cwd: string }
 
-const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | panel | stop'
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | shuffle | repeat [all | one | off] | panel | stop'
 
 // A URL, or a local file, folder or playlist as an absolute path: `~/…`,
 // `/…`, `file://…` or relative to the session's folder. Quotes around it go.
@@ -117,6 +127,14 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (word === 'next') return { kind: 'next' }
   if (word === 'prev' || word === 'previous') return { kind: 'prev' }
   if (word === 'panel') return { kind: 'panel' }
+  if (word === 'shuffle') return { kind: 'shuffle' }
+  const rep = /^repeat(?:\s+(.*))?$/.exec(word)
+  if (rep) {
+    const mode = (rep[1] ?? '').trim()
+    if (mode === '') return { kind: 'repeat' }
+    if (mode === 'all' || mode === 'one' || mode === 'off') return { kind: 'repeat', mode }
+    return { kind: 'error', text: 'Usage: /stream repeat [all | one | off]' }
+  }
   const vol = /^vol(?:ume)?(?:\s+(.*))?$/.exec(word)
   if (vol) {
     const arg = (vol[1] ?? '').trim()

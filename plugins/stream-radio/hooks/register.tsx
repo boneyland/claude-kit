@@ -11,6 +11,9 @@ import {
   marquee,
   baseName,
   clampVolume,
+  loopsFor,
+  nextRepeat,
+  type Repeat,
   VOLUME_STEP,
   foldersOf,
   playlistRows,
@@ -85,6 +88,40 @@ async function setVolume($: EngineInterface, configured: number, level: number):
   await $.store.set(VOLUME_KEY, { value: to, configured } satisfies SavedVolume).catch(() => undefined)
   if (control && !(await mpv($, ['set_property', 'volume', to]))) return `Volume ${to}%; the player is not ready yet.`
   return `Volume ${to}%.`
+}
+
+// Repeat: kept in $.store as a preference. Shuffle: the playing playlist's,
+// off again when something new starts.
+const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
+const isShuffled = atom({ plugin: 'stream-radio', key: 'isShuffled' } as const, false)
+const REPEAT_KEY = 'repeat'
+
+async function loadRepeat($: EngineInterface) {
+  const saved = await $.store.get(REPEAT_KEY).catch(() => undefined)
+  if (saved === 'all' || saved === 'one' || saved === 'off') await update($, repeatMode, () => saved)
+}
+
+// Sets repeat, of the playing player too; resolves to the reply to show.
+async function setRepeat($: EngineInterface, mode: Repeat): Promise<string> {
+  await update($, repeatMode, () => mode)
+  await $.store.set(REPEAT_KEY, mode).catch(() => undefined)
+  const loops = loopsFor(mode)
+  if (control) {
+    await mpv($, ['set_property', 'loop-file', loops.file])
+    await mpv($, ['set_property', 'loop-playlist', loops.playlist])
+  }
+  return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
+}
+
+// Shuffles the playing playlist, or puts it back in order; mpv keeps the song
+// playing where it is. The list is read again, as its order changed.
+async function toggleShuffle($: EngineInterface): Promise<string> {
+  if ((await read($, queue)).kind !== 'playlist') return 'Nothing to shuffle: this is not a playlist.'
+  const on = !(await read($, isShuffled))
+  if (!(await mpv($, [on ? 'playlist-shuffle' : 'playlist-unshuffle']))) return 'The player is not ready yet.'
+  await update($, isShuffled, () => on)
+  await refreshQueue($, true)
+  return on ? 'Shuffled.' : 'Back in order.'
 }
 
 const STORE_KEY = 'last'
@@ -256,9 +293,10 @@ async function entryName($: EngineInterface, e: { filename?: string; title?: str
 
 // What the panel lists: the playlist's entries, else the file's chapters (a
 // video of several songs), else nothing to pick from.
-async function refreshQueue($: EngineInterface) {
+// `isOrderChanged`: the entries moved (a shuffle), so the whole list is read.
+async function refreshQueue($: EngineInterface, isOrderChanged = false) {
   const before = await read($, queue)
-  const next = await readQueue($, before)
+  const next = await readQueue($, isOrderChanged ? NO_QUEUE : before)
   await update($, queue, () => next)
   // A new folder starts shut; the current song's folders open when it changes,
   // so it shows, and a folder shut by hand stays shut until then.
@@ -363,6 +401,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
       await update($, chapter, () => '')
       await update($, scroll, () => 0)
       await update($, queue, () => NO_QUEUE)
+      await update($, isShuffled, () => false)
       await update($, playing, () => 'connecting…')
       startScroller($, config)
 
@@ -381,13 +420,14 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
       if (mine !== run) return
       control = pipe
 
+      const loops = loopsFor(await read($, repeatMode))
       const argv = [
         player,
         '--no-video',
         '--no-input-terminal',
-        // Your mpv.conf may loop one file or pause at its end; a stream plays on.
-        '--loop-file=no',
-        '--loop-playlist=inf',
+        // Repeat as set, whatever your mpv.conf loops; a stream plays on.
+        `--loop-file=${loops.file}`,
+        `--loop-playlist=${loops.playlist}`,
         '--keep-open=no',
         `--input-ipc-server=${pipe}`,
         '--ytdl-format=bestaudio/best',
@@ -591,6 +631,7 @@ export const register: Register = (on, options) => {
     await update($, notice, () => '')
     await loadLast($)
     await loadVolume($, config.volume)
+    await loadRepeat($)
     if ((await read($, knownDefault)) !== defaultUrl) {
       await update($, knownDefault, () => defaultUrl)
       await update($, lastUrl, () => '')
@@ -600,7 +641,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
-      argumentHint: '[url | last | pause | next | prev | vol N | panel | stop]',
+      argumentHint: '[url | last | pause | next | prev | vol N | shuffle | repeat | panel | stop]',
     })
 
     return next(e)
@@ -623,6 +664,11 @@ export const register: Register = (on, options) => {
         return { text: 'Stopped.' }
       }
       if (parsed.kind === 'panel') return { text: `Radio panel ${await togglePane($)}.` }
+      if (parsed.kind === 'shuffle') {
+        if (!control) return { text: 'Nothing is playing.' }
+        return { text: await toggleShuffle($) }
+      }
+      if (parsed.kind === 'repeat') return { text: await setRepeat($, parsed.mode ?? nextRepeat(await read($, repeatMode))) }
       if (parsed.kind === 'volume') {
         const now = await read($, volumeLevel)
         if (parsed.to === undefined && parsed.by === undefined) return { text: `Volume ${now}%.` }
@@ -717,6 +763,8 @@ export const register: Register = (on, options) => {
     const q = queueRead.value ?? NO_QUEUE
     const said = await read($, notice)
     const level = await read($, volumeLevel)
+    const repeat = await read($, repeatMode)
+    const shuffled = await read($, isShuffled)
     const rowsKey = `${queueRead.version}:${openRead.version}`
     if (rowsCache?.key !== rowsKey) {
       rowsCache = { key: rowsKey, rows: playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current) }
@@ -768,6 +816,16 @@ export const register: Register = (on, options) => {
               <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume($, config.volume, level - VOLUME_STEP), ''))} />
               <Text>{`Volume ${level}%`}</Text>
               <Button key="vol-up" label="🔊 +" onPress={() => act(async () => (await setVolume($, config.volume, level + VOLUME_STEP), ''))} />
+            </Box>
+            <Box flexDirection="row" gap={1}>
+              {q.kind === 'playlist' ? (
+                <Button key="shuffle" label={shuffled ? '🔀 Shuffle: on' : '🔀 Shuffle: off'} onPress={() => act(() => toggleShuffle($))} />
+              ) : null}
+              <Button
+                key="repeat"
+                label={repeat === 'all' ? '🔁 Repeat: all' : repeat === 'one' ? '🔂 Repeat: one' : '🔁 Repeat: off'}
+                onPress={() => act(() => setRepeat($, nextRepeat(repeat)))}
+              />
             </Box>
           </Box>
         ) : (
