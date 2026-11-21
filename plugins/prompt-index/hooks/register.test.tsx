@@ -48,6 +48,18 @@ test('promptLine keeps typed prompts and slash commands only', () => {
   expect(promptLine('')).toBe(null)
 })
 
+test('a prompt with pasted text is a prompt, so its reply is not given to the command before it', () => {
+  const pasted = '\n\n<pasted_content id="a1">\n  still fails\n</pasted_content id="a1">\n\n typing it worked'
+  expect(promptLine(pasted)).toBe('still fails typing it worked')
+  const cmd = '<command-name>/stream</command-name>\n<command-message>stream</command-message>\n<command-args></command-args>'
+  const rows: SessionMessage[] = [
+    { role: 'user', text: cmd, toolUses: [], uuid: 'c1' },
+    { role: 'user', text: pasted, toolUses: [], uuid: 'p1' },
+    { role: 'assistant', text: 'ok', toolUses: [], uuid: 'a1' },
+  ]
+  expect(promptsOf(rows, new Set()).map(p => p.id)).toEqual(['p1'])
+})
+
 test('a slash command is listed only when Claude answered it', () => {
   const cmd = (name: string) => `<command-name>${name}</command-name>\n<command-message>x</command-message>\n<command-args></command-args>`
   const rows: SessionMessage[] = [

@@ -41,6 +41,11 @@ const COMMAND = /<command-name>([^<]*)<\/command-name>[\s\S]*?(?:<command-args>(
 export const promptLine = (text: string): string | null => {
   const trimmed = text.trim()
   if (trimmed === '' || trimmed.startsWith('[Request interrupted')) return null
+  // A prompt with pasted text starts with a tag but is still the person's prompt:
+  // dropping it would leave its reply to the command before it.
+  if (trimmed.startsWith('<pasted_content')) {
+    return trimmed.replace(/<\/?pasted_content[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || '[pasted text]'
+  }
   if (trimmed.startsWith('<')) {
     const command = COMMAND.exec(trimmed)
     if (command === null) return null
