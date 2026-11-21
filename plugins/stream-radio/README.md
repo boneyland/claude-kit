@@ -26,6 +26,10 @@ Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/strea
 
 The footer reads `3:42 <title>`, at most 40 columns: how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one. The icon and time stay put; a title too long for what is left scrolls sideways four characters a second, resting a moment at its start each time round, and holds still while paused.
 
+## When the stream drops
+
+If the player stops by itself after it had been playing (a live stream drops, the network goes, mpv crashes), the footer shows `reconnecting in 2 s…` and the same URL starts again where it got to, after 2, then 5, then 15 seconds; after three failed tries it says it gave up. A minute of steady playing starts the tries over. It does not reconnect after you stop it or start something else while it waits, when a playlist with Repeat off has simply finished, or when mpv was ended from outside (SIGTERM, SIGINT, SIGKILL).
+
 ## Requirements
 
 - `mpv`

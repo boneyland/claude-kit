@@ -376,8 +376,18 @@ async function step($: EngineInterface, by: 1 | -1): Promise<string> {
 // Starts playing `url`. Returns at once: the first start after a reload is slow,
 // and a hook that takes too long is reported as unanswered, so the startup runs
 // in the background.
+// After a player that was playing ends by itself (a dropped stream, a crash),
+// the waits before each try to start it again; past the last, it gives up.
+const RECONNECT_MS = [2000, 5000, 15_000]
+// Playing this long since the last try counts as recovered: a later drop starts
+// the tries over.
+const STEADY_MS = 60_000
+// Signals that mean someone ended the player on purpose: no reconnecting.
+const DELIBERATE = new Set(['SIGTERM', 'SIGINT', 'SIGKILL'])
+
 // `from`: a place to resume at once it plays, for the URL played last.
-function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string) {
+// `attempt`: how many reconnect tries came before this start.
+function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string, attempt = 0) {
   const { player, androidClient } = config
   // YouTube refuses the default client's stream URLs for some content (403);
   // the android client gets through, with muxed AAC and no audio-only Opus.
@@ -395,6 +405,9 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
     let lastChapter = ''
     let unread = ''
     let pipe = ''
+    // When the first title came, and how the player ended.
+    let playedAt = 0
+    let exit: { code: number | null; signal: string | null } | undefined
     // Cleared once reached; until then the position is not recorded, or the first
     // song's start would overwrite where to go.
     let pending = from?.url === url && (from.index > 0 || from.seconds >= RESUME_MIN_SECONDS) ? from : undefined
@@ -465,6 +478,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         if (track && track.title !== lastTitle) {
           // The first title means it really plays: remember it for the button.
           if (!lastTitle) {
+            playedAt = await $.clock.now().catch(() => 0)
             await update($, lastUrl, () => url)
             await saveLast($, true)
             if (client) needsAndroid.add(url)
@@ -510,6 +524,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
           await update($, isPaused, () => track.isPaused)
         }
       }
+      exit = await stream.result.catch(() => undefined)
     } catch (error) {
       // a child that cannot start or was killed ends the loop; reported below
       lastError ||= error instanceof Error ? error.message : String(error)
@@ -537,8 +552,30 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         : 'the player exited before anything played; is the URL playable?'
       $.ui.log(`stream-radio: could not play ${url}: ${why}`)
       $.ui.toast(`stream failed: ${why.slice(0, 120)}`)
+      return
     }
-  })()
+    // It played, then ended by itself: start it again where it got to, unless a
+    // playlist with repeat off simply finished or someone ended the player.
+    if (exit?.signal && DELIBERATE.has(exit.signal)) return
+    if (exit?.code === 0 && (await read($, repeatMode)) === 'off') return
+    const now = await $.clock.now().catch(() => 0)
+    const tries = now - playedAt >= STEADY_MS ? 0 : attempt
+    const wait = RECONNECT_MS[tries]
+    const why = lastError ? `: ${lastError.slice(0, 200)}` : ''
+    if (wait === undefined) {
+      $.ui.log(`stream-radio: ${url} stopped${why}; gave up after ${RECONNECT_MS.length} tries`)
+      $.ui.toast(`stream stopped; gave up after ${RECONNECT_MS.length} tries`)
+      return
+    }
+    $.ui.log(`stream-radio: ${url} stopped${why}; trying again in ${wait / 1000} s`)
+    await update($, playing, () => `reconnecting in ${wait / 1000} s…`)
+    const token = run
+    // A reload or the session's end while it waits aborts the wait.
+    if (!(await $.clock.sleep(wait).then(() => true, () => false))) return
+    // Stopped, or something else started, while it waited.
+    if (run !== token) return
+    start($, config, url, await read($, resumeAt), client, tries + 1)
+  })().catch(error => $.ui.log(`stream-radio: player task failed: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' }))
 }
 
 // Pauses or resumes through mpv; false while it is not listening yet. The new
