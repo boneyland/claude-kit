@@ -32,6 +32,8 @@ declare module 'claude-code' {
       openFolders: string[]
       // The reply to the panel's last action; empty for none.
       notice: string
+      // The player's volume, 0 to 100.
+      volume: number
       // Where the last URL got to, kept across a reload.
       resumeAt: Resume
     }

@@ -10,6 +10,8 @@ import {
   holdTicks,
   marquee,
   baseName,
+  clampVolume,
+  VOLUME_STEP,
   foldersOf,
   playlistRows,
   type TreeRow,
@@ -64,6 +66,27 @@ const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_R
 // a new session's Play radio resumes there too. The point moves every second;
 // the store is written at most every SAVE_MS, and at once when the song
 // changes or playback stops.
+// The volume as last set, the player's from the start; kept in $.store with the
+// Volume setting it began from, so a changed setting wins again.
+const volumeLevel = atom({ plugin: 'stream-radio', key: 'volume' } as const, 60)
+const VOLUME_KEY = 'volume'
+type SavedVolume = { value: number; configured: number }
+
+async function loadVolume($: EngineInterface, configured: number) {
+  const saved = (await $.store.get(VOLUME_KEY).catch(() => undefined)) as Partial<SavedVolume> | undefined
+  const value = saved && saved.configured === configured && typeof saved.value === 'number' ? saved.value : configured
+  await update($, volumeLevel, () => clampVolume(value))
+}
+
+// Sets the volume, of the playing player too; resolves to the reply to show.
+async function setVolume($: EngineInterface, configured: number, level: number): Promise<string> {
+  const to = clampVolume(level)
+  await update($, volumeLevel, () => to)
+  await $.store.set(VOLUME_KEY, { value: to, configured } satisfies SavedVolume).catch(() => undefined)
+  if (control && !(await mpv($, ['set_property', 'volume', to]))) return `Volume ${to}%; the player is not ready yet.`
+  return `Volume ${to}%.`
+}
+
 const STORE_KEY = 'last'
 const SAVE_MS = 10_000
 type Saved = { url: string; resumeAt: Resume; knownDefault: string }
@@ -313,7 +336,7 @@ async function step($: EngineInterface, by: 1 | -1): Promise<string> {
 // in the background.
 // `from`: a place to resume at once it plays, for the URL played last.
 function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string) {
-  const { player, volume, androidClient } = config
+  const { player, androidClient } = config
   // YouTube refuses the default client's stream URLs for some content (403);
   // the android client gets through, with muxed AAC and no audio-only Opus.
   const client = retryClient ?? (androidClient || needsAndroid.has(url) ? 'android' : undefined)
@@ -375,7 +398,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         ...(client
           ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`]
           : []),
-        `--volume=${Math.round(volume)}`,
+        `--volume=${await read($, volumeLevel)}`,
         '--msg-level=all=error,statusline=status',
         `--term-status-msg=${STATUS_FORMAT}`,
         '--',
@@ -567,6 +590,7 @@ export const register: Register = (on, options) => {
     await update($, queue, () => NO_QUEUE)
     await update($, notice, () => '')
     await loadLast($)
+    await loadVolume($, config.volume)
     if ((await read($, knownDefault)) !== defaultUrl) {
       await update($, knownDefault, () => defaultUrl)
       await update($, lastUrl, () => '')
@@ -576,7 +600,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
-      argumentHint: '[url | last | pause | next | prev | panel | stop]',
+      argumentHint: '[url | last | pause | next | prev | vol N | panel | stop]',
     })
 
     return next(e)
@@ -599,6 +623,11 @@ export const register: Register = (on, options) => {
         return { text: 'Stopped.' }
       }
       if (parsed.kind === 'panel') return { text: `Radio panel ${await togglePane($)}.` }
+      if (parsed.kind === 'volume') {
+        const now = await read($, volumeLevel)
+        if (parsed.to === undefined && parsed.by === undefined) return { text: `Volume ${now}%.` }
+        return { text: await setVolume($, config.volume, parsed.to ?? now + (parsed.by ?? 0)) }
+      }
       if (parsed.kind === 'next' || parsed.kind === 'prev') {
         if (!control) return { text: 'Nothing is playing.' }
         return { text: (await step($, parsed.kind === 'next' ? 1 : -1)) || (parsed.kind === 'next' ? 'Next.' : 'Previous.') }
@@ -687,6 +716,7 @@ export const register: Register = (on, options) => {
     const openRead = await $.state.get(OPEN_FOLDERS)
     const q = queueRead.value ?? NO_QUEUE
     const said = await read($, notice)
+    const level = await read($, volumeLevel)
     const rowsKey = `${queueRead.version}:${openRead.version}`
     if (rowsCache?.key !== rowsKey) {
       rowsCache = { key: rowsKey, rows: playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current) }
@@ -733,6 +763,11 @@ export const register: Register = (on, options) => {
                 <Button key="next" label="Next ⏭" onPress={() => act(() => step($, 1))} />
               ) : null}
               <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying($), ''))} />
+            </Box>
+            <Box flexDirection="row" gap={1}>
+              <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume($, config.volume, level - VOLUME_STEP), ''))} />
+              <Text>{`Volume ${level}%`}</Text>
+              <Button key="vol-up" label="🔊 +" onPress={() => act(async () => (await setVolume($, config.volume, level + VOLUME_STEP), ''))} />
             </Box>
           </Box>
         ) : (

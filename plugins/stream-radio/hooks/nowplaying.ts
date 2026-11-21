@@ -57,6 +57,10 @@ export function formatTime(total: number): string {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`
 }
 
+// How far the panel's − and + and /stream vol up and down move the volume.
+export const VOLUME_STEP = 5
+export const clampVolume = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+
 export type Command =
   | { kind: 'stop' }
   | { kind: 'toggle' }
@@ -64,6 +68,8 @@ export type Command =
   | { kind: 'next' }
   | { kind: 'prev' }
   | { kind: 'panel' }
+  // to: a level from 0 to 100; by: a step up or down from where it is
+  | { kind: 'volume'; to?: number; by?: number }
   // url: an http(s) URL, or an absolute path when isLocal
   | { kind: 'play'; url: string; isLocal?: true }
   | { kind: 'error'; text: string }
@@ -72,7 +78,7 @@ export type Command =
 // for a relative path.
 export type Where = { home: string; cwd: string }
 
-const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | panel | stop'
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | panel | stop'
 
 // A URL, or a local file, folder or playlist as an absolute path: `~/…`,
 // `/…`, `file://…` or relative to the session's folder. Quotes around it go.
@@ -111,6 +117,16 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (word === 'next') return { kind: 'next' }
   if (word === 'prev' || word === 'previous') return { kind: 'prev' }
   if (word === 'panel') return { kind: 'panel' }
+  const vol = /^vol(?:ume)?(?:\s+(.*))?$/.exec(word)
+  if (vol) {
+    const arg = (vol[1] ?? '').trim()
+    if (arg === '' ) return { kind: 'volume' }
+    if (arg === 'up' || arg === '+') return { kind: 'volume', by: VOLUME_STEP }
+    if (arg === 'down' || arg === '-') return { kind: 'volume', by: -VOLUME_STEP }
+    const n = Number(arg.replace(/%$/, ''))
+    if (arg !== '' && Number.isFinite(n)) return { kind: 'volume', to: clampVolume(n) }
+    return { kind: 'error', text: 'Usage: /stream vol <0-100 | up | down>' }
+  }
   const target = word || fallback
   if (!target) return { kind: 'error', text: USAGE }
 
