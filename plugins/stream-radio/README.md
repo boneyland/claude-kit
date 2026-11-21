@@ -34,6 +34,7 @@ For some content (some album playlists, for one) YouTube answers the stream URL 
 | `defaultUrl` | Claude FM lofi | what a bare `/stream` plays |
 | `volume` | 60 | 0 to 100 |
 | `player` | `mpv` | the mpv executable |
+| `androidClient` | off | always play with the android client (see above), skipping the failed first try |
 
 Playlists play through and repeat. The plugin overrides `loop-file` and `keep-open` from your `mpv.conf` for its own player, so a config that loops one file doesn't repeat one song. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
 

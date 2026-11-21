@@ -1,6 +1,6 @@
 {
   "name": "stream-radio",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "types": "./types/index.d.ts",
   "description": "Play any YouTube (or other mpv-supported) stream's audio from Claude Code with /stream <url>, and show what is playing in the status line.",
   "author": {
@@ -30,6 +30,12 @@
       "title": "Player command",
       "description": "The mpv executable. YouTube also needs yt-dlp on the PATH.",
       "default": "mpv"
+    },
+    "androidClient": {
+      "type": "boolean",
+      "title": "Always use the android client",
+      "description": "Play with yt-dlp's android client from the start, instead of only after the default one fails. Skips the failed first try for content YouTube refuses (403); AAC, more bandwidth.",
+      "default": false
     }
   }
 }

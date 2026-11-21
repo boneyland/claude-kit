@@ -17,8 +17,8 @@ const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
 const TOGGLE_PAUSE = '{"command":["cycle","pause"]}'
 
-type Options = { defaultUrl?: string; volume?: number; player?: string }
-type Config = { volume: number; player: string }
+type Options = { defaultUrl?: string; volume?: number; player?: string; androidClient?: boolean }
+type Config = { volume: number; player: string; androidClient: boolean }
 
 // URLs that only played with the android client; they start with it directly.
 const needsAndroid = new Set<string>()
@@ -48,10 +48,10 @@ function send(json: string): string[] {
 // and a hook that takes too long is reported as unanswered, so the startup runs
 // in the background.
 function start($: EngineInterface, config: Config, url: string, retryClient?: string) {
-  const { player, volume } = config
+  const { player, volume, androidClient } = config
   // YouTube refuses the default client's stream URLs for some content (403);
   // the android client gets through, with muxed AAC and no audio-only Opus.
-  const client = retryClient ?? (needsAndroid.has(url) ? 'android' : undefined)
+  const client = retryClient ?? (androidClient || needsAndroid.has(url) ? 'android' : undefined)
   const old = current
   current = undefined
   control = undefined
@@ -165,8 +165,8 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
 }
 
 export const register: Register = (on, options) => {
-  const { defaultUrl = '', volume = 60, player = 'mpv' } = options as Options
-  const config: Config = { volume, player }
+  const { defaultUrl = '', volume = 60, player = 'mpv', androidClient = false } = options as Options
+  const config: Config = { volume, player, androidClient }
 
   on('session.start', async ($, e, next) => {
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
