@@ -1156,13 +1156,13 @@ export const register: Register = (on, options) => {
               )
             })
           : null}
-        <Box flexGrow={1} flexShrink={1} />
-        {tier <= 1 && repo !== null ? (
-          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={1}>
-            <Text dimColor>{Svg ? '⎇' : glyphs.branch}</Text>
+        {/* One growing box holds the branch at its right end, so the gap on either side is the row's own. */}
+        <Box flexDirection="row" alignItems="center" justifyContent="flex-end" columnGap={1} flexGrow={1} flexShrink={1} overflow="hidden">
+          {tier <= 1 && repo !== null ? <Text dimColor>{Svg ? '⎇' : glyphs.branch}</Text> : null}
+          {tier <= 1 && repo !== null ? (
             <Text bold color={repo.isDirty ? WARN : undefined} wrap="truncate-end">{branchLabel(repo)}</Text>
-          </Box>
-        ) : null}
+          ) : null}
+        </Box>
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={contextIcon(s.context)} alt="context" width={icon} height={icon} /> : null}
           {Svg && tier === 0 ? (
