@@ -2,6 +2,33 @@
 
 Watch pull requests from a Claude Code session. When CI fails or a merge conflict appears, pr-watch wakes **this same session** with a prompt naming the PR and what broke, and Claude fixes it, commits and pushes. No cloud session is opened: the fix runs here, with this checkout and this conversation's context.
 
+## The footer button and the panel
+
+A button in the footer under the prompt sums up the watched PRs: `PRs` with none, `PRs 2✓` when all are green, otherwise what needs a look, e.g. `PRs ✗1 ⏳1` (✗ failing CI or a conflict, ⏳ checks still running, ? `gh` couldn't read it). Click it to open the side panel, and again (it reads `Hide PRs`) to close it.
+
+```
+╭ PR watch ─────────────────────────────────╮
+│ [Watch this branch's PR]  [Check now]     │
+│ PR number or URL: ______________          │
+│ Watching #130 ✗ 2 failed …                │
+│                                           │
+│ #123 ✓                     [Stop] open    │
+│ acme/app: Add login                       │
+│ #130 ✗ 2 failed · fixing   [Stop] open    │
+│ acme/app: Fix cache                       │
+│   CI / lint                               │
+│   CI / test                               │
+│                                           │
+│ Checks every 90 s · push fixes: on        │
+╰───────────────────────────────────────────╯
+```
+
+Type a PR number or URL in the box and press Enter to watch it. `open` and each failing check are links to GitHub.
+
+## The command
+
+Everything the panel does, `/pr-watch` does too:
+
 ```
 /pr-watch               # watch the current branch's PR
 /pr-watch 123           # watch PR #123 of this repo
@@ -9,12 +36,7 @@ Watch pull requests from a Claude Code session. When CI fails or a merge conflic
 /pr-watch list          # what is watched, and its state
 /pr-watch check         # poll now instead of waiting
 /pr-watch stop 123      # stop watching one (or: stop, stop all)
-```
-
-While anything is watched, a band above the prompt shows each PR:
-
-```
-PRs  #123 ✓  #130 ✗ 2 failed · fixing  #131 ⏳ 3/7  #140 conflict
+/pr-watch panel         # open or close the panel
 ```
 
 ## How it decides

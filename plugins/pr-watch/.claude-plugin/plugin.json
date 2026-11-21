@@ -1,8 +1,8 @@
 {
   "name": "pr-watch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "types": "./types/index.d.ts",
-  "description": "Watch pull requests from a session: when CI fails or a merge conflict appears, wake this same session to fix it and push, with no cloud session. /pr-watch adds the current branch's PR; a band above the prompt shows each PR's state.",
+  "description": "Watch pull requests from a session: when CI fails or a merge conflict appears, wake this same session to fix it and push, with no cloud session. A footer button sums up each PR's state and opens a side panel to watch, check and stop PRs; /pr-watch does the same.",
   "author": {
     "name": "johnnyvizz",
     "url": "https://github.com/johnnyvizz"
