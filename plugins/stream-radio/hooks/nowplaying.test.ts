@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, completeLines, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
+import { baseName, completeLines, filterRows, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
@@ -162,4 +162,14 @@ test('by default a title moves 4 characters a second', () => {
   // Resting 2.4 s at a second a redraw: 2 redraws, then 4 characters each.
   expect(marquee(text, 4, holdTicks(1000))).toBe('abcd')
   expect(marquee(text, 4, holdTicks(1000) + 1)).toBe('efgh')
+})
+
+test('the filter keeps entries whose name or folder holds every word', () => {
+  const rows = filterRows(NAMES, PATHS, ROOT, 'disc  b')
+  expect(rows).toEqual([
+    { kind: 'item', index: 2, name: 'B', depth: 0, number: 3, where: 'Disc 2' },
+    { kind: 'item', index: 3, name: 'C', depth: 0, number: 4, where: 'Disc 2/Bonus' },
+  ])
+  expect(filterRows(NAMES, PATHS, ROOT, 'END').map(r => r.kind === 'item' && r.index)).toEqual([4])
+  expect(filterRows(['Nocturne', 'Arabesque'], [], '', 'noc')).toHaveLength(1)
 })

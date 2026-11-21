@@ -15,6 +15,7 @@ import {
   nextRepeat,
   type Repeat,
   VOLUME_STEP,
+  filterRows,
   foldersOf,
   playlistRows,
   type TreeRow,
@@ -94,6 +95,9 @@ async function setVolume($: EngineInterface, configured: number, level: number):
 // off again when something new starts.
 const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
 const isShuffled = atom({ plugin: 'stream-radio', key: 'isShuffled' } as const, false)
+// What the panel's list is narrowed to, as typed; empty again when something
+// new starts.
+const listFilter = atom({ plugin: 'stream-radio', key: 'filter' } as const, '')
 const REPEAT_KEY = 'repeat'
 
 async function loadRepeat($: EngineInterface) {
@@ -402,6 +406,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
       await update($, scroll, () => 0)
       await update($, queue, () => NO_QUEUE)
       await update($, isShuffled, () => false)
+      await update($, listFilter, () => '')
       await update($, playing, () => 'connecting…')
       startScroller($, config)
 
@@ -765,9 +770,15 @@ export const register: Register = (on, options) => {
     const level = await read($, volumeLevel)
     const repeat = await read($, repeatMode)
     const shuffled = await read($, isShuffled)
-    const rowsKey = `${queueRead.version}:${openRead.version}`
+    const filter = (await read($, listFilter)).trim()
+    const rowsKey = `${queueRead.version}:${openRead.version}:${filter}`
     if (rowsCache?.key !== rowsKey) {
-      rowsCache = { key: rowsKey, rows: playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current) }
+      rowsCache = {
+        key: rowsKey,
+        rows: filter
+          ? filterRows(q.items, q.paths, q.root, filter)
+          : playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current),
+      }
     }
     const rows = rowsCache.rows
     const act = async (work: () => Promise<string>) => {
@@ -869,7 +880,25 @@ export const register: Register = (on, options) => {
         {said !== '' && <Text dimColor>{said}</Text>}
         {q.kind !== 'none' ? (
           <Box flexDirection="column">
-            <Text dimColor>{q.kind === 'playlist' ? 'Playlist' : 'Chapters'}</Text>
+            <Text dimColor>
+              {filter
+                ? `${rows.length} of ${q.items.length} ${q.kind === 'playlist' ? 'songs' : 'chapters'} match`
+                : q.kind === 'playlist'
+                  ? 'Playlist'
+                  : 'Chapters'}
+            </Text>
+            {q.items.length > 1 ? (
+              <Input
+                key="filter"
+                placeholder={q.kind === 'playlist' ? 'Filter songs' : 'Filter chapters'}
+                submitLabel="Enter plays the first"
+                onInput={(value: string) => void update($, listFilter, () => value)}
+                onSubmit={() => {
+                  const first = rows.find(r => r.kind === 'item')
+                  return first?.kind === 'item' ? act(() => pick($, first.index)) : act(async () => 'Nothing matches.')
+                }}
+              />
+            ) : null}
             {rows.map(row => {
               const indent = '  '.repeat(row.depth)
               if (row.kind === 'folder') {
@@ -895,7 +924,7 @@ export const register: Register = (on, options) => {
                   key={`item-${i}`}
                   plain
                   dimColor={i !== q.current}
-                  label={cut(`${i === q.current ? '▶' : ' '} ${indent}${row.number}. ${row.name}`, width)}
+                  label={cut(`${i === q.current ? '▶' : ' '} ${indent}${row.number}. ${row.name}${row.where ? ` · ${row.where}` : ''}`, width)}
                   onPress={() => act(() => pick($, i))}
                 />
               )

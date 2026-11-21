@@ -35,6 +35,8 @@ declare module 'claude-code' {
       // The player's volume, 0 to 100.
       // all, one or off; kept across sessions.
       repeat: 'all' | 'one' | 'off'
+      // What the panel's list is narrowed to; empty for all of it.
+      filter: string
       // Whether the playing playlist is shuffled.
       isShuffled: boolean
       volume: number

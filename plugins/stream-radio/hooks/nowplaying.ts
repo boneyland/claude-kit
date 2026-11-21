@@ -244,7 +244,7 @@ export function marquee(text: string, width: number, tick: number, chars = SCROL
 // number counts the entries within their own folder; index is mpv's.
 export type TreeRow =
   | { kind: 'folder'; path: string; name: string; depth: number; count: number; isOpen: boolean; hasCurrent: boolean }
-  | { kind: 'item'; index: number; name: string; depth: number; number: number }
+  | { kind: 'item'; index: number; name: string; depth: number; number: number; where?: string }
 
 type Node = { path: string; name: string; count: number; hasCurrent: boolean; children: ({ item: number } | { folder: Node })[] }
 
@@ -293,5 +293,20 @@ export function playlistRows(items: readonly string[], paths: readonly string[],
     }
   }
   walk(top, 0)
+  return rows
+}
+
+// The entries whose name or folder holds every word of `text`, any case, as a
+// plain list in play order: numbered by place in the playlist, each with the
+// folder it is in under `root` (empty at the top).
+export function filterRows(items: readonly string[], paths: readonly string[], root: string, text: string): TreeRow[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean)
+  const rows: TreeRow[] = []
+  items.forEach((name, index) => {
+    const folders = foldersOf(paths[index] ?? '', root)
+    const where = folders.length > 0 ? folders[folders.length - 1]!.slice(root.length + 1) : ''
+    const haystack = `${name} ${where}`.toLowerCase()
+    if (words.every(w => haystack.includes(w))) rows.push({ kind: 'item', index, name, depth: 0, number: index + 1, where })
+  })
   return rows
 }
