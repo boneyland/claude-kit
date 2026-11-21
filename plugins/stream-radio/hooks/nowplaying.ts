@@ -64,10 +64,46 @@ export type Command =
   | { kind: 'next' }
   | { kind: 'prev' }
   | { kind: 'panel' }
-  | { kind: 'play'; url: string }
+  // url: an http(s) URL, or an absolute path when isLocal
+  | { kind: 'play'; url: string; isLocal?: true }
   | { kind: 'error'; text: string }
 
-export function parseArgs(args: string, fallback: string): Command {
+// Where a local path is read from: the home folder for `~`, the session's folder
+// for a relative path.
+export type Where = { home: string; cwd: string }
+
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | panel | stop'
+
+// A URL, or a local file, folder or playlist as an absolute path: `~/…`,
+// `/…`, `file://…` or relative to the session's folder. Quotes around it go.
+// Whether the path exists is the caller's to check.
+export function resolveTarget(raw: string, where: Where): Command {
+  const target = raw.replace(/^(['"])(.*)\1$/, '$2').trim()
+  if (/^https?:\/\/\S+$/.test(target)) return { kind: 'play', url: target }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target) && !target.startsWith('file://')) {
+    return { kind: 'error', text: `Not an http(s) URL or a local path: ${target}` }
+  }
+  // An mpv option would read as one; a path never needs to start with a dash.
+  if (target.startsWith('-')) return { kind: 'error', text: `Not a URL or a path: ${target}` }
+  let path = target
+  if (path.startsWith('file://')) {
+    try {
+      path = decodeURIComponent(path.slice('file://'.length))
+    } catch {
+      return { kind: 'error', text: `Not a file URL: ${target}` }
+    }
+  }
+  if (path === '~' || path.startsWith('~/')) {
+    if (!where.home) return { kind: 'error', text: 'No home folder to read ~ from.' }
+    path = where.home + path.slice(1)
+  } else if (!path.startsWith('/')) {
+    if (!where.cwd) return { kind: 'error', text: `Give a full path: ${target}` }
+    path = `${where.cwd.replace(/\/$/, '')}/${path.replace(/^\.\//, '')}`
+  }
+  return { kind: 'play', url: path, isLocal: true }
+}
+
+export function parseArgs(args: string, fallback: string, where: Where = { home: '', cwd: '' }): Command {
   const word = args.trim()
   if (word === 'stop' || word === 'off') return { kind: 'stop' }
   if (word === 'pause' || word === 'resume' || word === 'toggle') return { kind: 'toggle' }
@@ -75,14 +111,15 @@ export function parseArgs(args: string, fallback: string): Command {
   if (word === 'next') return { kind: 'next' }
   if (word === 'prev' || word === 'previous') return { kind: 'prev' }
   if (word === 'panel') return { kind: 'panel' }
-  const url = word || fallback
-  if (!url) return { kind: 'error', text: 'Usage: /stream <url> | last | pause | next | prev | panel | stop' }
-  if (!/^https?:\/\/\S+$/.test(url)) {
-    return { kind: 'error', text: `Not an http(s) URL: ${url}` }
-  }
+  const target = word || fallback
+  if (!target) return { kind: 'error', text: USAGE }
 
-  return { kind: 'play', url }
+  return resolveTarget(target, where)
 }
+
+// The last part of a path or URL: a local playlist entry's name when its file
+// has no title tag.
+export const baseName = (path: string) => path.replace(/\/+$/, '').split('/').pop() || path
 
 // Terminal cells one code point takes: 0 for combining marks and joiners, 2 for
 // wide characters (CJK, Hangul, fullwidth forms, most emoji, the media-control

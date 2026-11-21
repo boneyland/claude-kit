@@ -9,6 +9,7 @@ import {
   formatTime,
   holdTicks,
   marquee,
+  baseName,
   parseArgs,
   parseNowPlaying,
   SCROLL_CHARS,
@@ -166,7 +167,7 @@ async function refreshQueue($: EngineInterface) {
     const entries = list as { filename?: string; title?: string; current?: boolean }[]
     next = {
       kind: 'playlist',
-      items: entries.map(e => e.title || e.filename || '?'),
+      items: entries.map(e => e.title || (e.filename ? baseName(e.filename) : '?')),
       current: entries.findIndex(e => e.current),
     }
   } else {
@@ -263,6 +264,9 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         '--keep-open=no',
         `--input-ipc-server=${pipe}`,
         '--ytdl-format=bestaudio/best',
+        // A local folder plays its sound and video files (sound only), not its
+        // cover art or archives, which would each take a turn.
+        ...(/^https?:/.test(url) ? [] : ['--directory-filter-types=audio,video,playlist']),
         ...(client
           ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`]
           : []),
@@ -343,7 +347,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
     await update($, playing, () => '')
     await update($, chapter, () => '')
     await update($, queue, () => NO_QUEUE)
-    if (!lastTitle && !client) {
+    if (!lastTitle && !client && /^https?:/.test(url)) {
       // Nothing played with the default client: try once with android.
       $.ui.log(`stream-radio: ${url} would not play; retrying with the android client`)
       start($, config, url, from, 'android')
@@ -372,6 +376,23 @@ async function togglePause($: EngineInterface): Promise<boolean> {
   await update($, isPaused, () => target)
 
   return true
+}
+
+// `/stream`'s argument or the panel's field: a URL, or a local file, folder or
+// playlist that exists. Anything else comes back as the reply to show.
+async function locate($: EngineInterface, args: string, fallback: string) {
+  // Home and the session's folder only for a path that needs them: a URL or a
+  // word like `stop` reads neither.
+  let parsed = parseArgs(args, fallback)
+  if (parsed.kind === 'error' || (parsed.kind === 'play' && parsed.isLocal)) {
+    const home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
+    const cwd = await $.session.cwd().catch(() => '')
+    parsed = parseArgs(args, fallback, { home, cwd })
+  }
+  if (parsed.kind === 'play' && parsed.isLocal && !(await $.fs.exists(parsed.url).catch(() => false))) {
+    return { kind: 'error' as const, text: `No such file or folder: ${parsed.url}` }
+  }
+  return parsed
 }
 
 // Plays `url` again from where it got to, when that is where it got to.
@@ -458,7 +479,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'stream' }, async ($, e) => {
     // A throwing hook is skipped and /stream then says nothing useful: say why.
     try {
-      const parsed = parseArgs(e.args, defaultUrl)
+      const parsed = await locate($, e.args, defaultUrl)
       if (parsed.kind === 'error') return { text: parsed.text }
       if (parsed.kind === 'stop') {
         await stopPlaying($)
@@ -619,11 +640,17 @@ export const register: Register = (on, options) => {
         ) : null}
         <Input
           key="url"
-          placeholder="YouTube or stream URL"
+          placeholder="URL, or a file or folder path"
           submitLabel="play"
           onSubmit={(value: string) => {
-            const parsed = parseArgs(value.trim(), '')
-            return parsed.kind === 'play' ? play(parsed.url) : act(async () => 'Type a full http(s) URL.')
+            return act(async () => {
+              const parsed = await locate($, value.trim(), '')
+              if (parsed.kind === 'play') {
+                start($, config, parsed.url)
+                return ''
+              }
+              return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
+            })
           }}
         />
         {said !== '' && <Text dimColor>{said}</Text>}

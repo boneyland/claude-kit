@@ -1,9 +1,10 @@
 # stream-radio
 
-Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
+Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) or your own music files from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
 
 ```
 /stream https://www.youtube.com/watch?v=tRsQsTMvPNg
+/stream ~/Music/Album          # a folder plays as a playlist; a file or .m3u works too
 /stream            # plays the default stream (Claude FM lofi)
 /stream pause      # pause or resume
 /stream next       # next song in a playlist (or chapter); /stream prev goes back
@@ -13,6 +14,10 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 ```
 
 With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again.
+
+## Local music
+
+`/stream` (and the panel's field) takes a path as well as a URL: a file, a folder or a playlist file (`.m3u`, `.pls`, anything mpv reads). Write it as `~/Music/…`, an absolute path, a `file://` URL, or a path relative to the session's folder; quotes around a path with spaces are fine. A folder plays its sound and video files as a playlist, folders inside it included, and skips cover art and other files. The panel lists the files by their title tag, or by file name when they have none. A path that does not exist is reported and nothing starts.
 
 Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/stream last`) picks up where it got to: the same song in a playlist and the same time in it, so a chapter too. That survives a plugin reload, which stops the player. Typing a URL plays it from the start. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, its progress and its place in the playlist, with Prev, Pause or Resume, Next and Stop; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
 

@@ -1,8 +1,8 @@
 {
   "name": "stream-radio",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "types": "./types/index.d.ts",
-  "description": "Play any YouTube (or other mpv-supported) stream's audio from Claude Code with /stream <url>, and show what is playing in the prompt footer, with a side panel to pick songs from a playlist.",
+  "description": "Play any YouTube (or other mpv-supported) stream's audio, or local music files and folders, from Claude Code with /stream <url | path>, and show what is playing in the prompt footer, with a side panel to pick songs from a playlist.",
   "author": {
     "name": "johnnyvizz",
     "url": "https://github.com/johnnyvizz"
@@ -14,7 +14,7 @@
     "defaultUrl": {
       "type": "string",
       "title": "Default stream",
-      "description": "What a bare /stream plays. Empty: /stream needs a URL.",
+      "description": "What a bare /stream plays: a URL, or a local file, folder or playlist. Empty: /stream needs one.",
       "default": "https://www.youtube.com/watch?v=tRsQsTMvPNg"
     },
     "volume": {

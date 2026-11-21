@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { completeLines, fit, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, textWidth, titleColumns } from './nowplaying'
+import { baseName, completeLines, fit, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
@@ -99,4 +99,19 @@ test('the title gets what the icon and time leave of 40 columns', () => {
   expect(titleColumns('1:02:05 ')).toBe(32)
   // The pause symbol is wide.
   expect(titleColumns('⏸ 3:42 ')).toBe(32)
+})
+
+test('a local file, folder or playlist resolves to an absolute path', () => {
+  const where = { home: '/home/me', cwd: '/work/repo' }
+  expect(resolveTarget('https://a.b/c', where)).toEqual({ kind: 'play', url: 'https://a.b/c' })
+  expect(resolveTarget('~/Music', where)).toEqual({ kind: 'play', url: '/home/me/Music', isLocal: true })
+  expect(resolveTarget('~', where)).toEqual({ kind: 'play', url: '/home/me', isLocal: true })
+  expect(resolveTarget('/srv/mix.m3u', where)).toEqual({ kind: 'play', url: '/srv/mix.m3u', isLocal: true })
+  expect(resolveTarget('./song.flac', where)).toEqual({ kind: 'play', url: '/work/repo/song.flac', isLocal: true })
+  expect(resolveTarget('"~/My Music/a b.mp3"', where)).toEqual({ kind: 'play', url: '/home/me/My Music/a b.mp3', isLocal: true })
+  expect(resolveTarget('file:///home/me/My%20Music', where)).toEqual({ kind: 'play', url: '/home/me/My Music', isLocal: true })
+  expect(resolveTarget('ftp://a.b/c', where).kind).toBe('error')
+  expect(resolveTarget('--script=x', where).kind).toBe('error')
+  expect(resolveTarget('~/x', { home: '', cwd: '' }).kind).toBe('error')
+  expect(baseName('/home/me/Music/01 Song.flac')).toBe('01 Song.flac')
 })
