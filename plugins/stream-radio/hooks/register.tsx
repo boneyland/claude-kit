@@ -163,22 +163,8 @@ const RESUME_MIN_SECONDS = 5
 
 
 // Sends one command to mpv's IPC socket and prints its reply's data as JSON;
-// exits 1 when mpv answers with an error. Other lines on the socket (events,
-// replies to other requests) are skipped.
-const IPC = `import socket,sys,json
-s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1])
-s.sendall((json.dumps({"command":json.loads(sys.argv[2]),"request_id":7})+"\\n").encode())
-b=b""
-while True:
-  c=s.recv(65536)
-  if not c: sys.exit(1)
-  b+=c
-  *lines,b=b.split(b"\\n")
-  for l in lines:
-    d=json.loads(l or b"{}")
-    if d.get("request_id")==7:
-      print(json.dumps(d.get("data")))
-      sys.exit(0 if d.get("error")=="success" else 1)`
+// exits 1 when mpv answers with an error.
+const IPC = 'hooks/mpv-ipc.py'
 
 // The panel; also the footer button's target.
 const PANE = 'stream-radio'
@@ -261,7 +247,7 @@ async function stop() {
 async function mpv($: EngineInterface, command: readonly unknown[]): Promise<{ data: unknown } | undefined> {
   if (!control) return undefined
   const result = await $.process
-    .run(['python3', '-I', '-c', IPC, control, JSON.stringify(command)], { timeoutMs: 3000 })
+    .run(['python3', '-I', `${$.plugin.root}/${IPC}`, control, JSON.stringify(command)], { timeoutMs: 3000 })
     .catch(() => undefined)
   if (result?.exitCode !== 0) return undefined
   try {

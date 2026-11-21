@@ -60,7 +60,7 @@ const CACHE = '#4fb3a9'
 const WARN = '#e2a94e'
 const ALERT = '#e0846b'
 
-const stats = atom({ plugin: 'session-band', key: 'stats' } as const, {
+const stats = atom({ plugin: 'turn-gauge', key: 'stats' } as const, {
   turn: 0,
   speed: null,
   turnCost: null,
@@ -69,33 +69,33 @@ const stats = atom({ plugin: 'session-band', key: 'stats' } as const, {
   costAtStart: 0,
 } as Stats)
 
-const cache = atom({ plugin: 'session-band', key: 'cache' } as const, {
+const cache = atom({ plugin: 'turn-gauge', key: 'cache' } as const, {
   expiresAt: null,
   secondsLeft: null,
 } as Cache)
 
 // The plan's rate-limit windows as the last response reported them; empty off a subscription.
-const limits = atom({ plugin: 'session-band', key: 'limits' } as const, [] as Limit[])
+const limits = atom({ plugin: 'turn-gauge', key: 'limits' } as const, [] as Limit[])
 
 // Closed with ×: stays hidden for the rest of the session.
-const isHidden = atom({ plugin: 'session-band', key: 'isHidden' } as const, false)
+const isHidden = atom({ plugin: 'turn-gauge', key: 'isHidden' } as const, false)
 
 // A turn is running: the cache stays warm, so no countdown warnings.
-const isBusy = atom({ plugin: 'session-band', key: 'isBusy' } as const, false)
+const isBusy = atom({ plugin: 'turn-gauge', key: 'isBusy' } as const, false)
 
 // The smallest CACHE_NOTIFY_MINUTES already announced since the last answer; 0 none.
-const warned = atom({ plugin: 'session-band', key: 'warned' } as const, 0)
+const warned = atom({ plugin: 'turn-gauge', key: 'warned' } as const, 0)
 
 // The effort level the main loop's last request carried; null where none was sent.
-const effort = atom({ plugin: 'session-band', key: 'effort' } as const, null as string | null)
+const effort = atom({ plugin: 'turn-gauge', key: 'effort' } as const, null as string | null)
 
 // The main loop's turn: when it began and the seconds since, in whole minutes while
 // it runs. When it ends, startedAt clears and seconds keeps its exact length, shown
 // until the next turn starts.
-const turnClock = atom({ plugin: 'session-band', key: 'turnClock' } as const, { startedAt: null, seconds: 0 } as TurnClock)
+const turnClock = atom({ plugin: 'turn-gauge', key: 'turnClock' } as const, { startedAt: null, seconds: 0 } as TurnClock)
 
 // The working tree's branch and whether it has changes; null outside a repository.
-const git = atom({ plugin: 'session-band', key: 'git' } as const, null as Git | null)
+const git = atom({ plugin: 'turn-gauge', key: 'git' } as const, null as Git | null)
 
 // How often git is read between turns, for changes made outside the session.
 const GIT_POLL_MS = 15_000
@@ -140,7 +140,7 @@ const branchLabel = ({ branch, isDirty }: Git) =>
 
 // What the long context costs against starting over: the measured inputs of the
 // spend warnings, and the running sums that calibrate list prices to the engine's cost.
-const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
+const spend = atom({ plugin: 'turn-gauge', key: 'spend' } as const, {
   model: null,
   context: null,
   baseline: null,
@@ -160,7 +160,7 @@ const spend = atom({ plugin: 'session-band', key: 'spend' } as const, {
 
 // Token counts and the cache's hit rate: the session's in and out, every loop's;
 // per main turn, input by source, output and what the cache missed.
-const tokens = atom({ plugin: 'session-band', key: 'tokens' } as const, {
+const tokens = atom({ plugin: 'turn-gauge', key: 'tokens' } as const, {
   input: 0,
   output: 0,
   turn: NO_TOKENS,
@@ -198,7 +198,7 @@ const recordTokens = async ($: EngineInterface, usage: TurnUsage, isMain: boolea
 }
 
 // Each agent's cost as `$.agent.list()` gave it when the main turn started, and as last seen.
-const agentSpend = atom({ plugin: 'session-band', key: 'agentSpend' } as const, { base: {}, seen: {} } as AgentSpend)
+const agentSpend = atom({ plugin: 'turn-gauge', key: 'agentSpend' } as const, { base: {}, seen: {} } as AgentSpend)
 
 // The running turn's subagent cost: what each agent's cost grew by since the turn
 // started. An agent the engine has dropped keeps its last reading.
@@ -320,7 +320,7 @@ const tierFor = (columns: number) => {
   return i === -1 ? TIER_MIN.length : i
 }
 
-// Last measured width, for `/session_data width` while tuning TIER_MIN; debug only.
+// Last measured width, for `/turn-gauge width` while tuning TIER_MIN; debug only.
 let lastColumns: number | null = null
 
 // The band's labels for the windows it shows, in this order.
@@ -344,7 +344,7 @@ const saveLimits = async ($: EngineInterface, windows: readonly { kind: string; 
 
 // The pace projection's readings, shared by every session through $.store: one
 // window per kind, and the finished windows' scores.
-const pace = atom({ plugin: 'session-band', key: 'pace' } as const, { windows: {}, prev: {}, profile: null, dismissed: '' } as Pace)
+const pace = atom({ plugin: 'turn-gauge', key: 'pace' } as const, { windows: {}, prev: {}, profile: null, dismissed: '' } as Pace)
 const PACE_KEY = (kind: Kind) => `pace:${kind}`
 const PACE_PREV_KEY = (kind: Kind) => `pace-prev:${kind}`
 const PACE_HISTORY_KEY = 'pace-history'
@@ -527,7 +527,7 @@ const refresh = async ($: EngineInterface) => {
 }
 
 // Built by notifier/build.sh (macOS): posts the warning under Claude's icon.
-const NOTIFIER = 'notifier/Session Band.app/Contents/MacOS/session-band-notifier'
+const NOTIFIER = 'notifier/Turn Gauge.app/Contents/MacOS/turn-gauge-notifier'
 // The desktop app's id for a local Code session, as its claude:// links take it.
 const HOST_SESSION = /^local_[A-Za-z0-9-]{1,64}$/
 
@@ -615,7 +615,7 @@ const notifyCacheExpiry = async ($: EngineInterface, minutes: number) => {
       '-message',
       message,
       '-group',
-      `session-band-${session?.id ?? (await $.session.id())}`,
+      `turn-gauge-${session?.id ?? (await $.session.id())}`,
       ...(session ? ['-open', `claude://code/continue?session=${session.id}`] : []),
     ]
     // The first run waits while macOS asks whether to allow its notifications.
@@ -828,8 +828,8 @@ export const register: Register = (on, options) => {
     await restoreWarnings($)
 
     await $.command.register({
-      name: 'session_data',
-      description: 'Show or hide the session band; `pace` projects the plan windows; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
+      name: 'turn-gauge',
+      description: 'Show or hide the turn gauge band; `pace` projects the plan windows; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
     })
 
     await refreshGit($)
@@ -840,8 +840,8 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('command.run', { command: 'session_data' }, async ($, e) => {
-    // `/session_data demo <minutes>` fakes the cache deadline to preview the warnings;
+  on('command.run', { command: 'turn-gauge' }, async ($, e) => {
+    // `/turn-gauge demo <minutes>` fakes the cache deadline to preview the warnings;
     // the next answer resets it.
     const demo = e.args.trim().match(/^demo\s+(\d+(?:\.\d+)?)$/)
     if (demo) {
@@ -855,7 +855,7 @@ export const register: Register = (on, options) => {
       return { text: `Cache demo: ${demo[1]} min left until the next answer resets it.` }
     }
 
-    // `/session_data compact [turns]`: summarize all but the last turns, kept word for word.
+    // `/turn-gauge compact [turns]`: summarize all but the last turns, kept word for word.
     const compact = e.args.trim().match(/^compact(?:\s+(\d+))?$/)
     if (compact) {
       const turns = compact[1] === undefined ? keepTurns : Math.max(1, Number(compact[1]))
@@ -871,7 +871,7 @@ export const register: Register = (on, options) => {
       return { text: `Compacting, keeping the last ${turns} turn${turns === 1 ? '' : 's'}…` }
     }
 
-    // `/session_data pace`: where each window ends at this pace, and how well past projections did.
+    // `/turn-gauge pace`: where each window ends at this pace, and how well past projections did.
     if (e.args.trim() === 'pace') {
       await loadPace($)
       const now = await $.clock.now()
@@ -900,7 +900,7 @@ export const register: Register = (on, options) => {
       await refreshGit($)
     }
 
-    return { text: hidden ? 'Session band hidden.' : 'Session band shown.' }
+    return { text: hidden ? 'Turn gauge hidden.' : 'Turn gauge shown.' }
   })
 
   // A window moved a whole point, between turns too.

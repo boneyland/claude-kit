@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 const BAND = (bodyColumns: number) =>
   ({
-    plugin: 'session-band',
+    plugin: 'turn-gauge',
     component: 'AbovePrompt',
     surface: 'terminal',
     props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
@@ -60,7 +60,9 @@ test('a set background paints the band', { options: { background: '#1e2430' } },
   await ui.unmount()
 })
 
-const seedIcons = (on: Parameters<Parameters<typeof test>[1] & ((...a: never[]) => unknown)>[1]) => {
+type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1]
+
+const seedIcons = (on: On) => {
   on('state.get', (_, e) => (e.key in seed ? { value: { value: seed[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
   on('clock.now', () => ({ value: NOW }))
   on('session.model', () => ({ value: 'claude-sonnet-5-5' }))

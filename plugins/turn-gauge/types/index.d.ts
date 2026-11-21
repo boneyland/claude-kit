@@ -106,6 +106,8 @@ export type Pace = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens; pace: Pace }
+    // The separate Cache mod's deadline, read (never written) as a fallback after a reload.
+    Cache: { expiresAt: number | null }
+    'turn-gauge': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens; pace: Pace }
   }
 }

@@ -1,20 +1,20 @@
 {
-  "name": "session-band",
-  "version": "0.16.0",
+  "name": "turn-gauge",
+  "version": "0.17.0",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort, context fill, cache hit rate and token counts, plan-limit pace projection; warns on running out before a reset, cache misses and output-heavy turns; notifies before the cache expires.",
   "author": {
-    "name": "johnnyvizz",
-    "url": "https://github.com/johnnyvizz"
+    "name": "boneyland",
+    "url": "https://github.com/boneyland"
   },
   "types": "./types/index.d.ts",
-  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/session-band",
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/turn-gauge",
   "repository": "https://github.com/boneyland/claude-kit",
   "license": "MIT",
   "userConfig": {
     "keepTurns": {
       "type": "number",
       "title": "Turns kept when compacting",
-      "description": "How many recent turns the band's compact button and `/session_data compact` keep word for word. Claude Code's own /compact and auto-compaction are not affected.",
+      "description": "How many recent turns the band's compact button and `/turn-gauge compact` keep word for word. Claude Code's own /compact and auto-compaction are not affected.",
       "default": 3,
       "min": 1,
       "max": 20
@@ -29,7 +29,10 @@
       "type": "string",
       "title": "Terminal icons",
       "description": "How the band's icons draw in the terminal: emoji (⚡ 💰 ⏳), or glyphs (⚡ $ ⧗) colored like the band. The desktop app draws its own icons either way.",
-      "options": ["emoji", "glyphs"],
+      "options": [
+        "emoji",
+        "glyphs"
+      ],
       "default": "emoji"
     }
   }

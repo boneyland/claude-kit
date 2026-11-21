@@ -302,7 +302,7 @@ export const runOutWarning = (p: Projection | null, now: number, offsetMinutes: 
 
 const pct = (n: number) => `${Math.round(Math.min(n, 999))}%`
 
-// The window's state and every model's forecast, for `/session_data pace`.
+// The window's state and every model's forecast, for `/turn-gauge pace`.
 export const describe = (p: Projection | null, kind: Kind, now: number, offsetMinutes: number) => {
   if (p === null) return `${LABEL[kind]}: too early in the window, or no readings yet.`
   const end =

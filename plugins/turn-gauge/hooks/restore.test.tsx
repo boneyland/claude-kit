@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const BAND = {
-  plugin: 'session-band',
+  plugin: 'turn-gauge',
   component: 'AbovePrompt',
   surface: 'desktop',
   props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 120, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
@@ -28,7 +28,7 @@ test('a restarted session draws its saved band before its next answer', async ($
   on('session.usage', () => ({
     value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: [], cost: { usd: 0 } },
   }))
-  on('command.register', () => ({ value: { command: 'session_data' } }))
+  on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   on('clock.every', () => ({ value: undefined }))
   on('clock.now', () => ({ value: NOW }))
   on('session.model', () => ({ value: 'claude-sonnet-5-5' }))

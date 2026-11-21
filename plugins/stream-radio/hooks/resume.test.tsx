@@ -28,7 +28,7 @@ function engine(on: On) {
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
     if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[5]!) as unknown[]
+    const command = JSON.parse(argv[4]!) as unknown[]
     world.sent.push(command)
     let data: unknown = null
     if (command[0] === 'get_property' && command[1] === 'playlist') {

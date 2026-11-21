@@ -27,7 +27,7 @@ const CONVERSATION = [
 ]
 
 const RUN = (args: string) =>
-  ({ command: 'session_data', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
+  ({ command: 'turn-gauge', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
 
 test('a turn starts at a prompt the person wrote, not at tool results', async () => {
   expect(tailStart(CONVERSATION, 1)).toBe(8)

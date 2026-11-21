@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.johnnyvizz.session-band.notifier</string>
+  <string>com.boneyland.turn-gauge.notifier</string>
   <key>CFBundleName</key>
-  <string>Session Band</string>
+  <string>Turn Gauge</string>
   <key>CFBundleExecutable</key>
-  <string>session-band-notifier</string>
+  <string>turn-gauge-notifier</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

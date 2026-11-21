@@ -8,23 +8,28 @@ A Claude Code mod: a pane listing the prompts of the current session, as a stand
 
 Slash commands Claude answered are listed as typed (`/superpowers:brainstorming`): skills and commands that send a prompt. Commands Claude Code runs by itself with no reply (`/plugin`, `/reload-plugins`, `/exit`) are left out, as are tool results, command output and notifications. A command whose turn is still running is listed straight away.
 
+## What it runs, reads and sends
+
+- **Conversation**: reads this session's messages to list your prompts in the pane; the list stays in memory and goes nowhere.
+- **Programs, network, files**: none. It runs nothing, sends nothing and saves nothing.
+
 ## Install
 
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install prompt-index --marketplace boneyland/prompt-index
+/plugin marketplace add boneyland/claude-kit
+/plugin install prompt-index@claude-kit
 ```
-
-Answer `y` to add the marketplace, then pick a scope (user is first; press Enter).
 
 From a shell:
 
 ```bash
-claude plugin install prompt-index --marketplace boneyland/prompt-index
+claude plugin marketplace add boneyland/claude-kit
+claude plugin install prompt-index@claude-kit
 ```
 
-In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `boneyland/prompt-index`, then Add plugin.
+In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `boneyland/claude-kit`, then Add plugin.
 
 ## Use
 

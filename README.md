@@ -1,12 +1,12 @@
 # claude-kit
 
-My public skills and mods for [Claude Code](https://claude.com/claude-code), in one place. Every item is a standalone plugin under `plugins/`: install only what you need.
+My mods for [Claude Code](https://claude.com/claude-code), plus savvy-flow and savvy-progress, forked from [johnnyvizz/claude-kit](https://github.com/johnnyvizz/claude-kit). Every item is a standalone plugin under `plugins/`: install only what you need.
 
 | Plugin | Type | What it does |
 | --- | --- | --- |
 | [savvy-flow](plugins/savvy-flow) | skill + agents | `/savvy-flow <task>`: the session model plans, delegates to tiered worker subagents and reviews their work. |
 | [savvy-progress](plugins/savvy-progress) | mod | A progress bar above the prompt and a live agents panel. Made for savvy-flow, shows any subagents. |
-| [session-band](plugins/session-band) | mod | A band above the prompt: turn, speed, cost, prompt cache countdown, plan-limit pace, git branch, context, cache hit rate and tokens, with the model and effort on a second row. Warns on spend (cache misses, output-heavy turns, a long context costing more than starting over, running out before a reset), offers a compact-keeping-recent-turns button, and notifies before the cache expires. |
+| [turn-gauge](plugins/turn-gauge) | mod | A band above the prompt: turn, speed, cost, prompt cache countdown, plan-limit pace, git branch, context, cache hit rate and tokens, with the model and effort on a second row. Warns on spend (cache misses, output-heavy turns, a long context costing more than starting over, running out before a reset), offers a compact-keeping-recent-turns button, and notifies before the cache expires. |
 | [prompt-index](plugins/prompt-index) | mod | A pane listing the session's prompts: click one to jump there, filter, step through matches, see which are on screen. `/prompts` or the footer button toggles it. |
 | [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv. A footer button shows the song and its progress and opens a menu (pause, stop, play last or default, type a URL); it retries with yt-dlp's android client when YouTube refuses. |
 | [pr-watch](plugins/pr-watch) | mod | Watches the current branch's PR (or any PR). When CI fails or a merge conflict appears, it wakes this same session to fix it and push, with no cloud session. A footer button sums up the PRs and opens a side panel to watch, check and stop them; `/pr-watch` does the same. |
@@ -23,7 +23,7 @@ In Claude Code:
 /plugin marketplace add boneyland/claude-kit
 /plugin install savvy-flow@claude-kit
 /plugin install savvy-progress@claude-kit
-/plugin install session-band@claude-kit
+/plugin install turn-gauge@claude-kit
 /plugin install prompt-index@claude-kit
 /plugin install stream-radio@claude-kit
 /plugin install pr-watch@claude-kit
@@ -39,7 +39,7 @@ The same, from a shell:
 claude plugin marketplace add boneyland/claude-kit
 claude plugin install savvy-flow@claude-kit
 claude plugin install savvy-progress@claude-kit
-claude plugin install session-band@claude-kit
+claude plugin install turn-gauge@claude-kit
 claude plugin install prompt-index@claude-kit
 claude plugin install stream-radio@claude-kit
 claude plugin install pr-watch@claude-kit
@@ -93,7 +93,7 @@ Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude 
 claude plugin marketplace update claude-kit
 claude plugin update savvy-flow@claude-kit
 claude plugin update savvy-progress@claude-kit
-claude plugin update session-band@claude-kit
+claude plugin update turn-gauge@claude-kit
 claude plugin update prompt-index@claude-kit
 claude plugin update stream-radio@claude-kit
 claude plugin update pr-watch@claude-kit

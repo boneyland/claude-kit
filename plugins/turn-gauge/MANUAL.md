@@ -1,4 +1,4 @@
-# session-band manual
+# turn-gauge manual
 
 What every part of the band shows, when it appears, and how its numbers are worked out. For installation see the [README](README.md).
 
@@ -29,7 +29,7 @@ One row above the prompt, left to right. In the terminal the icons are emoji (�
 | **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. Shown at the right of the second row, which is always there while the model is shown; warnings go on its left. |
 | **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 45%, yellow from 45%, orange from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
-| **×** | | Hides the band for the rest of the session. `/session_data` brings it back. |
+| **×** | | Hides the band for the rest of the session. `/turn-gauge` brings it back. |
 
 Before a session's first answer the band only appears if your plan's limits are already known.
 
@@ -143,7 +143,7 @@ The row says how many turns of overhead it takes to pay for the alternative:
 - **New session:** the cost of caching a fresh baseline, divided by the overhead per turn.
 - **`/compact`:** reading the context once, writing the summary, and re-caching baseline plus summary, divided by what the summary saves each turn. Left out when the summary wouldn't be smaller than the old context.
 
-The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/session_data compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
+The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/turn-gauge compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
 
 ## Pace projection
 
@@ -166,7 +166,7 @@ The band's `→` and the heads-up use the *shown* model. Its run-out time is whe
 
 ### Is it any good?
 
-`/session_data pace` shows each window's forecast from every model, and how each has done. At 25%, 50% and 75% of each window, the mod notes every model's forecast. When the window resets, it compares those forecasts with where usage really ended (the highest reading of the window) and keeps the last 40 windows. Forecasting texts call this rolling-origin evaluation. The score is each model's mean absolute miss in percentage points, at each mark, with the number of windows scored.
+`/turn-gauge pace` shows each window's forecast from every model, and how each has done. At 25%, 50% and 75% of each window, the mod notes every model's forecast. When the window resets, it compares those forecasts with where usage really ended (the highest reading of the window) and keeps the last 40 windows. Forecasting texts call this rolling-origin evaluation. The score is each model's mean absolute miss in percentage points, at each mark, with the number of windows scored.
 
 A week has to finish before its first score, and the profile needs two finished weeks before it's shown. The 5-hour scores come within a day.
 
@@ -176,7 +176,7 @@ Reference: Hyndman & Athanasopoulos, *Forecasting: Principles and Practice* (3rd
 
 The overhead row carries a **`compact, keep N`** button. It compacts the conversation but keeps the last *N* turns word for word after the summary, so the work you're in the middle of isn't paraphrased. *N* is the *Turns kept when compacting* setting (default 3).
 
-- **It only appears with the overhead row**, so the conditions above apply. To compact at any time, run `/session_data compact [turns]`.
+- **It only appears with the overhead row**, so the conditions above apply. To compact at any time, run `/turn-gauge compact [turns]`.
 - A turn here is a prompt the model answered. Slash commands you run in the terminal (`/plugin`, `/reload-plugins`, …) don't count.
 - If there's nothing before the kept turns to summarize, nothing happens and a toast says why.
 - Only this mod's compaction keeps turns. Claude Code's own `/compact`, auto-compaction and ahead-of-time compaction are unchanged.
@@ -193,11 +193,11 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 
 | Command | Does |
 |---|---|
-| `/session_data` | Show or hide the band. |
-| `/session_data compact [turns]` | Compact, keeping the last *turns* turns (default: the setting) word for word. |
-| `/session_data pace` | Each plan window's projection and how accurate past projections were. See [Pace projection](#pace-projection). |
-| `/session_data demo <minutes>` | Pretend the cache has that many minutes left, to preview the colors, frame and notifications. The next answer resets it. |
-| `/session_data width` | Print the band's measured width and tier (for debugging). |
+| `/turn-gauge` | Show or hide the band. |
+| `/turn-gauge compact [turns]` | Compact, keeping the last *turns* turns (default: the setting) word for word. |
+| `/turn-gauge pace` | Each plan window's projection and how accurate past projections were. See [Pace projection](#pace-projection). |
+| `/turn-gauge demo <minutes>` | Pretend the cache has that many minutes left, to preview the colors, frame and notifications. The next answer resets it. |
+| `/turn-gauge width` | Print the band's measured width and tier (for debugging). |
 
 **Settings** (under the plugin's options in `/plugin`):
 

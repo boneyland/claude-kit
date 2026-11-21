@@ -4,7 +4,7 @@ node_modules/
 .claude-plugin/types/
 tsconfig.json
 
-# Built locally by plugins/session-band/notifier/build.sh
+# Built locally by plugins/turn-gauge/notifier/build.sh
 notifier/*.app/
 
 # Claude Code

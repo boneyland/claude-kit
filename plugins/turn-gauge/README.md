@@ -1,11 +1,11 @@
-# session-band
+# turn-gauge
 
 A Claude Code mod: one band above the prompt with the session at a glance.
 
 See the [manual](MANUAL.md) for what each part shows, when the warnings and the compact button appear, and how costs are worked out.
 
 - **Band**: turn number, a live timer for the running turn (kept at the last turn's length between turns), output speed of the last response (tok/s), cost of the last turn with its subagents' part (beside the median and mean of the last 10 turns) and of the session, a countdown of the 1-hour prompt cache since the last answer, the git branch (`*` and amber when the working tree has changes), the current model and effort level, context fill, the last turn's cache hit rate, and the session's input and output tokens. The band gets an amber frame 20 minutes before the cache expires and a red one at 10. The row drops details as the window narrows instead of wrapping; `×` hides it for the rest of the session.
-- **Pace projection**: beside each plan limit, where the window ends at the current pace (`wk 41% →78%`), and a heads-up row when you're on track to run out before it resets ("Heads up: weekly limit runs out Mon 14:21, 20h before reset"). The pace is exponentially smoothed; after two finished weeks the weekly forecast follows your learned hour-of-week pattern. `/session_data pace` scores these against a straight line and last window's use, against how each window really ended.
+- **Pace projection**: beside each plan limit, where the window ends at the current pace (`wk 41% →78%`), and a heads-up row when you're on track to run out before it resets ("Heads up: weekly limit runs out Mon 14:21, 20h before reset"). The pace is exponentially smoothed; after two finished weeks the weekly forecast follows your learned hour-of-week pattern. `/turn-gauge pace` scores these against a straight line and last window's use, against how each window really ended.
 - **Spend warnings**: a second row, while idle, when something costs more than it should.
   - *Cache miss*: the last turn re-wrote 20k+ tokens of context the cache should have held, for no reason the band knows of (not an expiry, compaction, model switch or new session). Usually a tool, MCP, CLAUDE.md or plugin change.
   - *Output-heavy turn*: the last turn wrote 30k+ output tokens and they made up 40%+ of its cost; the row shows what they cost.
@@ -19,17 +19,24 @@ See the [manual](MANUAL.md) for what each part shows, when the warnings and the 
 The warning is posted by a small helper app, built once on your Mac (needs Xcode's command line tools; the icon is taken from your installed Claude.app):
 
 ```bash
-plugins/session-band/notifier/build.sh
+plugins/turn-gauge/notifier/build.sh
 ```
 
-It builds `notifier/Session Band.app` next to the script; on its first notification macOS asks whether to allow notifications from "Session Band". Build it in the folder the mod is loaded from, or copy the built app there. Without the helper (or on another OS) the mod falls back to Claude Code's own notification, which also reaches your phone over Remote Control but has no title or click-through; when you are already at the session that one is skipped and a toast says it instead.
+It builds `notifier/Turn Gauge.app` next to the script; on its first notification macOS asks whether to allow notifications from "Turn Gauge". Build it in the folder the mod is loaded from, or copy the built app there. Without the helper (or on another OS) the mod falls back to Claude Code's own notification, which also reaches your phone over Remote Control but has no title or click-through; when you are already at the session that one is skipped and a toast says it instead.
+
+## What it runs, reads and sends
+
+- **Programs**: `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` in the session's folder, for the branch and whether the tree has changes; it takes no lock and runs no repository hooks, and is skipped while the band is hidden. On macOS, if you built it, `notifier/Turn Gauge.app` posts the cache notification.
+- **Network**: none. Nothing leaves your machine. Without the notifier it falls back to Claude Code's own `PushNotification`, which Remote Control may forward to your phone.
+- **Files**: in the desktop app on macOS, the session's title from Claude's own session record (`~/Library/Application Support/Claude/claude-code-sessions/…/<session>.json`), for the notification's title. Its own state (spend history, the learned weekly pace, dismissed warnings) stays in the plugin's store (`$.store`) on this machine.
+- **Conversation**: token counts, costs and timings of the session and its subagents, as Claude Code reports them; never the text of your prompts or Claude's answers. `/turn-gauge compact` and the compact button ask Claude Code to compact the conversation, only when you click or run them.
 
 ## Commands
 
-- `/session_data`: show or hide the band.
-- `/session_data compact [turns]`: compact the conversation, keeping the last turns (default: the *Turns kept when compacting* setting, 3) word for word after the summary. Claude Code's own `/compact`, auto-compaction and ahead-of-time compaction are left as they are.
-- `/session_data pace`: where the 5-hour and weekly windows end at this pace, and how accurate past projections were.
-- `/session_data demo <minutes>`: pretend the cache has that many minutes left, to preview the colors and the warning; the next answer resets it.
+- `/turn-gauge`: show or hide the band.
+- `/turn-gauge compact [turns]`: compact the conversation, keeping the last turns (default: the *Turns kept when compacting* setting, 3) word for word after the summary. Claude Code's own `/compact`, auto-compaction and ahead-of-time compaction are left as they are.
+- `/turn-gauge pace`: where the 5-hour and weekly windows end at this pace, and how accurate past projections were.
+- `/turn-gauge demo <minutes>`: pretend the cache has that many minutes left, to preview the colors and the warning; the next answer resets it.
 
 ## Install
 
@@ -37,16 +44,16 @@ At the prompt of a terminal session:
 
 ```
 /plugin marketplace add boneyland/claude-kit
-/plugin install session-band@claude-kit
+/plugin install turn-gauge@claude-kit
 ```
 
 From a shell:
 
 ```bash
 claude plugin marketplace add boneyland/claude-kit
-claude plugin install session-band@claude-kit
+claude plugin install turn-gauge@claude-kit
 ```
 
 ## Credits
 
-A fork of the `session-band` mod from [johnnyvizz/claude-kit](https://github.com/johnnyvizz/claude-kit), which added the model and effort display. MIT licensed; see [LICENSE](LICENSE).
+Started as a fork of johnnyvizz's `session-band` mod in [johnnyvizz/claude-kit](https://github.com/johnnyvizz/claude-kit), renamed turn-gauge when it grew apart. If you installed it as `session-band@claude-kit`, uninstall that and install `turn-gauge@claude-kit`; settings carry over by hand. MIT licensed; see [LICENSE](LICENSE).

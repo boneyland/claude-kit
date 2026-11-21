@@ -23,7 +23,7 @@ function engine(on: On) {
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
     if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[5]!) as unknown[]
+    const command = JSON.parse(argv[4]!) as unknown[]
     world.sent.push(command)
     return { value: { exitCode: 0, stdout: JSON.stringify(command[1] === 'playlist' ? PLAYLIST : null), stderr: '' } } as never
   })

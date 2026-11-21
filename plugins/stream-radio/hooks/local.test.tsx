@@ -73,7 +73,7 @@ test('the panel marks a folder listed in a playlist file', async ($, on) => {
   on('fs.stat', (_$, e) => ({ value: { kind: e.path.endsWith('Live') ? 'dir' : 'file', size: 0, mtimeMs: 0 } }) as never)
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
-    const command = argv[0] === 'python3' ? (JSON.parse(argv[5]!) as unknown[]) : []
+    const command = argv[0] === 'python3' ? (JSON.parse(argv[4]!) as unknown[]) : []
     const data =
       command[1] === 'playlist'
         ? [
@@ -125,7 +125,7 @@ test('subfolders fold: the current song\'s opens by itself, a click shuts and op
   on('fs.exists', () => ({ value: true }) as never)
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
-    const command = argv[0] === 'python3' ? (JSON.parse(argv[5]!) as unknown[]) : []
+    const command = argv[0] === 'python3' ? (JSON.parse(argv[4]!) as unknown[]) : []
     const data = command[1] === 'playlist' ? playlist : null
     return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
   })
@@ -188,7 +188,7 @@ test('a song change asks mpv for the position only, and files under the folder a
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
     if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[5]!) as unknown[]
+    const command = JSON.parse(argv[4]!) as unknown[]
     world.sent.push(command)
     const data =
       command[1] === 'playlist'

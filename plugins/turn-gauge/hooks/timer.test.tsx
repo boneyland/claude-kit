@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 const BAND = (isWorking: boolean) =>
   ({
-    plugin: 'session-band',
+    plugin: 'turn-gauge',
     component: 'AbovePrompt',
     surface: 'terminal',
     props: { hasSurvey: false, isWorking, maxRows: 3, bodyColumns: 120, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
@@ -14,7 +14,7 @@ type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => u
 
 const engine = (on: On) => {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('command.register', () => ({ value: { command: 'session_data' } }))
+  on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: [] } }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))

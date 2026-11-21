@@ -2,14 +2,14 @@ import { expect, test } from 'claude-code/testing'
 
 const BAND = (isWorking: boolean, bodyColumns = 120) =>
   ({
-    plugin: 'session-band',
+    plugin: 'turn-gauge',
     component: 'AbovePrompt',
     surface: 'terminal',
     props: { hasSurvey: false, isWorking, maxRows: 3, bodyColumns, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
   }) as const
 
 const RUN = (args: string) =>
-  ({ command: 'session_data', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
+  ({ command: 'turn-gauge', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
 
 const NOW = Date.parse('2026-11-20T10:00:00Z')
 
@@ -63,7 +63,7 @@ test('the band shows the git branch, marked when dirty, and drops it when narrow
 test('session start reads the branch and dirty state from git status', async ($, on) => {
   const runs: string[][] = []
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('command.register', () => ({ value: { command: 'session_data' } }))
+  on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   // A limits reading lets the band draw before the session's first turn.
   on('session.usage', () => ({
     value: {

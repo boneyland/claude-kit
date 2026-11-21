@@ -23,7 +23,7 @@ function engine(on: On, store: Record<string, unknown>) {
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
     if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[5]!) as unknown[]
+    const command = JSON.parse(argv[4]!) as unknown[]
     world.sent.push(command)
     if (command[0] === 'playlist-shuffle') world.order = [...SONGS].reverse()
     if (command[0] === 'playlist-unshuffle') world.order = [...SONGS]

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const RUN = (args: string) =>
-  ({ command: 'session_data', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
+  ({ command: 'turn-gauge', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
 
 type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1]
 
@@ -24,7 +24,7 @@ const engine = (on: On, state: Record<string, unknown>) => {
   on('state.set', (_, e) => ((state[e.key] = e.value), { value: { isSet: true, version: ++version } }))
   on('clock.now', () => ({ value: NOW }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('command.register', () => ({ value: { command: 'session_data' } }))
+  on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 200_000 }, rateLimits: [] } }))
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))

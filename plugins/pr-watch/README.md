@@ -63,6 +63,13 @@ With `allowPush` on (the default), the prompt tells Claude it may push its fixes
 - [`gh`](https://cli.github.com/), logged in (`gh auth status`)
 - the session's working directory inside the repository, for `/pr-watch` and `/pr-watch <number>` (a PR URL works from anywhere)
 
+## What it runs, reads and sends
+
+- **Programs**: `gh pr view [<number or URL>] --json <fields>`, one PR at a time, every `intervalSeconds`. `gh` uses your own login; pr-watch never reads or handles a token.
+- **Network**: only `gh`'s calls to GitHub's API (`api.github.com`) for the PRs you watch.
+- **Conversation**: when a watched PR fails CI or conflicts, it submits a prompt to this session naming the PR, its branch and the failing checks, and Claude then works on it: checks out the branch, runs commands, commits, and pushes when `allowPush` is on. It does this only for PRs you asked it to watch, at most `maxAttempts` times in a row per PR, and only while the session is idle. It reads nothing from the conversation.
+- **Files**: none. The watch list lives in the session and is gone when it ends.
+
 ## Options
 
 | Option | Default | |
@@ -78,5 +85,6 @@ The watch list belongs to the session: it survives `/reload-plugins`, and a new 
 ## Install
 
 ```
+/plugin marketplace add boneyland/claude-kit
 /plugin install pr-watch@claude-kit
 ```

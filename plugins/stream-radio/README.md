@@ -3,9 +3,9 @@
 Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) or your own music files from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
 
 ```
-/stream https://www.youtube.com/watch?v=tRsQsTMvPNg
+/stream https://www.youtube.com/watch?v=<id>
 /stream ~/Music/Album          # a folder plays as a playlist; a file or .m3u works too
-/stream            # plays the default stream (Claude FM lofi)
+/stream            # plays the default stream, once you set one
 /stream pause      # pause or resume
 /stream next       # next song in a playlist (or chapter); /stream prev goes back
 /stream vol 40     # volume 0-100, or vol up / vol down by 5
@@ -36,9 +36,16 @@ If the player stops by itself after it had been playing (a live stream drops, th
 - `yt-dlp` on the PATH, for YouTube links (mpv calls it)
 - `python3`, to talk to mpv (pause, skip, pick a song, read the playlist)
 
+## What it runs, reads and sends
+
+- **Programs**: the `player` setting (`mpv` by default) on the URL or path you give it, with `--no-video` and an IPC socket; `mpv` itself calls `yt-dlp` for YouTube links. `python3 -I hooks/mpv-ipc.py` sends one command at a time to that socket (pause, skip, volume, read the playlist). `rm -f` removes the socket when playback stops. `<player> --version` checks the player is installed.
+- **Network**: only what mpv and yt-dlp fetch for the URL you play (for YouTube, youtube.com and its media hosts). The plugin itself makes no network requests and sends nothing anywhere.
+- **Files**: reads the local files and folders you ask it to play. Saves the last URL, its place in it, the volume and the repeat choice in the plugin's store (`$.store`) on this machine, so they survive a new session.
+- **Conversation**: it reads no prompts or transcript. Its `/stream` replies and errors (a URL that failed to play) show in the transcript like any command's.
+
 ## Now playing
 
-The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives, Claude FM included, only have a fixed title, so expect that rather than a track name.
+The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives only have a fixed title, so expect that rather than a track name.
 
 A video with chapters shows only the current chapter in the footer: `3:42 03. Song name`; the panel shows the video's title under it. Videos that hold several songs or pieces usually name each one in a chapter, so this is the track name. The panel lists the chapters to pick from.
 
@@ -50,7 +57,7 @@ For some content (some album playlists, for one) YouTube answers the stream URL 
 
 | Option | Default | |
 | --- | --- | --- |
-| `defaultUrl` | Claude FM lofi | what a bare `/stream` plays |
+| `defaultUrl` | empty | what a bare `/stream` plays; empty, `/stream` needs a URL or path |
 | `volume` | 60 | 0 to 100, where playback starts; the panel's 🔉 − and 🔊 + and `/stream vol` change it while playing, and that level is kept across sessions until this setting changes |
 | `player` | `mpv` | the mpv executable |
 | `androidClient` | off | always play with the android client (see above), skipping the failed first try |
@@ -63,5 +70,6 @@ Playlists play through and repeat by default; Repeat in the panel or `/stream re
 ## Install
 
 ```
-/plugin install stream-radio --marketplace boneyland/claude-kit
+/plugin marketplace add boneyland/claude-kit
+/plugin install stream-radio@claude-kit
 ```

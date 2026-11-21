@@ -20,7 +20,7 @@ function engine(on: On, store: Record<string, unknown>) {
   on('ui.toast', () => ({ value: undefined }) as never)
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
-    if (argv[0] === 'python3') world.sent.push(JSON.parse(argv[5]!) as unknown[])
+    if (argv[0] === 'python3') world.sent.push(JSON.parse(argv[4]!) as unknown[])
     return { value: { exitCode: 0, stdout: 'null', stderr: '' } } as never
   })
   on('process.spawn', async function* (_$, e) {

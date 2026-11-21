@@ -154,7 +154,7 @@ test('accuracy: each model\'s mean miss, over 100 counted as 100; older records 
 type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[1]
 
 const BAND = {
-  plugin: 'session-band',
+  plugin: 'turn-gauge',
   component: 'AbovePrompt',
   surface: 'terminal',
   props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 140, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },

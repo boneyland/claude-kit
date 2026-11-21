@@ -117,7 +117,7 @@ test('B from the breakdown is everything in use but the conversation, else nothi
 
 const BAND = (maxRows = 3) =>
   ({
-    plugin: 'session-band',
+    plugin: 'turn-gauge',
     component: 'AbovePrompt',
     surface: 'terminal',
     props: { hasSurvey: false, isWorking: false, maxRows, bodyColumns: 140, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
@@ -189,7 +189,7 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   on('session.cwd', () => ({ value: '/proj' }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
   on('clock.now', () => ({ value: NOW }))
-  on('command.register', () => ({ value: { command: 'session_data' } }))
+  on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: [], cost: { usd } } }))
   let agents: { id: string; usd: number }[] = []
