@@ -229,8 +229,10 @@ export const missedOf = (previous: number | null, u: StepUsage) =>
 
 // Below this much context re-written, a miss is not worth a word.
 export const MISS_MIN_TOKENS = 20_000
-// A turn writing this much output is shown, with what it cost.
+// A turn writing this much output is shown, with what it cost...
 export const OUTPUT_WARN_TOKENS = 30_000
+// ...when its output came to at least this share of the turn's cost.
+export const OUTPUT_WARN_SHARE = 0.4
 // The band's hit rate turns amber below this.
 export const RATE_WARN = 0.8
 
@@ -250,14 +252,21 @@ export const cacheMissWarning = (s: SpendInputs, t: TurnTokens | null, cause: st
   }
 }
 
-// A turn whose output alone ran long: output is priced several times input.
+// A turn whose output ran long and carried much of its cost. A long agentic turn
+// writes plenty of output yet pays mostly for re-reading its context, so the
+// token count alone would warn exactly when output matters least.
 export const outputWarning = (s: SpendInputs, t: TurnTokens | null): SpendWarning | null => {
   if (t === null || t.output < OUTPUT_WARN_TOKENS) return null
+  // The share needs only the price ratios, which hold without a measured scale.
+  const r = (s.model === null ? null : ratesFor(s.model)) ?? RELATIVE
+  const out = t.output * r.output
+  const total = t.uncached * r.input + t.read * r.read + t.write * 2 * r.input + out
+  const share = out / total
+  if (share < OUTPUT_WARN_SHARE) return null
   const p = unitPrices(s)
   const cost = p === null ? '' : ` ≈ ${usd(t.output * p.output)}`
-  const ratio = p === null ? null : Math.round(p.output / p.input)
   return {
     kind: 'output',
-    text: `Output-heavy turn: ${tokens(t.output)} tokens out${cost}${ratio === null ? '' : ` · output costs ${ratio}× input`}`,
+    text: `Output-heavy turn: ${tokens(t.output)} tokens out${cost} · ${Math.round(share * 100)}% of the turn's cost`,
   }
 }

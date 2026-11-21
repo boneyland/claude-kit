@@ -39,9 +39,21 @@ test('a cache miss warns unless the band knows why, and only when it is large', 
   expect(cacheMissWarning(OPUS, null, null)).toBe(null)
 })
 
-test('an output-heavy turn says what its output cost', () => {
-  expect(outputWarning(OPUS, { ...NO_TOKENS, output: 34_000 })?.text).toBe('Output-heavy turn: 34k tokens out ≈ $0.68 · output costs 5× input')
+test('an output-heavy turn says what its output cost and its share of the turn', () => {
+  expect(outputWarning(OPUS, { ...NO_TOKENS, output: 34_000 })?.text).toBe("Output-heavy turn: 34k tokens out ≈ $0.68 · 100% of the turn's cost")
+  // $0.68 out against $0.80 of cache reads: 46%.
+  expect(outputWarning(OPUS, { ...NO_TOKENS, read: 4_000_000, output: 34_000 })?.text).toMatch(/46% of the turn's cost$/)
   expect(outputWarning(OPUS, { ...NO_TOKENS, output: 12_000 })).toBe(null)
+})
+
+test('a long output in a turn that paid mostly for input does not warn', () => {
+  // The case that prompted this: 100k out ≈ $2.00 beside ~$9.40 of mostly cache reads.
+  expect(outputWarning(OPUS, { ...NO_TOKENS, read: 34_000_000, write: 300_000, uncached: 2_000, output: 100_000 })).toBe(null)
+})
+
+test('the share holds on a model without known prices', () => {
+  const unknown = { ...OPUS, model: 'claude-future-9', scale: null }
+  expect(outputWarning(unknown, { ...NO_TOKENS, output: 34_000 })?.text).toBe("Output-heavy turn: 34k tokens out · 100% of the turn's cost")
 })
 
 const NOW = Date.parse('2026-11-20T10:00:00Z')

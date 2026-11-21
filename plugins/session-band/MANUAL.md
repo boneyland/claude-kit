@@ -96,9 +96,9 @@ Anything else means the start of the prompt changed: tools or MCP servers connec
 
 ### Output-heavy turn
 
-> `Output-heavy turn: 34k tokens out ≈ $0.68 · output costs 5× input`
+> `Output-heavy turn: 34k tokens out ≈ $0.68 · 62% of the turn's cost`
 
-Shown when the last main turn wrote 30k output tokens or more, with their cost. Long answers, big file writes and heavy thinking add up here. `×` hides it until the next turn.
+Shown when the last main turn wrote 30k output tokens or more **and** that output came to at least 40% of the turn's cost, at list prices. Long answers, big file writes and heavy thinking add up here. A long agentic turn usually writes plenty of output but pays mostly for re-reading its context on every request; that cost belongs to the Overhead row, so the output row stays quiet then. `×` hides it until the next turn.
 
 ### Overhead
 
