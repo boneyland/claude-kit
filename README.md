@@ -82,7 +82,9 @@ Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude 
 
 ## Update
 
-**Installed from the marketplace**: refresh the catalog, then update each plugin. From a shell:
+**Installed from the marketplace, in a session**: type `/plugin`, open the **Installed** tab, pick the plugin and choose **Update now** (**Mark for update** leaves it for later). The tab shows each plugin's installed version.
+
+**Installed from the marketplace, from a shell**: refresh the catalog, then update each plugin:
 
 ```bash
 claude plugin marketplace update claude-kit
