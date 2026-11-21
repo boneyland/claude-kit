@@ -10,6 +10,8 @@ declare module 'claude-code' {
       percent: number
       // The last URL that actually played; the idle button plays it again.
       lastUrl: string
+      // The default stream the last load saw; a change clears lastUrl.
+      knownDefault: string
     }
   }
 }

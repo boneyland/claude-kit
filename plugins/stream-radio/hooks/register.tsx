@@ -9,6 +9,9 @@ const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, fals
 const percent = atom({ plugin: 'stream-radio', key: 'percent' } as const, -1)
 // The last URL that actually played: what the idle button plays again.
 const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
+// The default stream the last load saw: when it changes, the new default wins
+// over the remembered URL.
+const knownDefault = atom({ plugin: 'stream-radio', key: 'knownDefault' } as const, '')
 
 const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
@@ -153,6 +156,10 @@ export const register: Register = (on, options) => {
     await update($, playing, () => '')
     await update($, isPaused, () => false)
     await update($, percent, () => -1)
+    if ((await read($, knownDefault)) !== defaultUrl) {
+      await update($, knownDefault, () => defaultUrl)
+      await update($, lastUrl, () => '')
+    }
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
