@@ -17,8 +17,8 @@ const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
 const TOGGLE_PAUSE = '{"command":["cycle","pause"]}'
 
-type Options = { defaultUrl?: string; volume?: number; player?: string; androidClient?: boolean }
-type Config = { volume: number; player: string; androidClient: boolean }
+type Options = { defaultUrl?: string; volume?: number; player?: string; androidClient?: boolean; toggleOnly?: boolean }
+type Config = { volume: number; player: string; androidClient: boolean; toggleOnly: boolean }
 
 // URLs that only played with the android client; they start with it directly.
 const needsAndroid = new Set<string>()
@@ -213,8 +213,8 @@ async function openMenu($: EngineInterface, config: Config, defaultUrl: string) 
 }
 
 export const register: Register = (on, options) => {
-  const { defaultUrl = '', volume = 60, player = 'mpv', androidClient = false } = options as Options
-  const config: Config = { volume, player, androidClient }
+  const { defaultUrl = '', volume = 60, player = 'mpv', androidClient = false, toggleOnly = false } = options as Options
+  const config: Config = { volume, player, androidClient, toggleOnly }
 
   on('session.start', async ($, e, next) => {
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
@@ -316,7 +316,7 @@ export const register: Register = (on, options) => {
         <Button
           key="stream-radio"
           label={`${icon} ${shown}`}
-          onPress={() => openMenu($, config, defaultUrl)}
+          onPress={() => (config.toggleOnly ? void togglePause($) : openMenu($, config, defaultUrl))}
         />
       </Box>
     )
