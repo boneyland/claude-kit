@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Queue } from '../types'
+import type { Queue, Resume } from '../types'
 
 import { completeLines, formatTime, marquee, parseArgs, parseNowPlaying, STATUS_FORMAT, textWidth, titleColumns } from './nowplaying'
 
@@ -26,6 +26,14 @@ const NO_QUEUE: Queue = { kind: 'none', items: [], current: -1 }
 const queue = atom({ plugin: 'stream-radio', key: 'queue' } as const, NO_QUEUE)
 // The reply to the panel's last action; empty for none.
 const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
+
+// Where the last URL got to: its playlist entry (-1 when it has no playlist) and
+// the seconds into it (-1 for a live stream), with the song's title. Outlives a
+// reload, which kills the player, so playing the last URL again resumes there.
+const NO_RESUME: Resume = { url: '', index: -1, seconds: -1, title: '' }
+const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_RESUME)
+// Closer to a song's start than this, it resumes at the start.
+const RESUME_MIN_SECONDS = 5
 
 // One step of a long title's scroll.
 const SCROLL_MS = 600
@@ -174,7 +182,8 @@ async function step($: EngineInterface, by: 1 | -1): Promise<string> {
 // Starts playing `url`. Returns at once: the first start after a reload is slow,
 // and a hook that takes too long is reported as unanswered, so the startup runs
 // in the background.
-function start($: EngineInterface, config: Config, url: string, retryClient?: string) {
+// `from`: a place to resume at once it plays, for the URL played last.
+function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string) {
   const { player, volume, androidClient } = config
   // YouTube refuses the default client's stream URLs for some content (403);
   // the android client gets through, with muxed AAC and no audio-only Opus.
@@ -192,6 +201,9 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
     let lastChapter = ''
     let unread = ''
     let pipe = ''
+    // Cleared once reached; until then the position is not recorded, or the first
+    // song's start would overwrite where to go.
+    let pending = from?.url === url && (from.index > 0 || from.seconds >= RESUME_MIN_SECONDS) ? from : undefined
     try {
       await old?.return(undefined)
       await update($, isPaused, () => false)
@@ -258,12 +270,29 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
           lastTitle = track.title
           await update($, scroll, () => 0)
           await update($, playing, () => track.title)
-          void refreshQueue($).catch(() => undefined)
+          // Waited for: the position recorded below needs this song's place in it.
+          await refreshQueue($).catch(() => undefined)
+          if (pending) {
+            const q = await read($, queue)
+            if (q.kind === 'playlist' && pending.index >= 0 && pending.index < q.items.length && q.current !== pending.index) {
+              // The jump starts another song; its title comes back through here.
+              if (!(await mpv($, ['playlist-play-index', pending.index]))) pending = undefined
+            } else {
+              if (pending.seconds >= RESUME_MIN_SECONDS) await mpv($, ['seek', pending.seconds, 'absolute'])
+              pending = undefined
+            }
+          }
         }
         const pos = track?.seconds ?? -1
         if (track && pos !== lastSeconds) {
           lastSeconds = pos
           await update($, elapsed, () => pos)
+          if (!pending && lastTitle) {
+            const q = await read($, queue)
+            const index = q.kind === 'playlist' ? q.current : -1
+            const title = (await read($, chapter)) || lastTitle
+            await update($, resumeAt, () => ({ url, index, seconds: pos, title }))
+          }
         }
         if (track && track.chapter !== null && track.chapter !== lastChapter) {
           const next = track.chapter
@@ -293,7 +322,7 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
     if (!lastTitle && !client) {
       // Nothing played with the default client: try once with android.
       $.ui.log(`stream-radio: ${url} would not play; retrying with the android client`)
-      start($, config, url, 'android')
+      start($, config, url, from, 'android')
 
       return
     }
@@ -319,6 +348,19 @@ async function togglePause($: EngineInterface): Promise<boolean> {
   await update($, isPaused, () => target)
 
   return true
+}
+
+// Plays `url` again from where it got to, when that is where it got to.
+function resume($: EngineInterface, config: Config, url: string, at: Resume) {
+  start($, config, url, at.url === url ? at : undefined)
+}
+
+// Where playing `url` again picks up, as `Song name at 1:20`; empty when it
+// starts at the beginning.
+function resumable(at: Resume, url: string): string {
+  if (at.url !== url || (at.index <= 0 && at.seconds < RESUME_MIN_SECONDS)) return ''
+  const time = at.seconds >= RESUME_MIN_SECONDS ? ` at ${formatTime(at.seconds)}` : ''
+  return `${at.title || 'where it was'}${time}`
 }
 
 async function stopPlaying($: EngineInterface) {
@@ -407,9 +449,11 @@ export const register: Register = (on, options) => {
         // What played last in this session; the default stream before anything has.
         const again = (await read($, lastUrl)) || defaultUrl
         if (!again) return { text: 'Nothing has played yet, and there is no default stream.' }
-        start($, config, again)
+        const at = await read($, resumeAt)
+        resume($, config, again, at)
+        const where = resumable(at, again)
 
-        return { text: `Starting ${again}.` }
+        return { text: where ? `Resuming ${where}.` : `Starting ${again}.` }
       }
 
       start($, config, parsed.url)
@@ -440,7 +484,7 @@ export const register: Register = (on, options) => {
           <Button
             key="stream-radio"
             label="▶ Play radio"
-            onPress={() => start($, config, again)}
+            onPress={async () => resume($, config, again, await read($, resumeAt))}
           />
         </Box>
       )
@@ -483,6 +527,8 @@ export const register: Register = (on, options) => {
       }
       await update($, notice, () => reply)
     }
+    const at = await read($, resumeAt)
+    const resumeLabel = last ? resumable(at, last) : ''
     const play = (url: string) =>
       act(async () => {
         start($, config, url)
@@ -521,7 +567,18 @@ export const register: Register = (on, options) => {
         )}
         {(last && last !== title) || (defaultUrl && defaultUrl !== last) ? (
           <Box flexDirection="row" gap={1}>
-            {last ? <Button key="play-last" label="Play last" onPress={() => play(last)} /> : null}
+            {last ? (
+              <Button
+                key="play-last"
+                label={resumeLabel ? cut(`▶ Resume ${resumeLabel}`, width) : 'Play last'}
+                onPress={() =>
+                  act(async () => {
+                    resume($, config, last, at)
+                    return ''
+                  })
+                }
+              />
+            ) : null}
             {defaultUrl && defaultUrl !== last ? (
               <Button key="play-default" label="Play default" onPress={() => play(defaultUrl)} />
             ) : null}

@@ -8,11 +8,13 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream pause      # pause or resume
 /stream next       # next song in a playlist (or chapter); /stream prev goes back
 /stream panel      # open or close the panel
-/stream last       # plays again what played last in this session
+/stream last       # plays again what played last in this session, from where it got to
 /stream stop
 ```
 
-With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, its progress and its place in the playlist, with Prev, Pause or Resume, Next and Stop; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
+With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again.
+
+Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/stream last`) picks up where it got to: the same song in a playlist and the same time in it, so a chapter too. That survives a plugin reload, which stops the player. Typing a URL plays it from the start. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, its progress and its place in the playlist, with Prev, Pause or Resume, Next and Stop; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
 
 The footer reads `3:42 <title>`, at most 40 columns: how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one. The icon and time stay put; a title too long for what is left scrolls sideways two characters at a time, resting a moment at its start each time round, and holds still while paused.
 

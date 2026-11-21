@@ -5,6 +5,10 @@ export type Playing = string
 // playing, -1 when unknown.
 export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number }
 
+// Where a URL got to: its playlist entry (-1 without a playlist), the seconds
+// into it (-1 for a live stream) and the song or chapter title.
+export type Resume = { url: string; index: number; seconds: number; title: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'stream-radio': {
@@ -24,6 +28,8 @@ declare module 'claude-code' {
       queue: Queue
       // The reply to the panel's last action; empty for none.
       notice: string
+      // Where the last URL got to, kept across a reload.
+      resumeAt: Resume
     }
   }
 }
