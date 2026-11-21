@@ -1,0 +1,50 @@
+{
+  "name": "pr-watch",
+  "version": "0.1.0",
+  "types": "./types/index.d.ts",
+  "description": "Watch pull requests from a session: when CI fails or a merge conflict appears, wake this same session to fix it and push, with no cloud session. /pr-watch adds the current branch's PR; a band above the prompt shows each PR's state.",
+  "author": {
+    "name": "johnnyvizz",
+    "url": "https://github.com/johnnyvizz"
+  },
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/pr-watch",
+  "repository": "https://github.com/boneyland/claude-kit",
+  "license": "MIT",
+  "network": { "hosts": ["api.github.com"] },
+  "userConfig": {
+    "intervalSeconds": {
+      "type": "number",
+      "title": "Poll interval (seconds)",
+      "description": "How often each watched PR is checked with gh. One gh call per PR per poll.",
+      "default": 90,
+      "min": 30,
+      "max": 3600
+    },
+    "allowPush": {
+      "type": "boolean",
+      "title": "Push fixes",
+      "description": "Tell Claude it may push its fixes to the watched PR's branch (never force-push or merge). Off: Claude commits and asks before pushing.",
+      "default": true
+    },
+    "fixCi": {
+      "type": "boolean",
+      "title": "Fix failing CI",
+      "description": "Wake the session when the checks on a PR's head commit have finished and some failed.",
+      "default": true
+    },
+    "fixConflicts": {
+      "type": "boolean",
+      "title": "Fix merge conflicts",
+      "description": "Wake the session when GitHub reports a PR conflicts with its base branch.",
+      "default": true
+    },
+    "maxAttempts": {
+      "type": "number",
+      "title": "Fix attempts per PR",
+      "description": "How many times in a row Claude is asked to fix one PR before pr-watch stops asking; it starts over once the PR is green.",
+      "default": 3,
+      "min": 1,
+      "max": 10
+    }
+  }
+}
