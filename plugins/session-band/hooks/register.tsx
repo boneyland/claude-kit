@@ -774,6 +774,14 @@ export const terminalContextBar = (percent: number) => {
   }
 }
 
+// Brings back every warning the person dismissed: the overhead, the turn's cache
+// miss and output, and the pace heads-up.
+const restoreWarnings = async ($: EngineInterface) => {
+  await update($, spend, sp => ({ ...sp, dismissedAt: null }))
+  await update($, tokens, t => ({ ...t, dismissedTurn: -1 }))
+  await update($, pace, p => ({ ...p, dismissed: '' }))
+}
+
 export const register: Register = (on, options) => {
   const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
   const background = bandBackground(options.background)
@@ -813,6 +821,9 @@ export const register: Register = (on, options) => {
       isBaselineMeasured: measured !== null || sp.isBaselineMeasured,
       summary: Array.isArray(summaries) ? median(summaries) : sp.summary,
     }))
+
+    // A load (a reload too) starts with every warning showing again.
+    await restoreWarnings($)
 
     await $.command.register({
       name: 'session_data',
@@ -881,7 +892,11 @@ export const register: Register = (on, options) => {
 
     const hidden = !(await read($, isHidden))
     await update($, isHidden, () => hidden)
-    if (!hidden) await refreshGit($)
+    if (!hidden) {
+      // Showing the band again brings the dismissed warnings back with it.
+      await restoreWarnings($)
+      await refreshGit($)
+    }
 
     return { text: hidden ? 'Session band hidden.' : 'Session band shown.' }
   })
