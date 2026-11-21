@@ -7,6 +7,8 @@ import { completeLines, parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowp
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
 const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, false)
 const percent = atom({ plugin: 'stream-radio', key: 'percent' } as const, -1)
+// The last URL that actually played: what the idle button plays again.
+const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
 
 const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
@@ -104,6 +106,8 @@ function start($: EngineInterface, config: Config, url: string) {
         unread = rest
         const track = parseNowPlaying(complete)
         if (track && track.title !== lastTitle) {
+          // The first title means it really plays: remember it for the button.
+          if (!lastTitle) await update($, lastUrl, () => url)
           lastTitle = track.title
           await update($, playing, () => track.title)
         }
@@ -127,8 +131,13 @@ function start($: EngineInterface, config: Config, url: string) {
     current = undefined
     control = undefined
     await update($, playing, () => '')
-    if (!lastTitle && lastError) {
-      $.ui.toast(`stream failed: ${lastError.slice(0, 200)}`)
+    if (!lastTitle) {
+      // Nothing ever played: say so where it stays (a toast alone is easy to miss).
+      const why = lastError
+        ? lastError.slice(0, 300)
+        : 'the player exited before anything played; is the URL playable?'
+      $.ui.log(`stream-radio: could not play ${url}: ${why}`)
+      $.ui.toast(`stream failed: ${why.slice(0, 120)}`)
     }
   })()
 }
@@ -199,10 +208,11 @@ export const register: Register = (on, options) => {
     const { Box, Button } = $.ui.resolve(e)
     const title = await read($, playing)
     if (!title) {
-      // Idle: a button that starts the default stream, like a bare /stream. It
-      // starts it directly: a plugin's own $.command.run never reaches its own
-      // command.run hook.
-      if (!defaultUrl) return next(e)
+      // Idle: a button that plays again what played last, else the default
+      // stream. It starts it directly: a plugin's own $.command.run never
+      // reaches its own command.run hook.
+      const again = (await read($, lastUrl)) || defaultUrl
+      if (!again) return next(e)
 
       return (
         <Box flexDirection="row" gap={1}>
@@ -210,7 +220,7 @@ export const register: Register = (on, options) => {
           <Button
             key="stream-radio"
             label="▶ Play radio"
-            onPress={() => start($, config, defaultUrl)}
+            onPress={() => start($, config, again)}
           />
         </Box>
       )

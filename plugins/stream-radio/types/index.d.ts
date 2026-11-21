@@ -8,6 +8,8 @@ declare module 'claude-code' {
       isPaused: boolean
       // How far into the current file, 0 to 100; -1 for a live stream or nothing playing.
       percent: number
+      // The last URL that actually played; the idle button plays it again.
+      lastUrl: string
     }
   }
 }
