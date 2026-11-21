@@ -1081,6 +1081,8 @@ export const register: Register = (on, options) => {
     const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
     const hasSecondRow = warning !== null || modelBox !== null
+    // At the right end of the second row, after the effort level; on the first when there is none.
+    const hideButton = <Button key="hide" label="×" role="dismiss" plain dimColor onPress={() => update($, isHidden, () => true)} />
     const framed = level !== null && e.props.maxRows >= (hasSecondRow ? 4 : 3)
 
     // A window whose reset has passed since it was saved stands at 0 until the next reading.
@@ -1174,7 +1176,7 @@ export const register: Register = (on, options) => {
           ) : null}
           <Text bold>{`${s.context}%`}</Text>
         </Box>
-        <Button key="hide" label="×" role="dismiss" plain dimColor onPress={() => update($, isHidden, () => true)} />
+        {hasSecondRow ? null : hideButton}
       </Box>
     )
 
@@ -1247,6 +1249,7 @@ export const register: Register = (on, options) => {
             })}
             {warning === null ? <Box key="spacer" flexGrow={1} flexShrink={1} /> : null}
             {modelBox}
+            {hideButton}
           </Box>
         ) : null}
       </Box>
