@@ -41,6 +41,8 @@ const COMMAND = /<command-name>([^<]*)<\/command-name>[\s\S]*?(?:<command-args>(
 export const promptLine = (text: string): string | null => {
   const trimmed = text.trim()
   if (trimmed === '' || trimmed.startsWith('[Request interrupted')) return null
+  // /compact leaves its summary as a user row; list it as the command that made it.
+  if (trimmed.startsWith('This session is being continued from a previous conversation')) return '/compact'
   // A prompt with pasted text starts with a tag but is still the person's prompt:
   // dropping it would leave its reply to the command before it.
   if (trimmed.startsWith('<pasted_content')) {

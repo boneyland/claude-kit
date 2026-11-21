@@ -48,6 +48,10 @@ test('promptLine keeps typed prompts and slash commands only', () => {
   expect(promptLine('')).toBe(null)
 })
 
+test('the summary a compaction leaves is listed as /compact', () => {
+  expect(promptLine('This session is being continued from a previous conversation that ran out of context. The summary below')).toBe('/compact')
+})
+
 test('a prompt with pasted text is a prompt, so its reply is not given to the command before it', () => {
   const pasted = '\n\n<pasted_content id="a1">\n  still fails\n</pasted_content id="a1">\n\n typing it worked'
   expect(promptLine(pasted)).toBe('still fails typing it worked')
