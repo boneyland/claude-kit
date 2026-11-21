@@ -42,6 +42,8 @@ For some content (some album playlists, for one) YouTube answers the stream URL 
 | `volume` | 60 | 0 to 100 |
 | `player` | `mpv` | the mpv executable |
 | `androidClient` | off | always play with the android client (see above), skipping the failed first try |
+| `scrollChars` | 2 | characters a long footer title moves each redraw; 0 turns scrolling off and cuts it with `…` |
+| `scrollMs` | 600 | milliseconds between those redraws, 100 at least |
 | `toggleOnly` | off | the footer song button pauses and resumes at once instead of opening the panel (`/stream panel` still opens it) |
 
 Playlists play through and repeat. The plugin overrides `loop-file` and `keep-open` from your `mpv.conf` for its own player, so a config that loops one file doesn't repeat one song. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.

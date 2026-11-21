@@ -3,7 +3,20 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Queue, Resume } from '../types'
 
-import { completeLines, formatTime, marquee, parseArgs, parseNowPlaying, STATUS_FORMAT, textWidth, titleColumns } from './nowplaying'
+import {
+  completeLines,
+  fit,
+  formatTime,
+  holdTicks,
+  marquee,
+  parseArgs,
+  parseNowPlaying,
+  SCROLL_CHARS,
+  SCROLL_MS,
+  STATUS_FORMAT,
+  textWidth,
+  titleColumns,
+} from './nowplaying'
 
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
@@ -35,8 +48,6 @@ const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_R
 // Closer to a song's start than this, it resumes at the start.
 const RESUME_MIN_SECONDS = 5
 
-// One step of a long title's scroll.
-const SCROLL_MS = 600
 
 // Sends one command to mpv's IPC socket and prints its reply's data as JSON;
 // exits 1 when mpv answers with an error. Other lines on the socket (events,
@@ -60,8 +71,18 @@ while True:
 const PANE = 'stream-radio'
 const TITLE = 'Radio'
 
-type Options = { defaultUrl?: string; volume?: number; player?: string; androidClient?: boolean; toggleOnly?: boolean }
-type Config = { volume: number; player: string; androidClient: boolean; toggleOnly: boolean }
+type Options = {
+  defaultUrl?: string
+  volume?: number
+  player?: string
+  androidClient?: boolean
+  toggleOnly?: boolean
+  scrollChars?: number
+  scrollMs?: number
+}
+// scrollChars: characters a long title moves each redraw, 0 for none (cut
+// instead); scrollMs: the time between redraws.
+type Config = { volume: number; player: string; androidClient: boolean; toggleOnly: boolean; scrollChars: number; scrollMs: number }
 
 // URLs that only played with the android client; they start with it directly.
 const needsAndroid = new Set<string>()
@@ -91,10 +112,13 @@ async function labelParts($: EngineInterface) {
 }
 
 // Runs while a player runs; a tick moves the title only when it overflows and
-// is not paused, so a short or paused title costs no redraws.
-function startScroller($: EngineInterface) {
+// is not paused, so a short or paused title costs no redraws. None when
+// scrolling is off.
+function startScroller($: EngineInterface, config: Config) {
   scroller?.cancel()
-  scroller = $.clock.every(SCROLL_MS, () => {
+  scroller = undefined
+  if (config.scrollChars <= 0) return
+  scroller = $.clock.every(config.scrollMs, () => {
     void (async () => {
       const { prefix, name, paused } = await labelParts($)
       if (paused || textWidth(name) <= titleColumns(prefix)) return
@@ -212,7 +236,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
       await update($, scroll, () => 0)
       await update($, queue, () => NO_QUEUE)
       await update($, playing, () => 'connecting…')
-      startScroller($)
+      startScroller($, config)
 
       try {
         await $.process.run([player, '--version'], { timeoutMs: 5000 })
@@ -379,19 +403,27 @@ async function togglePane($: EngineInterface): Promise<'opened' | 'closed'> {
   return 'opened'
 }
 
-const cut = (text: string, width: number) => {
-  if (textWidth(text) <= width) return text
-  let out = ''
-  for (const ch of text) {
-    if (textWidth(out + ch) > width - 1) break
-    out += ch
-  }
-  return `${out}…`
-}
+const cut = fit
 
 export const register: Register = (on, options) => {
-  const { defaultUrl = '', volume = 60, player = 'mpv', androidClient = false, toggleOnly = false } = options as Options
-  const config: Config = { volume, player, androidClient, toggleOnly }
+  const {
+    defaultUrl = '',
+    volume = 60,
+    player = 'mpv',
+    androidClient = false,
+    toggleOnly = false,
+    scrollChars = SCROLL_CHARS,
+    scrollMs = SCROLL_MS,
+  } = options as Options
+  const config: Config = {
+    volume,
+    player,
+    androidClient,
+    toggleOnly,
+    // Whole characters, and no faster than a redraw every 100ms.
+    scrollChars: Math.max(0, Math.min(20, Math.round(scrollChars))),
+    scrollMs: Math.max(100, Math.min(10_000, Math.round(scrollMs))),
+  }
 
   on('session.start', async ($, e, next) => {
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
@@ -492,7 +524,7 @@ export const register: Register = (on, options) => {
     // At most LABEL_COLUMNS cells: the icon and time fixed, a long title
     // scrolling through what is left.
     const { prefix, name } = await labelParts($)
-    const shown = marquee(name, titleColumns(prefix), await read($, scroll))
+    const shown = marquee(name, titleColumns(prefix), await read($, scroll), config.scrollChars, holdTicks(config.scrollMs))
 
     return (
       <Box flexDirection="row" gap={1}>

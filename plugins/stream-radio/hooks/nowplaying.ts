@@ -119,24 +119,44 @@ export function textWidth(text: string): number {
 export const LABEL_COLUMNS = 40
 // Between the end of a scrolling title and its start coming round again.
 const MARQUEE_GAP = '   ·   '
-// Ticks the title rests at its start each time round, so its beginning can be read.
-export const MARQUEE_HOLD = 4
-// Characters the title moves each tick.
-export const MARQUEE_STEP = 2
+// How long the title rests at its start each time round, so its beginning can be read.
+export const MARQUEE_HOLD_MS = 2400
+// The defaults of the scrollChars and scrollMs settings.
+export const SCROLL_CHARS = 2
+export const SCROLL_MS = 600
+
+// Ticks of `ms` that make up the rest at the start; at least one.
+export const holdTicks = (ms: number) => Math.max(1, Math.round(MARQUEE_HOLD_MS / ms))
 
 // What fits after the fixed part of the label.
 export const titleColumns = (prefix: string) => Math.max(1, LABEL_COLUMNS - textWidth(prefix))
 
-// `text` in a window `width` cells wide, `tick` steps along: as is when it fits,
-// else scrolling left MARQUEE_STEP characters a tick, looping through a gap, resting
-// MARQUEE_HOLD ticks at the start of each round. Padded to `width` when a wide
-// character would straddle the window's edge, so the label never jitters.
-export function marquee(text: string, width: number, tick: number): string {
+// `text` cut to `width` cells, ending in an ellipsis when it did not fit.
+export function fit(text: string, width: number): string {
   if (textWidth(text) <= width) return text
+  let out = ''
+  let used = 0
+  for (const ch of text) {
+    const w = cellWidth(ch)
+    if (used + w > width - 1) break
+    out += ch
+    used += w
+  }
+  return `${out}…`
+}
+
+// `text` in a window `width` cells wide, `tick` steps along: as is when it fits,
+// else scrolling left `chars` characters a tick, looping through a gap, resting
+// `hold` ticks at the start of each round; `chars` 0 cuts it instead. Padded to
+// `width` when a wide character would straddle the window's edge, so the label
+// never jitters.
+export function marquee(text: string, width: number, tick: number, chars = SCROLL_CHARS, hold = holdTicks(SCROLL_MS)): string {
+  if (textWidth(text) <= width) return text
+  if (chars <= 0) return fit(text, width)
   const loop = Array.from(text + MARQUEE_GAP)
-  const steps = Math.ceil(loop.length / MARQUEE_STEP)
-  const round = steps + MARQUEE_HOLD
-  const step = Math.max(0, (((tick % round) + round) % round) - MARQUEE_HOLD) * MARQUEE_STEP
+  const steps = Math.ceil(loop.length / chars)
+  const round = steps + hold
+  const step = Math.max(0, (((tick % round) + round) % round) - hold) * chars
   let out = ''
   let used = 0
   for (let i = 0; used < width; i++) {

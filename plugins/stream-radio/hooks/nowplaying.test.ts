@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { completeLines, formatTime, LABEL_COLUMNS, MARQUEE_HOLD, marquee, parseArgs, parseNowPlaying, textWidth, titleColumns } from './nowplaying'
+import { completeLines, fit, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, textWidth, titleColumns } from './nowplaying'
+
+const MARQUEE_HOLD = holdTicks(600)
 
 test('a song title beats the page title', () => {
   const text = 'NP\tlofi radio\tArtist - Song\t\tno\t41.7\r'
@@ -70,6 +72,20 @@ test('a long title rests at its start, then scrolls two characters a tick and lo
   // 17 characters round, 2 a tick: 9 ticks moving, then the rest.
   const round = Math.ceil((text.length + '   ·   '.length) / 2) + MARQUEE_HOLD
   expect(marquee(text, 4, round)).toBe('abcd')
+})
+
+test('the step and the rest follow the scroll settings', () => {
+  const text = 'abcdefghij'
+  // 3 characters a redraw every 300ms: the rest is 8 redraws, still 2.4 s.
+  expect(holdTicks(300)).toBe(8)
+  expect(marquee(text, 4, 8, 3, holdTicks(300))).toBe('abcd')
+  expect(marquee(text, 4, 9, 3, holdTicks(300))).toBe('defg')
+  // A slow redraw still rests at least once.
+  expect(holdTicks(5000)).toBe(1)
+  // 0: no scrolling, cut with an ellipsis, whatever the tick.
+  expect(marquee(text, 4, 0, 0)).toBe('abc…')
+  expect(marquee(text, 4, 99, 0)).toBe('abc…')
+  expect(fit('東京タワー', 6)).toBe('東京…')
 })
 
 test('wide characters count two cells and never overflow the window', () => {
