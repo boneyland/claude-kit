@@ -3,7 +3,9 @@ export type Playing = string
 
 // The playlist's entries or the file's chapters, by title; current is the one
 // playing, -1 when unknown.
-export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number }
+// paths: each playlist entry's file or URL; root: the local folder they were
+// played from, '' for none, under which the panel groups them by folder.
+export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number; paths: string[]; root: string }
 
 // Where a URL got to: its playlist entry (-1 without a playlist), the seconds
 // into it (-1 for a live stream) and the song or chapter title.
@@ -26,6 +28,8 @@ declare module 'claude-code' {
       scroll: number
       // What the panel lists to pick from: the playlist, else the file's chapters.
       queue: Queue
+      // The folders the panel's playlist shows open.
+      openFolders: string[]
       // The reply to the panel's last action; empty for none.
       notice: string
       // Where the last URL got to, kept across a reload.

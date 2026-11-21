@@ -10,6 +10,8 @@ import {
   holdTicks,
   marquee,
   baseName,
+  foldersOf,
+  playlistRows,
   parseArgs,
   parseNowPlaying,
   SCROLL_CHARS,
@@ -36,8 +38,11 @@ const scroll = atom({ plugin: 'stream-radio', key: 'scroll' } as const, 0)
 
 // What the panel lists to pick from.
 // (Queue: see the type contract.)
-const NO_QUEUE: Queue = { kind: 'none', items: [], current: -1 }
+const NO_QUEUE: Queue = { kind: 'none', items: [], current: -1, paths: [], root: '' }
 const queue = atom({ plugin: 'stream-radio', key: 'queue' } as const, NO_QUEUE)
+// The folders the panel's playlist shows open; the current song's open by
+// themselves when it changes.
+const openFolders = atom({ plugin: 'stream-radio', key: 'openFolders' } as const, [] as string[])
 // The reply to the panel's last action; empty for none.
 const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
 
@@ -187,10 +192,16 @@ async function refreshQueue($: EngineInterface) {
   let next: Queue = NO_QUEUE
   if (Array.isArray(list) && list.length > 1) {
     const entries = list as { filename?: string; title?: string; current?: boolean }[]
+    const paths = entries.map(e => e.filename ?? '')
+    // A local folder played whole: its entries are grouped under it.
+    const url = await read($, lastUrl)
+    const root = url.startsWith('/') && paths.some(p => p.startsWith(`${url.replace(/\/$/, '')}/`)) ? url.replace(/\/$/, '') : ''
     next = {
       kind: 'playlist',
       items: await Promise.all(entries.map(e => entryName($, e))),
       current: entries.findIndex(e => e.current),
+      paths,
+      root,
     }
   } else {
     const chapters = (await mpv($, ['get_property', 'chapter-list']))?.data
@@ -200,10 +211,20 @@ async function refreshQueue($: EngineInterface) {
         kind: 'chapters',
         items: (chapters as { title?: string }[]).map((c, i) => c.title || `Chapter ${i + 1}`),
         current: typeof at === 'number' ? at : -1,
+        paths: [],
+        root: '',
       }
     }
   }
+  const before = await read($, queue)
   await update($, queue, () => next)
+  // A new folder starts shut; the current song's folders open when it changes,
+  // so it shows, and a folder shut by hand stays shut until then.
+  if (next.root !== before.root) await update($, openFolders, () => [])
+  if (next.root && (next.current !== before.current || next.root !== before.root)) {
+    const path = next.paths[next.current] ?? ''
+    await update($, openFolders, open => [...new Set([...open, ...foldersOf(path, next.root)])])
+  }
 }
 
 // Plays entry `index` of the queue, unpaused.
@@ -287,8 +308,9 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         `--input-ipc-server=${pipe}`,
         '--ytdl-format=bestaudio/best',
         // A local folder plays its sound and video files (sound only), not its
-        // cover art or archives, which would each take a turn.
-        ...(/^https?:/.test(url) ? [] : ['--directory-filter-types=audio,video,playlist']),
+        // cover art or archives, which would each take a turn; its subfolders
+        // are read at once, so the panel can show them whole.
+        ...(/^https?:/.test(url) ? [] : ['--directory-filter-types=audio,video,playlist', '--directory-mode=recursive']),
         ...(client
           ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`]
           : []),
@@ -592,6 +614,7 @@ export const register: Register = (on, options) => {
     const part = await read($, chapter)
     const last = await read($, lastUrl)
     const q = await read($, queue)
+    const open = await read($, openFolders)
     const said = await read($, notice)
     const act = async (work: () => Promise<string>) => {
       let reply: string
@@ -679,15 +702,36 @@ export const register: Register = (on, options) => {
         {q.kind !== 'none' ? (
           <Box flexDirection="column">
             <Text dimColor>{q.kind === 'playlist' ? 'Playlist' : 'Chapters'}</Text>
-            {q.items.map((item, i) => (
-              <Button
-                key={`item-${i}`}
-                plain
-                dimColor={i !== q.current}
-                label={cut(`${i === q.current ? '▶' : ' '} ${i + 1}. ${item}`, width)}
-                onPress={() => act(() => pick($, i))}
-              />
-            ))}
+            {playlistRows(q.items, q.paths, q.root, new Set(open), q.current).map(row => {
+              const indent = '  '.repeat(row.depth)
+              if (row.kind === 'folder') {
+                // Shut with the current song inside: the mark moves to the folder.
+                const mark = row.hasCurrent && !row.isOpen ? '▶' : ' '
+                return (
+                  <Button
+                    key={`folder-${row.path}`}
+                    plain
+                    dimColor={!(row.hasCurrent && !row.isOpen)}
+                    label={cut(`${mark} ${indent}${row.isOpen ? '▾' : '▸'} 📁 ${row.name}/ · ${row.count}`, width)}
+                    onPress={() =>
+                      update($, openFolders, list =>
+                        list.includes(row.path) ? list.filter(p => p !== row.path) : [...list, row.path],
+                      )
+                    }
+                  />
+                )
+              }
+              const i = row.index
+              return (
+                <Button
+                  key={`item-${i}`}
+                  plain
+                  dimColor={i !== q.current}
+                  label={cut(`${i === q.current ? '▶' : ' '} ${indent}${row.number}. ${row.name}`, width)}
+                  onPress={() => act(() => pick($, i))}
+                />
+              )
+            })}
           </Box>
         ) : null}
       </Box>

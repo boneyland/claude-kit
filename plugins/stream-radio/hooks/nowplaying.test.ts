@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, completeLines, fit, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
+import { baseName, completeLines, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
@@ -114,4 +114,44 @@ test('a local file, folder or playlist resolves to an absolute path', () => {
   expect(resolveTarget('--script=x', where).kind).toBe('error')
   expect(resolveTarget('~/x', { home: '', cwd: '' }).kind).toBe('error')
   expect(baseName('/home/me/Music/01 Song.flac')).toBe('01 Song.flac')
+})
+
+const ROOT = '/m/Album'
+const PATHS = ['/m/Album/01 Intro.flac', '/m/Album/Disc 2/01 A.flac', '/m/Album/Disc 2/02 B.flac', '/m/Album/Disc 2/Bonus/01 C.flac', '/m/Album/09 End.flac']
+const NAMES = ['Intro', 'A', 'B', 'C', 'End']
+
+test('the folders between the root and a path', () => {
+  expect(foldersOf('/m/Album/Disc 2/Bonus/01 C.flac', ROOT)).toEqual(['/m/Album/Disc 2', '/m/Album/Disc 2/Bonus'])
+  expect(foldersOf('/m/Album/01 Intro.flac', ROOT)).toEqual([])
+  expect(foldersOf('https://a.b/c', ROOT)).toEqual([])
+})
+
+test('a shut folder is one row with its count; its songs stay hidden', () => {
+  const rows = playlistRows(NAMES, PATHS, ROOT, new Set(), 0)
+  expect(rows.map(r => (r.kind === 'folder' ? `[${r.name} ${r.count}${r.isOpen ? ' open' : ''}]` : `${r.depth}:${r.number}.${r.name}`))).toEqual([
+    '0:1.Intro',
+    '[Disc 2 3]',
+    '0:2.End',
+  ])
+})
+
+test('an open folder shows its songs indented, numbered within it', () => {
+  const rows = playlistRows(NAMES, PATHS, ROOT, new Set(['/m/Album/Disc 2', '/m/Album/Disc 2/Bonus']), 3)
+  expect(rows.map(r => (r.kind === 'folder' ? `${r.depth}:[${r.name} ${r.count}]` : `${r.depth}:${r.number}.${r.name}#${r.index}`))).toEqual([
+    '0:1.Intro#0',
+    '0:[Disc 2 3]',
+    '1:1.A#1',
+    '1:2.B#2',
+    '1:[Bonus 1]',
+    '2:1.C#3',
+    '0:2.End#4',
+  ])
+  // The current song's folders know they hold it.
+  const shut = playlistRows(NAMES, PATHS, ROOT, new Set(), 3)
+  expect(shut.find(r => r.kind === 'folder')).toMatchObject({ name: 'Disc 2', hasCurrent: true, isOpen: false })
+})
+
+test('without a root the playlist is a plain list', () => {
+  const rows = playlistRows(NAMES, PATHS, '', new Set(), 0)
+  expect(rows.map(r => (r.kind === 'item' ? r.number : -1))).toEqual([1, 2, 3, 4, 5])
 })

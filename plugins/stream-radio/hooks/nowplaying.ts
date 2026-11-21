@@ -205,3 +205,59 @@ export function marquee(text: string, width: number, tick: number, chars = SCROL
   }
   return out + ' '.repeat(width - used)
 }
+
+// A row of the panel's playlist: a folder, open or shut, or an entry to play.
+// number counts the entries within their own folder; index is mpv's.
+export type TreeRow =
+  | { kind: 'folder'; path: string; name: string; depth: number; count: number; isOpen: boolean; hasCurrent: boolean }
+  | { kind: 'item'; index: number; name: string; depth: number; number: number }
+
+type Node = { path: string; name: string; count: number; hasCurrent: boolean; children: ({ item: number } | { folder: Node })[] }
+
+// The folders between `root` and `path`, outermost first; none for a path not
+// under root.
+export function foldersOf(path: string, root: string): string[] {
+  if (!root || !path.startsWith(`${root}/`)) return []
+  const parts = path.slice(root.length + 1).split('/').slice(0, -1)
+  return parts.map((_, i) => `${root}/${parts.slice(0, i + 1).join('/')}`)
+}
+
+// The playlist as rows: entries under `root` grouped by their folders, in the
+// order mpv plays them, with the folders in `open` showing what they hold.
+// Without a root (a stream, a playlist file) the rows are the plain list.
+export function playlistRows(items: readonly string[], paths: readonly string[], root: string, open: ReadonlySet<string>, current: number): TreeRow[] {
+  const top: Node = { path: root, name: '', count: 0, hasCurrent: false, children: [] }
+  const byPath = new Map<string, Node>()
+  items.forEach((_, index) => {
+    let node = top
+    for (const folder of foldersOf(paths[index] ?? '', root)) {
+      let next = byPath.get(folder)
+      if (!next) {
+        next = { path: folder, name: baseName(folder), count: 0, hasCurrent: false, children: [] }
+        byPath.set(folder, next)
+        node.children.push({ folder: next })
+      }
+      next.count += 1
+      if (index === current) next.hasCurrent = true
+      node = next
+    }
+    node.children.push({ item: index })
+  })
+  const rows: TreeRow[] = []
+  const walk = (node: Node, depth: number) => {
+    let number = 0
+    for (const child of node.children) {
+      if ('item' in child) {
+        number += 1
+        rows.push({ kind: 'item', index: child.item, name: items[child.item] ?? '?', depth, number })
+      } else {
+        const f = child.folder
+        const isOpen = open.has(f.path)
+        rows.push({ kind: 'folder', path: f.path, name: f.name, depth, count: f.count, isOpen, hasCurrent: f.hasCurrent })
+        if (isOpen) walk(f, depth + 1)
+      }
+    }
+  }
+  walk(top, 0)
+  return rows
+}
