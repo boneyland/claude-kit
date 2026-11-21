@@ -6,6 +6,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream https://www.youtube.com/watch?v=tRsQsTMvPNg
 /stream            # plays the default stream (Claude FM lofi)
 /stream pause      # pause or resume
+/stream last       # plays again what played last in this session
 /stream stop
 ```
 

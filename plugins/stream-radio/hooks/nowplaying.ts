@@ -39,6 +39,7 @@ export function completeLines(buffer: string): { complete: string; rest: string 
 export type Command =
   | { kind: 'stop' }
   | { kind: 'toggle' }
+  | { kind: 'last' }
   | { kind: 'play'; url: string }
   | { kind: 'error'; text: string }
 
@@ -46,8 +47,9 @@ export function parseArgs(args: string, fallback: string): Command {
   const word = args.trim()
   if (word === 'stop' || word === 'off') return { kind: 'stop' }
   if (word === 'pause' || word === 'resume' || word === 'toggle') return { kind: 'toggle' }
+  if (word === 'last') return { kind: 'last' }
   const url = word || fallback
-  if (!url) return { kind: 'error', text: 'Usage: /stream <url> | pause | stop' }
+  if (!url) return { kind: 'error', text: 'Usage: /stream <url> | last | pause | stop' }
   if (!/^https?:\/\/\S+$/.test(url)) {
     return { kind: 'error', text: `Not an http(s) URL: ${url}` }
   }

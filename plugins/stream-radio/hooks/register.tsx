@@ -230,7 +230,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
-      argumentHint: '[url | pause | stop]',
+      argumentHint: '[url | last | pause | stop]',
     })
 
     return next(e)
@@ -259,6 +259,15 @@ export const register: Register = (on, options) => {
         if (!(await togglePause($))) return { text: 'The player is not ready yet.' }
 
         return { text: 'Toggled pause.' }
+      }
+
+      if (parsed.kind === 'last') {
+        // What played last in this session; the default stream before anything has.
+        const again = (await read($, lastUrl)) || defaultUrl
+        if (!again) return { text: 'Nothing has played yet, and there is no default stream.' }
+        start($, config, again)
+
+        return { text: `Starting ${again}.` }
       }
 
       start($, config, parsed.url)

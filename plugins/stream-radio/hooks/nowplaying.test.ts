@@ -34,6 +34,7 @@ test('ignores other output', () => {
 test('arguments', () => {
   expect(parseArgs('stop', '')).toEqual({ kind: 'stop' })
   expect(parseArgs('pause', '')).toEqual({ kind: 'toggle' })
+  expect(parseArgs(' last ', 'https://a.b/c')).toEqual({ kind: 'last' })
   expect(parseArgs('', 'https://a.b/c')).toEqual({ kind: 'play', url: 'https://a.b/c' })
   expect(parseArgs('--script=x', '').kind).toBe('error')
   expect(parseArgs('', '').kind).toBe('error')
