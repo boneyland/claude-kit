@@ -159,8 +159,8 @@ const MARQUEE_GAP = '   ·   '
 // How long the title rests at its start each time round, so its beginning can be read.
 export const MARQUEE_HOLD_MS = 2400
 // The defaults of the scrollChars and scrollMs settings.
-export const SCROLL_CHARS = 2
-export const SCROLL_MS = 600
+export const SCROLL_CHARS = 4
+export const SCROLL_MS = 1000
 
 // Ticks of `ms` that make up the rest at the start; at least one.
 export const holdTicks = (ms: number) => Math.max(1, Math.round(MARQUEE_HOLD_MS / ms))

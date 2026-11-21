@@ -1,6 +1,6 @@
 {
   "name": "stream-radio",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "types": "./types/index.d.ts",
   "description": "Play any YouTube (or other mpv-supported) stream's audio, or local music files and folders, from Claude Code with /stream <url | path>, and show what is playing in the prompt footer, with a side panel to pick songs from a playlist.",
   "author": {
@@ -47,7 +47,7 @@
       "type": "number",
       "title": "Scroll step (characters)",
       "description": "How many characters a title too long for the footer moves each redraw. 0 turns scrolling off: the title is cut with an ellipsis.",
-      "default": 2,
+      "default": 4,
       "min": 0,
       "max": 20
     },
@@ -55,7 +55,7 @@
       "type": "number",
       "title": "Scroll interval (ms)",
       "description": "Milliseconds between redraws of a scrolling title, 100 at least. The rest at the title's start stays about 2.4 s whatever this is.",
-      "default": 600,
+      "default": 1000,
       "min": 100,
       "max": 10000
     }

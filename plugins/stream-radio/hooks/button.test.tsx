@@ -32,7 +32,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
   )
 }
 
-const SCROLL_STEP = 600
+const SCROLL_STEP = 1000
 
 test('a long title scrolls in a 40-column label while the time stays put', async ($, on) => {
   const clock = mock.clock(on)

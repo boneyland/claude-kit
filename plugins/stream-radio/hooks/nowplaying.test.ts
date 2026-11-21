@@ -62,16 +62,17 @@ test('a title that fits is shown as is and never scrolls', () => {
   expect(marquee('Lofi radio', 20, 57)).toBe('Lofi radio')
 })
 
-test('a long title rests at its start, then scrolls two characters a tick and loops', () => {
+test('a long title rests at its start, then scrolls a step a tick and loops', () => {
+  // 2 characters a redraw every 600ms.
   const text = 'abcdefghij'
-  expect(marquee(text, 4, 0)).toBe('abcd')
-  expect(marquee(text, 4, MARQUEE_HOLD)).toBe('abcd')
-  expect(marquee(text, 4, MARQUEE_HOLD + 1)).toBe('cdef')
+  expect(marquee(text, 4, 0, 2, MARQUEE_HOLD)).toBe('abcd')
+  expect(marquee(text, 4, MARQUEE_HOLD, 2, MARQUEE_HOLD)).toBe('abcd')
+  expect(marquee(text, 4, MARQUEE_HOLD + 1, 2, MARQUEE_HOLD)).toBe('cdef')
   // Past the end, a gap, then the start again.
-  expect(marquee(text, 4, MARQUEE_HOLD + 4)).toBe('ij  ')
+  expect(marquee(text, 4, MARQUEE_HOLD + 4, 2, MARQUEE_HOLD)).toBe('ij  ')
   // 17 characters round, 2 a tick: 9 ticks moving, then the rest.
   const round = Math.ceil((text.length + '   ·   '.length) / 2) + MARQUEE_HOLD
-  expect(marquee(text, 4, round)).toBe('abcd')
+  expect(marquee(text, 4, round, 2, MARQUEE_HOLD)).toBe('abcd')
 })
 
 test('the step and the rest follow the scroll settings', () => {
@@ -154,4 +155,11 @@ test('an open folder shows its songs indented, numbered within it', () => {
 test('without a root the playlist is a plain list', () => {
   const rows = playlistRows(NAMES, PATHS, '', new Set(), 0)
   expect(rows.map(r => (r.kind === 'item' ? r.number : -1))).toEqual([1, 2, 3, 4, 5])
+})
+
+test('by default a title moves 4 characters a second', () => {
+  const text = 'abcdefghijklmnop'
+  // Resting 2.4 s at a second a redraw: 2 redraws, then 4 characters each.
+  expect(marquee(text, 4, holdTicks(1000))).toBe('abcd')
+  expect(marquee(text, 4, holdTicks(1000) + 1)).toBe('efgh')
 })

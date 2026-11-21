@@ -21,7 +21,7 @@ With nothing playing the footer shows `▶ Play radio`: click it to play again w
 
 Playing the last URL again (`▶ Play radio`, the panel's Resume button, `/stream last`) picks up where it got to: the same song in a playlist and the same time in it, so a chapter too. That survives a plugin reload, which stops the player. Typing a URL plays it from the start. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens the **Radio panel** beside the chat; clicking it again closes it. The panel shows the song, whether it is paused and its place in the playlist (the time stays in the footer, so the panel redraws only when something in it changes), with Prev, Pause or Resume, Next and Stop; Play last and Play default (when they differ from what plays); a field to type a URL to play; and the playlist, or the video's chapters, as a list: click a song to play it. `/stream pause`, `next` and `prev` still work directly. A paused live stream resumes where it paused, behind the live edge.
 
-The footer reads `3:42 <title>`, at most 40 columns: how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one. The icon and time stay put; a title too long for what is left scrolls sideways two characters at a time, resting a moment at its start each time round, and holds still while paused.
+The footer reads `3:42 <title>`, at most 40 columns: how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one. The icon and time stay put; a title too long for what is left scrolls sideways four characters a second, resting a moment at its start each time round, and holds still while paused.
 
 ## Requirements
 
@@ -47,8 +47,8 @@ For some content (some album playlists, for one) YouTube answers the stream URL 
 | `volume` | 60 | 0 to 100 |
 | `player` | `mpv` | the mpv executable |
 | `androidClient` | off | always play with the android client (see above), skipping the failed first try |
-| `scrollChars` | 2 | characters a long footer title moves each redraw; 0 turns scrolling off and cuts it with `…` |
-| `scrollMs` | 600 | milliseconds between those redraws, 100 at least |
+| `scrollChars` | 4 | characters a long footer title moves each redraw; 0 turns scrolling off and cuts it with `…` |
+| `scrollMs` | 1000 | milliseconds between those redraws, 100 at least |
 | `toggleOnly` | off | the footer song button pauses and resumes at once instead of opening the panel (`/stream panel` still opens it) |
 
 Playlists play through and repeat. The plugin overrides `loop-file` and `keep-open` from your `mpv.conf` for its own player, so a config that loops one file doesn't repeat one song. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
