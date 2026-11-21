@@ -597,9 +597,10 @@ export const register: Register = (on, options) => {
         ) : (
           <Text dimColor>Nothing playing.</Text>
         )}
-        {(last && last !== title) || (defaultUrl && defaultUrl !== last) ? (
+        {/* Play last (or Resume) only while idle: playing, it is what plays. */}
+        {(last && !title) || (defaultUrl && defaultUrl !== last) ? (
           <Box flexDirection="row" gap={1}>
-            {last ? (
+            {last && !title ? (
               <Button
                 key="play-last"
                 label={resumeLabel ? cut(`▶ Resume ${resumeLabel}`, width) : 'Play last'}

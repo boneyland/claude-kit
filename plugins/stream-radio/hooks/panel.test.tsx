@@ -55,6 +55,8 @@ test('the footer opens the panel, which lists the playlist and picks, skips and 
 
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ type: 'Text', text: SONGS[0] }))?.text).toBe(SONGS[0])
+  // What plays is the last URL: no button to play it again.
+  expect(await pane.find({ type: 'Button', key: 'play-last' })).toBe(undefined)
   expect((await pane.find({ type: 'Text', text: /1 of 3/ }))?.text).toMatch(/^0:42 · 1 of 3$/)
   expect((await pane.find({ type: 'Button', key: 'item-0' }))?.props.label).toBe(`▶ 1. ${SONGS[0]}`)
   expect((await pane.find({ type: 'Button', key: 'item-2' }))?.props.label).toBe(`  3. ${SONGS[2]}`)
