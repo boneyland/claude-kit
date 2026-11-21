@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
+import { completeLines, parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
 
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
@@ -51,6 +51,7 @@ function start($: EngineInterface, config: Config, url: string) {
     let lastTitle = ''
     let lastPaused = false
     let lastPercent = -1
+    let unread = ''
     let pipe = ''
     try {
       await old?.return(undefined)
@@ -97,7 +98,11 @@ function start($: EngineInterface, config: Config, url: string) {
           lastError = text.trim().split('\n').pop() ?? lastError
           continue
         }
-        const track = parseNowPlaying(text)
+        // Output comes in pieces: read complete lines only, or a half-printed
+        // line can claim the stream is not paused.
+        const { complete, rest } = completeLines(unread + text)
+        unread = rest
+        const track = parseNowPlaying(complete)
         if (track && track.title !== lastTitle) {
           lastTitle = track.title
           await update($, playing, () => track.title)
@@ -107,7 +112,7 @@ function start($: EngineInterface, config: Config, url: string) {
           lastPercent = pos
           await update($, percent, () => pos)
         }
-        if (track && track.isPaused !== lastPaused) {
+        if (track && track.isPaused !== null && track.isPaused !== lastPaused) {
           lastPaused = track.isPaused
           await update($, isPaused, () => track.isPaused)
         }
