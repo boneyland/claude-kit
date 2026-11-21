@@ -40,6 +40,10 @@ declare module 'claude-code' {
     'pr-watch': {
       // The pull requests this session watches, in the order they were added.
       watched: Watched[]
+      // Whether the panel is up, for the footer button's label.
+      isOpen: boolean
+      // The reply to the panel's last action; empty for none.
+      notice: string
     }
   }
 }

@@ -1,10 +1,26 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import { buildPrompt, decide, FIELDS, label, matches, newWatched, parseArgs, readStatus } from './watch'
+import {
+  buildPrompt,
+  decide,
+  FIELDS,
+  label,
+  matches,
+  newWatched,
+  parseArgs,
+  readStatus,
+  summary,
+  USAGE,
+} from './watch'
 import type { PrStatus, Rules, Watched } from './watch'
 
 const watched = atom({ plugin: 'pr-watch', key: 'watched' } as const, [] as Watched[])
+const isOpen = atom({ plugin: 'pr-watch', key: 'isOpen' } as const, false)
+const notice = atom({ plugin: 'pr-watch', key: 'notice' } as const, '')
+
+const PANE = 'pr-watch'
+const TITLE = 'PR watch'
 
 type Options = {
   intervalSeconds?: number
@@ -138,6 +154,23 @@ async function checkNow($: EngineInterface, config: Config): Promise<string> {
   return listText($)
 }
 
+// Opens the panel, or closes it if it is up; shared by /pr-watch panel and the footer button.
+async function toggle($: EngineInterface): Promise<'opened' | 'closed'> {
+  if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
+    await $.ui.close({ id: PANE })
+    await update($, isOpen, () => false)
+
+    return 'closed'
+  }
+  await $.ui.open({ id: PANE, title: TITLE })
+  await update($, isOpen, () => true)
+
+  return 'opened'
+}
+
+const cut = (text: string, width: number) =>
+  text.length <= width ? text : `${text.slice(0, Math.max(1, width - 1))}…`
+
 export const register: Register = (on, options) => {
   const {
     intervalSeconds = 90,
@@ -158,8 +191,14 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'pr-watch',
       description: 'Watch a PR: fix failing CI and merge conflicts in this session',
-      argumentHint: '[number | url] | stop [number | all] | list | check',
+      argumentHint: '[number | url] | stop [number | all] | list | check | panel',
     })
+    // A pane kept up across a reload is still the engine's; match the label to it.
+    const isUp = await $.ui
+      .panes()
+      .then(panes => panes.some(pane => pane.id === PANE))
+      .catch(() => false)
+    await update($, isOpen, () => isUp)
     timer?.cancel()
     timer = $.clock.every(config.intervalMs, () => void poll($, config))
 
@@ -181,11 +220,117 @@ export const register: Register = (on, options) => {
       if (parsed.kind === 'list') return { text: await listText($) }
       if (parsed.kind === 'check') return { text: await checkNow($, config) }
       if (parsed.kind === 'unwatch') return { text: await unwatchTarget($, parsed.target) }
-      if (parsed.kind === 'panel') return { text: 'The panel arrives in the next step.' }
+      if (parsed.kind === 'panel') return { text: `PR watch panel ${await toggle($)}.` }
 
       return { text: await watchTarget($, config, parsed.target) }
     } catch (error) {
       return { text: `pr-watch failed: ${error instanceof Error ? error.message : String(error)}` }
     }
+  })
+
+  // Keep the button's label in step however the pane opens or closes,
+  // the person's own close mark included.
+  on('ui.open', { id: PANE }, async ($, e, next) => {
+    const opened = await next(e)
+    await update($, isOpen, () => true)
+
+    return opened
+  })
+
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    await update($, isOpen, () => false)
+
+    return closed
+  })
+
+  // A button at the right of the prompt footer, after the engine's own labels:
+  // what needs a look while the panel is closed; pressing it opens or closes it.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const { Box, Button } = $.ui.resolve(e)
+    const open = await read($, isOpen)
+    const list = await read($, watched)
+
+    return (
+      <Box flexDirection="row" gap={1}>
+        {await next(e)}
+        <Button key="pr-watch-toggle" label={open ? 'Hide PRs' : summary(list)} onPress={() => toggle($)} />
+      </Box>
+    )
+  })
+
+  // The panel: every pr-watch action, and each watched PR with its failing checks.
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
+    const list = await read($, watched)
+    const said = await read($, notice)
+    const width = Math.max(20, e.props.bodyColumns)
+    // Each action's reply shows in the panel: there is no command reply here.
+    const act = async (work: () => Promise<string>) => {
+      let reply: string
+      try {
+        reply = await work()
+      } catch (error) {
+        reply = `pr-watch failed: ${error instanceof Error ? error.message : String(error)}`
+      }
+      await update($, notice, () => reply)
+    }
+    const submit = (value: string) =>
+      act(async () => {
+        const parsed = parseArgs(value)
+
+        return parsed.kind === 'watch' && parsed.target ? watchTarget($, config, parsed.target) : USAGE
+      })
+
+    return (
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1}>
+          <Button key="watch-branch" label="Watch this branch's PR" onPress={() => act(() => watchTarget($, config, ''))} />
+          <Button
+            key="check"
+            label="Check now"
+            onPress={() =>
+              act(async () => {
+                await poll($, config)
+                const n = (await read($, watched)).length
+
+                return `Checked ${n} PR${n === 1 ? '' : 's'}.`
+              })
+            }
+          />
+        </Box>
+        <Input key="target" placeholder="PR number or URL" submitLabel="watch" onSubmit={submit} />
+        {/* in full, wrapped: the reason at the end of a gh error is the useful part */}
+        {said !== '' && <Text dimColor>{said}</Text>}
+        {list.length === 0 && <Text dimColor>No PRs watched.</Text>}
+        {list.map(w => {
+          const { text, tone } = label(w)
+          const failing = w.status?.failing ?? []
+
+          return (
+            <Box key={w.url} flexDirection="column">
+              <Box flexDirection="row" gap={1}>
+                <Text color={tone === 'subtle' ? undefined : tone} dimColor={tone === 'subtle'}>
+                  {text}
+                </Text>
+                <Button key={`stop-${w.number}`} label="Stop" onPress={() => act(() => unwatchTarget($, w.url))} />
+                <Link href={w.url} label="open" />
+              </Box>
+              <Text dimColor>{cut(`${w.repo}: ${w.title}`, width)}</Text>
+              {failing.map(check =>
+                check.url ? (
+                  <Link key={check.url} href={check.url} label={cut(`  ${check.name}`, width)} />
+                ) : (
+                  <Text dimColor>{cut(`  ${check.name}`, width)}</Text>
+                ),
+              )}
+            </Box>
+          )
+        })}
+        <Text dimColor>
+          Checks every {Math.round(config.intervalMs / 1000)} s · push fixes: {config.allowPush ? 'on' : 'off'}
+        </Text>
+      </Box>
+    )
   })
 }
