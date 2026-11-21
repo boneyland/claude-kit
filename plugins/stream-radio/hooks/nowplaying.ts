@@ -120,20 +120,23 @@ export const LABEL_COLUMNS = 40
 // Between the end of a scrolling title and its start coming round again.
 const MARQUEE_GAP = '   ·   '
 // Ticks the title rests at its start each time round, so its beginning can be read.
-export const MARQUEE_HOLD = 8
+export const MARQUEE_HOLD = 4
+// Characters the title moves each tick.
+export const MARQUEE_STEP = 2
 
 // What fits after the fixed part of the label.
 export const titleColumns = (prefix: string) => Math.max(1, LABEL_COLUMNS - textWidth(prefix))
 
 // `text` in a window `width` cells wide, `tick` steps along: as is when it fits,
-// else scrolling left a character a tick, looping through a gap, resting
+// else scrolling left MARQUEE_STEP characters a tick, looping through a gap, resting
 // MARQUEE_HOLD ticks at the start of each round. Padded to `width` when a wide
 // character would straddle the window's edge, so the label never jitters.
 export function marquee(text: string, width: number, tick: number): string {
   if (textWidth(text) <= width) return text
   const loop = Array.from(text + MARQUEE_GAP)
-  const round = loop.length + MARQUEE_HOLD
-  const step = Math.max(0, (((tick % round) + round) % round) - MARQUEE_HOLD)
+  const steps = Math.ceil(loop.length / MARQUEE_STEP)
+  const round = steps + MARQUEE_HOLD
+  const step = Math.max(0, (((tick % round) + round) % round) - MARQUEE_HOLD) * MARQUEE_STEP
   let out = ''
   let used = 0
   for (let i = 0; used < width; i++) {

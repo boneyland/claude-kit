@@ -60,14 +60,15 @@ test('a title that fits is shown as is and never scrolls', () => {
   expect(marquee('Lofi radio', 20, 57)).toBe('Lofi radio')
 })
 
-test('a long title rests at its start, then scrolls a character a tick and loops', () => {
+test('a long title rests at its start, then scrolls two characters a tick and loops', () => {
   const text = 'abcdefghij'
   expect(marquee(text, 4, 0)).toBe('abcd')
   expect(marquee(text, 4, MARQUEE_HOLD)).toBe('abcd')
-  expect(marquee(text, 4, MARQUEE_HOLD + 1)).toBe('bcde')
+  expect(marquee(text, 4, MARQUEE_HOLD + 1)).toBe('cdef')
   // Past the end, a gap, then the start again.
-  expect(marquee(text, 4, MARQUEE_HOLD + 8)).toBe('ij  ')
-  const round = text.length + '   ·   '.length + MARQUEE_HOLD
+  expect(marquee(text, 4, MARQUEE_HOLD + 4)).toBe('ij  ')
+  // 17 characters round, 2 a tick: 9 ticks moving, then the rest.
+  const round = Math.ceil((text.length + '   ·   '.length) / 2) + MARQUEE_HOLD
   expect(marquee(text, 4, round)).toBe('abcd')
 })
 

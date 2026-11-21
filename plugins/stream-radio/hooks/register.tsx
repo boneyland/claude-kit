@@ -28,7 +28,7 @@ const queue = atom({ plugin: 'stream-radio', key: 'queue' } as const, NO_QUEUE)
 const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
 
 // One step of a long title's scroll.
-const SCROLL_MS = 300
+const SCROLL_MS = 600
 
 // Sends one command to mpv's IPC socket and prints its reply's data as JSON;
 // exits 1 when mpv answers with an error. Other lines on the socket (events,
