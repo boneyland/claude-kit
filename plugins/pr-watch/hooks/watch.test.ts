@@ -171,6 +171,8 @@ test('arguments', () => {
   expect(parseArgs('stop 12')).toEqual({ kind: 'unwatch', target: '12' })
   expect(parseArgs('list')).toEqual({ kind: 'list' })
   expect(parseArgs('check')).toEqual({ kind: 'check' })
+  expect(parseArgs('panel')).toEqual({ kind: 'panel' })
+  expect(parseArgs('panel x').kind).toBe('error')
   expect(parseArgs('12 13').kind).toBe('error')
   expect(parseArgs('--repo x').kind).toBe('error')
   expect(parseArgs('https://evil.example/pull/1').kind).toBe('error')

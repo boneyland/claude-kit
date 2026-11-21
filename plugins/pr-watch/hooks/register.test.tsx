@@ -59,14 +59,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(prompts[0]).toContain('PR #12 in acme/app')
     expect(prompts[0]).toContain('CI / test (https://github.com/acme/app/actions/runs/7/job/8)')
 
-    const ui = await $.ui.mount({
-      plugin: 'pr-watch',
-      surface,
-      component: 'AbovePrompt',
-      props: { hasSurvey: false },
-    } as never)
-    expect((await ui.find({ type: 'Text', text: /#12/ }))?.text).toBe('#12 ✗ 1 failed · fixing')
-    await ui.unmount()
+    const shown = JSON.stringify(await $.command.run({ command: 'pr-watch', args: 'list' } as never))
+    expect(shown).toContain('#12 ✗ 1 failed · fixing')
 
     // the next poll sees the same broken commit: not asked twice
     await clock.advance(90_000)
@@ -81,6 +75,51 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(JSON.stringify(listed)).toContain('No PRs watched')
   })
 }
+
+test('watching the same PR twice keeps one row and asks once', async ($, on) => {
+  const clock = mock.clock(on)
+  const prompts: string[] = []
+  on('process.run', () => ({ value: { exitCode: 0, stdout: pr(), stderr: '' } }) as never)
+  on('prompt.submit', (_$, e) => {
+    prompts.push(e.text)
+
+    return { text: e.text } as never
+  })
+  on('ui.toast', () => ({ value: undefined }) as never)
+
+  await $.command.run({ command: 'pr-watch', args: '' } as never)
+  await clock.settle()
+  const again = await $.command.run({ command: 'pr-watch', args: '12' } as never)
+  await clock.settle()
+
+  expect(JSON.stringify(again)).toContain('Already watching')
+  expect(prompts.length).toBe(1)
+  const listed = JSON.stringify(await $.command.run({ command: 'pr-watch', args: 'list' } as never))
+  expect(listed.split('#12').length - 1).toBe(1)
+})
+
+test('no band above the prompt', async ($, on) => {
+  const clock = mock.clock(on)
+  on('process.run', () => ({ value: { exitCode: 0, stdout: pr(), stderr: '' } }) as never)
+  on('prompt.submit', (_$, e) => ({ text: e.text }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>engine</Text>
+  })
+  await $.command.run({ command: 'pr-watch', args: '' } as never)
+  await clock.settle()
+
+  const ui = await $.ui.mount({
+    plugin: 'pr-watch',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: /#12/ })).toBeUndefined()
+  await ui.unmount()
+})
 
 test('a gh failure is reported, not thrown', async ($, on) => {
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: 'no pull requests found for branch "main"' } }) as never)

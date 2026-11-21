@@ -103,6 +103,41 @@ async function listText($: EngineInterface): Promise<string> {
   return ['Watching:', ...list.map(w => `  ${describe(w)}`)].join('\n')
 }
 
+// The actions /pr-watch and the panel share; each resolves its reply text.
+
+// Starts watching a PR (a number, a URL, or empty for this branch's PR).
+async function watchTarget($: EngineInterface, config: Config, target: string): Promise<string> {
+  const status = await fetchStatus($, target)
+  if (typeof status === 'string') return `Couldn't read ${target || "this branch's PR"} with gh: ${status}`
+  if (status.state !== 'OPEN') return `#${status.number} is ${status.state.toLowerCase()}; nothing to watch.`
+  const existing = (await read($, watched)).find(w => w.url === status.url)
+  const entry = existing ?? newWatched(status)
+  if (!existing) await update($, watched, list => [...list, { ...entry, status }])
+  // Acts on what it sees now, so a PR already failing is fixed right away;
+  // from a timer, since a command or press handler can't submit a prompt (it
+  // would wait on the turn the handler holds).
+  $.clock.after(0, () => void apply($, config, entry, status))
+
+  return `${existing ? 'Already watching' : 'Watching'} ${describe({ ...entry, status })}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`
+}
+
+// Stops watching `target`: 'all', a number or a URL.
+async function unwatchTarget($: EngineInterface, target: string): Promise<string> {
+  const before = await read($, watched)
+  const kept = target === 'all' ? [] : before.filter(w => !matches(w, target))
+  await update($, watched, () => kept)
+  const gone = before.length - kept.length
+  if (gone === 0) return `Not watching ${target}.`
+
+  return `Stopped watching ${gone === 1 ? 'one PR' : `${gone} PRs`}.`
+}
+
+async function checkNow($: EngineInterface, config: Config): Promise<string> {
+  await poll($, config)
+
+  return listText($)
+}
+
 export const register: Register = (on, options) => {
   const {
     intervalSeconds = 90,
@@ -144,58 +179,13 @@ export const register: Register = (on, options) => {
       const parsed = parseArgs(e.args)
       if (parsed.kind === 'error') return { text: parsed.text }
       if (parsed.kind === 'list') return { text: await listText($) }
-      if (parsed.kind === 'check') {
-        await poll($, config)
+      if (parsed.kind === 'check') return { text: await checkNow($, config) }
+      if (parsed.kind === 'unwatch') return { text: await unwatchTarget($, parsed.target) }
+      if (parsed.kind === 'panel') return { text: 'The panel arrives in the next step.' }
 
-        return { text: await listText($) }
-      }
-      if (parsed.kind === 'unwatch') {
-        const before = await read($, watched)
-        const kept = parsed.target === 'all' ? [] : before.filter(w => !matches(w, parsed.target))
-        await update($, watched, () => kept)
-        const gone = before.length - kept.length
-        if (gone === 0) return { text: `Not watching ${parsed.target}.` }
-
-        return { text: `Stopped watching ${gone === 1 ? 'one PR' : `${gone} PRs`}.` }
-      }
-
-      const status = await fetchStatus($, parsed.target)
-      if (typeof status === 'string') {
-        const which = parsed.target || "this branch's PR"
-
-        return { text: `Couldn't read ${which} with gh: ${status}` }
-      }
-      if (status.state !== 'OPEN') return { text: `#${status.number} is ${status.state.toLowerCase()}; nothing to watch.` }
-      const existing = (await read($, watched)).find(w => w.url === status.url)
-      const entry = existing ?? newWatched(status)
-      if (!existing) await update($, watched, list => [...list, { ...entry, status }])
-      // Acts on what it sees now, so a PR already failing is fixed right away;
-      // from a timer, since a command hook can't submit a prompt (it would wait
-      // on the turn the command holds).
-      $.clock.after(0, () => void apply($, config, entry, status))
-
-      return {
-        text: `${existing ? 'Already watching' : 'Watching'} ${describe({ ...entry, status })}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`,
-      }
+      return { text: await watchTarget($, config, parsed.target) }
     } catch (error) {
       return { text: `pr-watch failed: ${error instanceof Error ? error.message : String(error)}` }
     }
-  })
-
-  // One row above the prompt while any PR is watched.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const list = await read($, watched)
-    if (list.length === 0 || e.props.hasSurvey) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    const labels = list.map(label)
-
-    return (
-      <Box flexDirection="row" gap={2}>
-        <Text dimColor>PRs</Text>
-        {labels.map(({ text, tone }) =>
-          tone === 'subtle' ? <Text dimColor>{text}</Text> : <Text color={tone}>{text}</Text>,
-        )}
-      </Box>
-    )
   })
 }

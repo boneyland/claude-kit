@@ -215,9 +215,11 @@ export type Command =
   | { kind: 'unwatch'; target: string }
   | { kind: 'list' }
   | { kind: 'check' }
+  | { kind: 'panel' }
   | { kind: 'error'; text: string }
 
-export const USAGE = 'Usage: /pr-watch [<number> | <PR url>] | stop [<number> | <PR url> | all] | list | check'
+export const USAGE =
+  'Usage: /pr-watch [<number> | <PR url>] | stop [<number> | <PR url> | all] | list | check | panel'
 
 const TARGET = /^(#?\d+|https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\S*)$/
 
@@ -228,6 +230,7 @@ export function parseArgs(args: string): Command {
   if (word === '') return { kind: 'watch', target: '' }
   if (word === 'list' || word === 'status') return rest ? error : { kind: 'list' }
   if (word === 'check' || word === 'now') return rest ? error : { kind: 'check' }
+  if (word === 'panel') return rest ? error : { kind: 'panel' }
   if (word === 'stop' || word === 'off' || word === 'unwatch') {
     if (rest === '' || rest === 'all') return { kind: 'unwatch', target: 'all' }
 
