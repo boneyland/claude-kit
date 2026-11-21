@@ -9,9 +9,9 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream stop
 ```
 
-With nothing playing the footer shows `▶ Play radio`: click it to start the default stream, no `/stream` needed. Clicking the title in the footer pauses and resumes too: `♪` while playing, `⏸` while paused. A paused live stream resumes where it paused, behind the live edge.
+With nothing playing the footer shows `▶ Play radio`: click it to start the default stream, no `/stream` needed. Clicking the title in the footer pauses and resumes too. A paused live stream resumes where it paused, behind the live edge.
 
-The footer reads `♪ <title>` (cut at 60 characters).
+The footer reads `42% <title>` (cut at 60 characters): how far into the current song or video, as it plays. A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the percentage when there is one.
 
 ## Requirements
 
@@ -31,7 +31,7 @@ The title shown is whatever mpv knows: the stream's own song metadata when it se
 | `volume` | 60 | 0 to 100 |
 | `player` | `mpv` | the mpv executable |
 
-Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
+Playlists play through and repeat. The plugin overrides `loop-file` and `keep-open` from your `mpv.conf` for its own player, so a config that loops one file doesn't repeat one song. Only `http(s)` URLs are accepted. Playback stops when the session ends or the plugin reloads.
 
 ## Install
 

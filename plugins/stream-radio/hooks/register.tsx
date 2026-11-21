@@ -6,6 +6,7 @@ import { parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
 const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, false)
+const percent = atom({ plugin: 'stream-radio', key: 'percent' } as const, -1)
 
 const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
@@ -49,10 +50,12 @@ function start($: EngineInterface, config: Config, url: string) {
     let lastError = ''
     let lastTitle = ''
     let lastPaused = false
+    let lastPercent = -1
     let pipe = ''
     try {
       await old?.return(undefined)
       await update($, isPaused, () => false)
+      await update($, percent, () => -1)
       await update($, playing, () => 'connecting…')
 
       try {
@@ -74,6 +77,10 @@ function start($: EngineInterface, config: Config, url: string) {
         player,
         '--no-video',
         '--no-input-terminal',
+        // Your mpv.conf may loop one file or pause at its end; a stream plays on.
+        '--loop-file=no',
+        '--loop-playlist=inf',
+        '--keep-open=no',
         `--input-ipc-server=${pipe}`,
         '--ytdl-format=bestaudio/best',
         `--volume=${Math.round(volume)}`,
@@ -94,6 +101,11 @@ function start($: EngineInterface, config: Config, url: string) {
         if (track && track.title !== lastTitle) {
           lastTitle = track.title
           await update($, playing, () => track.title)
+        }
+        const pos = track?.percent ?? -1
+        if (track && pos !== lastPercent) {
+          lastPercent = pos
+          await update($, percent, () => pos)
         }
         if (track && track.isPaused !== lastPaused) {
           lastPaused = track.isPaused
@@ -126,6 +138,7 @@ export const register: Register = (on, options) => {
     // State outlives a reload but the player does not: start from idle.
     await update($, playing, () => '')
     await update($, isPaused, () => false)
+    await update($, percent, () => -1)
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
@@ -197,6 +210,10 @@ export const register: Register = (on, options) => {
       )
     }
     const paused = await read($, isPaused)
+    const done = await read($, percent)
+    // A file in a playlist shows how far along it is; a live stream has no end.
+    const progress = done >= 0 ? `${done}%` : ''
+    const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
     const shown = title.length > 60 ? `${title.slice(0, 59)}…` : title
 
     return (
@@ -204,7 +221,7 @@ export const register: Register = (on, options) => {
         {await next(e)}
         <Button
           key="stream-radio"
-          label={`${paused ? '⏸' : '♪'} ${shown}`}
+          label={`${icon} ${shown}`}
           onPress={async () => {
             if (!control) return
             const sent = await $.process

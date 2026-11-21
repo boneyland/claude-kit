@@ -3,13 +3,13 @@ import { expect, test } from 'claude-code/testing'
 import { parseArgs, parseNowPlaying } from './nowplaying'
 
 test('a song title beats the page title', () => {
-  const text = 'NP\tlofi radio\tArtist - Song\t\tno\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'Artist - Song', isPaused: false })
+  const text = 'NP\tlofi radio\tArtist - Song\t\tno\t41.7\r'
+  expect(parseNowPlaying(text)).toEqual({ title: 'Artist - Song', isPaused: false, percent: 41 })
 })
 
 test('falls back to the media title; takes the last line; reads pause', () => {
-  const text = 'NP\told\t\t\tno\rNP\tlofi radio - beats\t\t\tyes\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'lofi radio - beats', isPaused: true })
+  const text = 'NP\told\t\t\tno\t3\rNP\tlofi radio - beats\t\t\tyes\t\r'
+  expect(parseNowPlaying(text)).toEqual({ title: 'lofi radio - beats', isPaused: true, percent: null })
 })
 
 test('ignores other output', () => {

@@ -6,6 +6,8 @@ declare module 'claude-code' {
     'stream-radio': {
       playing: Playing
       isPaused: boolean
+      // How far into the current file, 0 to 100; -1 for a live stream or nothing playing.
+      percent: number
     }
   }
 }
