@@ -126,15 +126,28 @@ async function watchTarget($: EngineInterface, config: Config, target: string): 
   const status = await fetchStatus($, target)
   if (typeof status === 'string') return `Couldn't read ${target || "this branch's PR"} with gh: ${status}`
   if (status.state !== 'OPEN') return `#${status.number} is ${status.state.toLowerCase()}; nothing to watch.`
-  const existing = (await read($, watched)).find(w => w.url === status.url)
-  const entry = existing ?? newWatched(status)
-  if (!existing) await update($, watched, list => [...list, { ...entry, status }])
-  // Acts on what it sees now, so a PR already failing is fixed right away;
-  // from a timer, since a command or press handler can't submit a prompt (it
-  // would wait on the turn the handler holds).
-  $.clock.after(0, () => void apply($, config, entry, status))
+  // Added inside the update, so two watches of one PR in flight together (a
+  // double press, the panel and /pr-watch) add one row.
+  let isAdded = false
+  await update($, watched, list => {
+    if (list.some(w => w.url === status.url)) return list
+    isAdded = true
 
-  return `${existing ? 'Already watching' : 'Watching'} ${describe({ ...entry, status })}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`
+    return [...list, newWatched(status)]
+  })
+  // The watch that added it acts on what it sees now, so a PR already failing
+  // is fixed right away; from a timer, since a command or press handler can't
+  // submit a prompt (it would wait on the turn the handler holds). A PR
+  // already watched is left to the polls: asking here too could ask twice.
+  if (isAdded) {
+    $.clock.after(0, async () => {
+      const current = (await read($, watched)).find(w => w.url === status.url)
+      if (current) await apply($, config, current, status)
+    })
+  }
+  const shown = (await read($, watched)).find(w => w.url === status.url) ?? newWatched(status)
+
+  return `${isAdded ? 'Watching' : 'Already watching'} ${describe({ ...shown, status })}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`
 }
 
 // Stops watching `target`: 'all', a number or a URL.
@@ -146,6 +159,13 @@ async function unwatchTarget($: EngineInterface, target: string): Promise<string
   if (gone === 0) return `Not watching ${target}.`
 
   return `Stopped watching ${gone === 1 ? 'one PR' : `${gone} PRs`}.`
+}
+
+// The panel's Stop: the PR with exactly this URL.
+async function unwatchUrl($: EngineInterface, entry: Watched): Promise<string> {
+  await update($, watched, list => list.filter(w => w.url !== entry.url))
+
+  return `Stopped watching #${entry.number}.`
 }
 
 async function checkNow($: EngineInterface, config: Config): Promise<string> {
@@ -313,7 +333,9 @@ export const register: Register = (on, options) => {
                 <Text color={tone === 'subtle' ? undefined : tone} dimColor={tone === 'subtle'}>
                   {text}
                 </Text>
-                <Button key={`stop-${w.number}`} label="Stop" onPress={() => act(() => unwatchTarget($, w.url))} />
+                {/* keyed and stopped by URL: two repos can each have a #12, and a
+                    GitHub Enterprise URL is no target `matches` reads */}
+                <Button key={`stop-${w.url}`} label="Stop" onPress={() => act(() => unwatchUrl($, w))} />
                 <Link href={w.url} label="open" />
               </Box>
               <Text dimColor>{cut(`${w.repo}: ${w.title}`, width)}</Text>

@@ -38,7 +38,10 @@ const PANE = {
 } as const
 
 // The engine beneath the plugin: panes, gh, prompts and toasts.
-function engine(on: On) {
+type Reply = { exitCode: number; stdout: string; stderr: string }
+
+// `answer`, when given, replies to each gh call in place of `world.reply`.
+function engine(on: On, answer?: (argv: string[]) => Reply | Promise<Reply>) {
   const world = {
     panes: [] as PaneRow[],
     reply: { exitCode: 0, stdout: pr(), stderr: '' },
@@ -56,10 +59,10 @@ function engine(on: On) {
 
     return { value: undefined } as never
   })
-  on('process.run', (_$, e) => {
+  on('process.run', async (_$, e) => {
     world.ran.push([...e.argv])
 
-    return { value: world.reply } as never
+    return { value: answer ? await answer([...e.argv]) : world.reply } as never
   })
   on('prompt.submit', (_$, e) => {
     world.prompts.push(e.text)
@@ -127,8 +130,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(world.ran.at(-1)).toContain(URL)
     expect(await ui.find({ type: 'Text', text: /Checked 1 PR\./ })).toBeDefined()
 
-    await ui.press({ key: 'stop-12' })
-    expect(await ui.find({ type: 'Text', text: /#12/ })).toBeUndefined()
+    await ui.press({ key: `stop-${URL}` })
+    expect(await ui.find({ type: 'Text', text: /#12 ✗/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Stopped watching #12/ })).toBeDefined()
 
     // typed text that is no PR: the usage, nothing watched
     await ui.input({ key: 'target', text: 'nope' })
@@ -140,6 +144,58 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await clock.settle()
     expect(world.ran.at(-1)?.slice(0, 4)).toEqual(['gh', 'pr', 'view', '12'])
     expect(await ui.find({ type: 'Text', text: /#12/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test(`${surface}: watching twice at once adds one row and asks once`, async ($, on) => {
+    const clock = mock.clock(on)
+    // gh takes a second: both watches are in flight together
+    const world = engine(on, async () => {
+      await clock.sleep(1000)
+
+      return { exitCode: 0, stdout: pr(), stderr: '' }
+    })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    const both = Promise.all([
+      ui.press({ key: 'watch-branch' }),
+      $.command.run({ command: 'pr-watch', args: '' } as never),
+    ])
+    await clock.advance(1000)
+    await both
+    await clock.settle()
+    expect((await ui.findAll({ type: 'Button' })).filter(b => b.props.label === 'Stop').length).toBe(1)
+    expect(world.prompts.length).toBe(1)
+    await ui.unmount()
+  })
+
+  test(`${surface}: Stop removes its own PR when numbers clash or the host isn't github.com`, async ($, on) => {
+    const clock = mock.clock(on)
+    const other = 'https://github.com/acme/lib/pull/12'
+    const ghe = 'https://ghe.example.com/acme/app/pull/7'
+    // no target (this branch's PR): the GHE one; else the URL asked for
+    engine(on, argv => {
+      const target = argv[3] === '--json' ? ghe : (argv[3] ?? ghe)
+
+      return { exitCode: 0, stdout: pr({ url: target, number: target === ghe ? 7 : 12 }), stderr: '' }
+    })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.input({ key: 'target', text: URL })
+    await ui.input({ key: 'target', text: other })
+    await ui.press({ key: 'watch-branch' })
+    await clock.settle()
+    const stops = () => ui.findAll({ type: 'Button' }).then(all => all.filter(b => b.props.label === 'Stop'))
+    expect((await stops()).length).toBe(3)
+
+    // stop the second acme #12 (lib): app #12 and the GHE PR stay
+    await ui.press({ key: (await stops())[1]?.key ?? '' })
+    const hrefs = async () => (await ui.findAll({ type: 'Link' })).map(l => l.props.href)
+    expect(await hrefs()).toContain(URL)
+    expect(await hrefs()).not.toContain(other)
+
+    // stop the GHE PR
+    await ui.press({ key: (await stops())[1]?.key ?? '' })
+    expect(await hrefs()).not.toContain(ghe)
+    expect((await stops()).length).toBe(1)
     await ui.unmount()
   })
 
