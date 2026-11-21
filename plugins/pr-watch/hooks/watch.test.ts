@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildPrompt, decide, label, matches, newWatched, parseArgs, readStatus } from './watch'
+import { buildPrompt, decide, label, matches, newWatched, parseArgs, readStatus, summary } from './watch'
 import type { PrStatus, Rules } from './watch'
 
 const URL = 'https://github.com/acme/app/pull/12'
@@ -145,6 +145,22 @@ test('labels', () => {
     '#12 ✗ 1 failed · fixing',
   )
   expect(label({ ...w, error: 'HTTP 401' })).toEqual({ text: '#12 ? HTTP 401', tone: 'warning' })
+})
+
+test('the footer summary', () => {
+  expect(summary([])).toBe('PRs')
+  const green = newWatched(status())
+  expect(summary([green, { ...green, url: 'u2', number: 13 }])).toBe('PRs 2✓')
+  const failing = { ...green, status: status({ failing: [{ name: 'x', url: '' }] }) }
+  const conflict = { ...green, number: 14, status: status({ isConflicting: true }) }
+  const running = { ...green, number: 15, status: status({ pending: 2, total: 3 }) }
+  const broken = { ...green, number: 16, error: 'HTTP 401' }
+  expect(summary([green, failing, conflict, running])).toBe('PRs ✗2 ⏳1')
+  expect(summary([broken, green])).toBe('PRs ?1')
+  // failing with checks still running counts as ✗, not ⏳
+  expect(summary([{ ...green, status: status({ failing: [{ name: 'x', url: '' }], pending: 1 }) }])).toBe('PRs ✗1')
+  // not read yet
+  expect(summary([{ ...green, status: null }])).toBe('PRs ⏳1')
 })
 
 test('arguments', () => {

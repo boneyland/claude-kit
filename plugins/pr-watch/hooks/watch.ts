@@ -194,6 +194,22 @@ export function label(watched: Watched): { text: string; tone: Tone } {
   return { text: `${pr} ✓`, tone: 'success' }
 }
 
+// The footer button's label while the panel is closed: `PRs` with nothing
+// watched, `PRs 2✓` all green, else what needs a look (`PRs ✗1 ⏳1`).
+export function summary(list: Watched[]): string {
+  const counts = { '✗': 0, '⏳': 0, '?': 0 }
+  for (const w of list) {
+    const s = w.status
+    if (w.error) counts['?'] += 1
+    else if (s && (s.failing.length > 0 || s.isConflicting)) counts['✗'] += 1
+    else if (!s || s.pending > 0) counts['⏳'] += 1
+  }
+  if (list.length === 0) return 'PRs'
+  const marks = Object.entries(counts).filter(([, n]) => n > 0)
+
+  return marks.length === 0 ? `PRs ${list.length}✓` : `PRs ${marks.map(([mark, n]) => `${mark}${n}`).join(' ')}`
+}
+
 export type Command =
   | { kind: 'watch'; target: string }
   | { kind: 'unwatch'; target: string }
