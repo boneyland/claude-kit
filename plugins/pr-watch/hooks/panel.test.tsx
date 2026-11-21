@@ -115,6 +115,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
 
     expect(await ui.find({ type: 'Text', text: /No PRs watched/ })).toBeDefined()
+    // settings are shown, not set, here: say where they change
+    expect(await ui.find({ type: 'Text', text: /Change these in \/config or \/plugin/ })).toBeDefined()
     await ui.press({ key: 'watch-branch' })
     await clock.settle()
     expect(world.ran[0]).toEqual(['gh', 'pr', 'view', '--json', expect.any(String)])

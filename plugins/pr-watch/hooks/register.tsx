@@ -352,6 +352,7 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           Checks every {Math.round(config.intervalMs / 1000)} s · push fixes: {config.allowPush ? 'on' : 'off'}
         </Text>
+        <Text dimColor>Change these in /config or /plugin.</Text>
       </Box>
     )
   })

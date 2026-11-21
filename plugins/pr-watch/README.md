@@ -20,10 +20,11 @@ A button in the footer under the prompt sums up the watched PRs: `PRs` with none
 │   CI / test                               │
 │                                           │
 │ Checks every 90 s · push fixes: on        │
+│ Change these in /config or /plugin.       │
 ╰───────────────────────────────────────────╯
 ```
 
-Type a PR number or URL in the box and press Enter to watch it. `open` and each failing check are links to GitHub.
+Type a PR number or URL in the box and press Enter to watch it: any PR, on any branch, not only the one you're on. `open` and each failing check are links to GitHub. The settings line only shows the options; change them in `/config` or `/plugin`.
 
 ## The command
 
