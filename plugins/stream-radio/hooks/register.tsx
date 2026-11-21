@@ -29,7 +29,8 @@ const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, fals
 const elapsed = atom({ plugin: 'stream-radio', key: 'elapsed' } as const, -1)
 // The current chapter's title (often the song in a multi-song video); empty when none.
 const chapter = atom({ plugin: 'stream-radio', key: 'chapter' } as const, '')
-// The last URL that actually played: what the idle button plays again.
+// The last URL that actually played: what the idle button plays again. Kept in
+// $.store too, so it outlives the session (see saveLast).
 const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
 // The default stream the last load saw: when it changes, the new default wins
 // over the remembered URL.
@@ -59,6 +60,40 @@ const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
 // reload, which kills the player, so playing the last URL again resumes there.
 const NO_RESUME: Resume = { url: '', index: -1, seconds: -1, title: '' }
 const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_RESUME)
+// The last URL, where it got to and the default it went with, kept in $.store so
+// a new session's Play radio resumes there too. The point moves every second;
+// the store is written at most every SAVE_MS, and at once when the song
+// changes or playback stops.
+const STORE_KEY = 'last'
+const SAVE_MS = 10_000
+type Saved = { url: string; resumeAt: Resume; knownDefault: string }
+let savedAt = 0
+
+async function saveLast($: EngineInterface, isNow = false) {
+  const now = await $.clock.now().catch(() => 0)
+  if (!isNow && now - savedAt < SAVE_MS) return
+  savedAt = now
+  const saved: Saved = { url: await read($, lastUrl), resumeAt: await read($, resumeAt), knownDefault: await read($, knownDefault) }
+  await $.store.set(STORE_KEY, saved).catch(() => undefined)
+}
+
+// What an earlier session saved, when this one has nothing of its own yet.
+async function loadLast($: EngineInterface) {
+  if (await read($, lastUrl)) return
+  const saved = (await $.store.get(STORE_KEY).catch(() => undefined)) as Partial<Saved> | undefined
+  if (!saved || typeof saved.url !== 'string' || !saved.url) return
+  const url = saved.url
+  await update($, lastUrl, () => url)
+  if (typeof saved.knownDefault === 'string') {
+    const known = saved.knownDefault
+    await update($, knownDefault, () => known)
+  }
+  const at = saved.resumeAt
+  if (at && at.url === url && typeof at.index === 'number' && typeof at.seconds === 'number') {
+    await update($, resumeAt, () => ({ url, index: at.index, seconds: at.seconds, title: typeof at.title === 'string' ? at.title : '' }))
+  }
+}
+
 // Closer to a song's start than this, it resumes at the start.
 const RESUME_MIN_SECONDS = 5
 
@@ -363,6 +398,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
           // The first title means it really plays: remember it for the button.
           if (!lastTitle) {
             await update($, lastUrl, () => url)
+            await saveLast($, true)
             if (client) needsAndroid.add(url)
           }
           lastTitle = track.title
@@ -389,7 +425,9 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
             const q = await read($, queue)
             const index = q.kind === 'playlist' ? q.current : -1
             const title = (await read($, chapter)) || lastTitle
+            const was = await read($, resumeAt)
             await update($, resumeAt, () => ({ url, index, seconds: pos, title }))
+            await saveLast($, was.url !== url || was.index !== index || was.title !== title)
           }
         }
         if (track && track.chapter !== null && track.chapter !== lastChapter) {
@@ -479,6 +517,7 @@ function resumable(at: Resume, url: string): string {
 }
 
 async function stopPlaying($: EngineInterface) {
+  await saveLast($, true)
   await stop()
   await update($, playing, () => '')
   await update($, queue, () => NO_QUEUE)
@@ -527,9 +566,12 @@ export const register: Register = (on, options) => {
     await update($, scroll, () => 0)
     await update($, queue, () => NO_QUEUE)
     await update($, notice, () => '')
+    await loadLast($)
     if ((await read($, knownDefault)) !== defaultUrl) {
       await update($, knownDefault, () => defaultUrl)
       await update($, lastUrl, () => '')
+      await update($, resumeAt, () => NO_RESUME)
+      await saveLast($, true)
     }
     await $.command.register({
       name: 'stream',
