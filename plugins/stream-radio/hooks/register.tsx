@@ -12,6 +12,7 @@ import {
   baseName,
   foldersOf,
   playlistRows,
+  type TreeRow,
   parseArgs,
   parseNowPlaying,
   SCROLL_CHARS,
@@ -39,10 +40,17 @@ const scroll = atom({ plugin: 'stream-radio', key: 'scroll' } as const, 0)
 // What the panel lists to pick from.
 // (Queue: see the type contract.)
 const NO_QUEUE: Queue = { kind: 'none', items: [], current: -1, paths: [], root: '' }
-const queue = atom({ plugin: 'stream-radio', key: 'queue' } as const, NO_QUEUE)
+const QUEUE = { plugin: 'stream-radio', key: 'queue' } as const
+const queue = atom(QUEUE, NO_QUEUE)
 // The folders the panel's playlist shows open; the current song's open by
 // themselves when it changes.
-const openFolders = atom({ plugin: 'stream-radio', key: 'openFolders' } as const, [] as string[])
+const OPEN_FOLDERS = { plugin: 'stream-radio', key: 'openFolders' } as const
+const openFolders = atom(OPEN_FOLDERS, [] as string[])
+
+// The panel's playlist rows, kept for the versions of the queue and the open
+// folders they were built from: a redraw for anything else (pause, a reply,
+// the panel's width) reuses them.
+let rowsCache: { key: string; rows: TreeRow[] } | undefined
 // The reply to the panel's last action; empty for none.
 const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
 
@@ -625,14 +633,22 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input } = $.ui.resolve(e)
     const width = Math.max(20, e.props.bodyColumns)
+    // Every value read here redraws the whole panel when it changes, so it reads
+    // none that change by the second: no time (the footer has it), and the
+    // resume point, rewritten each second while playing, only while idle.
     const title = await read($, playing)
     const paused = await read($, isPaused)
-    const done = await read($, elapsed)
     const part = await read($, chapter)
     const last = await read($, lastUrl)
-    const q = await read($, queue)
-    const open = await read($, openFolders)
+    const queueRead = await $.state.get(QUEUE)
+    const openRead = await $.state.get(OPEN_FOLDERS)
+    const q = queueRead.value ?? NO_QUEUE
     const said = await read($, notice)
+    const rowsKey = `${queueRead.version}:${openRead.version}`
+    if (rowsCache?.key !== rowsKey) {
+      rowsCache = { key: rowsKey, rows: playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current) }
+    }
+    const rows = rowsCache.rows
     const act = async (work: () => Promise<string>) => {
       let reply: string
       try {
@@ -642,15 +658,14 @@ export const register: Register = (on, options) => {
       }
       await update($, notice, () => reply)
     }
-    const at = await read($, resumeAt)
-    const resumeLabel = last ? resumable(at, last) : ''
+    const at = title ? NO_RESUME : await read($, resumeAt)
+    const resumeLabel = last && !title ? resumable(at, last) : ''
     const play = (url: string) =>
       act(async () => {
         start($, config, url)
         return ''
       })
     const state = [
-      done >= 0 ? formatTime(done) : 'live',
       paused ? 'paused' : '',
       q.kind !== 'none' && q.current >= 0 ? `${q.current + 1} of ${q.items.length}` : '',
     ].filter(Boolean)
@@ -661,7 +676,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             <Text bold>{cut(part || title, width)}</Text>
             {part ? <Text dimColor>{cut(title, width)}</Text> : null}
-            <Text dimColor>{state.join(' · ')}</Text>
+            {state.length > 0 ? <Text dimColor>{state.join(' · ')}</Text> : null}
             <Box flexDirection="row" gap={1}>
               {q.kind !== 'none' ? (
                 <Button key="prev" label="⏮ Prev" onPress={() => act(() => step($, -1))} />
@@ -719,7 +734,7 @@ export const register: Register = (on, options) => {
         {q.kind !== 'none' ? (
           <Box flexDirection="column">
             <Text dimColor>{q.kind === 'playlist' ? 'Playlist' : 'Chapters'}</Text>
-            {playlistRows(q.items, q.paths, q.root, new Set(open), q.current).map(row => {
+            {rows.map(row => {
               const indent = '  '.repeat(row.depth)
               if (row.kind === 'folder') {
                 // Shut with the current song inside: the mark moves to the folder.
