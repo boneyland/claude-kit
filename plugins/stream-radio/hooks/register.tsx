@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import { completeLines, formatTime, parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
+import { completeLines, formatTime, marquee, parseArgs, parseNowPlaying, STATUS_FORMAT, textWidth, titleColumns } from './nowplaying'
 
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
@@ -15,6 +15,11 @@ const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
 // The default stream the last load saw: when it changes, the new default wins
 // over the remembered URL.
 const knownDefault = atom({ plugin: 'stream-radio', key: 'knownDefault' } as const, '')
+// How far a title too long for the footer has scrolled, in ticks; 0 at its start.
+const scroll = atom({ plugin: 'stream-radio', key: 'scroll' } as const, 0)
+
+// One step of a long title's scroll.
+const SCROLL_MS = 300
 
 const SEND =
   'import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1]); s.sendall((sys.argv[2]+"\\n").encode())'
@@ -32,6 +37,41 @@ let current: { return: (value: any) => Promise<unknown> } | undefined
 // The socket path mpv listens on; undefined when nothing plays.
 let control: string | undefined
 let run = 0
+// Steps a long title along while something plays; undefined otherwise.
+let scroller: Timer | undefined
+
+// The footer label's fixed part and its title: the icon and time stay put,
+// only the title scrolls.
+async function labelParts($: EngineInterface) {
+  const title = await read($, playing)
+  const paused = await read($, isPaused)
+  const done = await read($, elapsed)
+  const part = await read($, chapter)
+  // A file in a playlist shows how far along it is; a live stream has no end.
+  const progress = done >= 0 ? formatTime(done) : ''
+  const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
+  // A video of several songs names each in a chapter: that comes first.
+  const name = part ? `${part} · ${title}` : title
+  return { prefix: `${icon} `, name, paused }
+}
+
+// Runs while a player runs; a tick moves the title only when it overflows and
+// is not paused, so a short or paused title costs no redraws.
+function startScroller($: EngineInterface) {
+  scroller?.cancel()
+  scroller = $.clock.every(SCROLL_MS, () => {
+    void (async () => {
+      const { prefix, name, paused } = await labelParts($)
+      if (paused || textWidth(name) <= titleColumns(prefix)) return
+      await update($, scroll, n => n + 1)
+    })().catch(() => undefined)
+  })
+}
+
+function stopScroller() {
+  scroller?.cancel()
+  scroller = undefined
+}
 
 // Ends the running player (if any); the caller clears the footer.
 async function stop() {
@@ -39,6 +79,7 @@ async function stop() {
   const old = current
   current = undefined
   control = undefined
+  stopScroller()
   await old?.return(undefined)
 }
 
@@ -73,7 +114,9 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
       await update($, isPaused, () => false)
       await update($, elapsed, () => -1)
       await update($, chapter, () => '')
+      await update($, scroll, () => 0)
       await update($, playing, () => 'connecting…')
+      startScroller($)
 
       try {
         await $.process.run([player, '--version'], { timeoutMs: 5000 })
@@ -129,6 +172,7 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
             if (client) needsAndroid.add(url)
           }
           lastTitle = track.title
+          await update($, scroll, () => 0)
           await update($, playing, () => track.title)
         }
         const pos = track?.seconds ?? -1
@@ -139,6 +183,7 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
         if (track && track.chapter !== null && track.chapter !== lastChapter) {
           const next = track.chapter
           lastChapter = next
+          await update($, scroll, () => 0)
           await update($, chapter, () => next)
         }
         if (track && track.isPaused !== null && track.isPaused !== lastPaused) {
@@ -155,6 +200,7 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
     if (mine !== run) return
     current = undefined
     control = undefined
+    stopScroller()
     await update($, playing, () => '')
     await update($, chapter, () => '')
     if (!lastTitle && !client) {
@@ -237,6 +283,7 @@ export const register: Register = (on, options) => {
     await update($, isPaused, () => false)
     await update($, elapsed, () => -1)
     await update($, chapter, () => '')
+    await update($, scroll, () => 0)
     if ((await read($, knownDefault)) !== defaultUrl) {
       await update($, knownDefault, () => defaultUrl)
       await update($, lastUrl, () => '')
@@ -317,22 +364,17 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const paused = await read($, isPaused)
-    const done = await read($, elapsed)
-    const part = await read($, chapter)
-    // A file in a playlist shows how far along it is; a live stream has no end.
-    const progress = done >= 0 ? formatTime(done) : ''
-    const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
-    // A video of several songs names each in a chapter: that comes first.
-    const name = part ? `${part} · ${title}` : title
-    const shown = name.length > 60 ? `${name.slice(0, 59)}…` : name
+    // At most LABEL_COLUMNS cells: the icon and time fixed, a long title
+    // scrolling through what is left.
+    const { prefix, name } = await labelParts($)
+    const shown = marquee(name, titleColumns(prefix), await read($, scroll))
 
     return (
       <Box flexDirection="row" gap={1}>
         {await next(e)}
         <Button
           key="stream-radio"
-          label={`${icon} ${shown}`}
+          label={`${prefix}${shown}`}
           onPress={() => (config.toggleOnly ? void togglePause($) : openMenu($, config, defaultUrl))}
         />
       </Box>

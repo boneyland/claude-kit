@@ -14,6 +14,8 @@ declare module 'claude-code' {
       lastUrl: string
       // The default stream the last load saw; a change clears lastUrl.
       knownDefault: string
+      // How far a title too long for the footer has scrolled, in ticks.
+      scroll: number
     }
   }
 }

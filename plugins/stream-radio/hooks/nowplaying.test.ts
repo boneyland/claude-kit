@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { completeLines, formatTime, parseArgs, parseNowPlaying } from './nowplaying'
+import { completeLines, formatTime, LABEL_COLUMNS, MARQUEE_HOLD, marquee, parseArgs, parseNowPlaying, textWidth, titleColumns } from './nowplaying'
 
 test('a song title beats the page title', () => {
   const text = 'NP\tlofi radio\tArtist - Song\t\tno\t41.7\r'
@@ -53,4 +53,33 @@ test('arguments', () => {
   expect(parseArgs('', 'https://a.b/c')).toEqual({ kind: 'play', url: 'https://a.b/c' })
   expect(parseArgs('--script=x', '').kind).toBe('error')
   expect(parseArgs('', '').kind).toBe('error')
+})
+
+test('a title that fits is shown as is and never scrolls', () => {
+  expect(marquee('Lofi radio', 20, 0)).toBe('Lofi radio')
+  expect(marquee('Lofi radio', 20, 57)).toBe('Lofi radio')
+})
+
+test('a long title rests at its start, then scrolls a character a tick and loops', () => {
+  const text = 'abcdefghij'
+  expect(marquee(text, 4, 0)).toBe('abcd')
+  expect(marquee(text, 4, MARQUEE_HOLD)).toBe('abcd')
+  expect(marquee(text, 4, MARQUEE_HOLD + 1)).toBe('bcde')
+  // Past the end, a gap, then the start again.
+  expect(marquee(text, 4, MARQUEE_HOLD + 8)).toBe('ij  ')
+  const round = text.length + '   ·   '.length + MARQUEE_HOLD
+  expect(marquee(text, 4, round)).toBe('abcd')
+})
+
+test('wide characters count two cells and never overflow the window', () => {
+  expect(textWidth('東京')).toBe(4)
+  for (let tick = 0; tick < 40; tick++) expect(textWidth(marquee('東京タワー の 夜景 song', 7, tick))).toBe(7)
+})
+
+test('the title gets what the icon and time leave of 40 columns', () => {
+  expect(LABEL_COLUMNS).toBe(40)
+  expect(titleColumns('♪ ')).toBe(38)
+  expect(titleColumns('1:02:05 ')).toBe(32)
+  // The pause symbol is wide.
+  expect(titleColumns('⏸ 3:42 ')).toBe(32)
 })

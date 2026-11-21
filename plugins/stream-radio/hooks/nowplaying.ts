@@ -77,3 +77,65 @@ export function parseArgs(args: string, fallback: string): Command {
 
   return { kind: 'play', url }
 }
+
+// Terminal cells one code point takes: 0 for combining marks and joiners, 2 for
+// wide characters (CJK, Hangul, fullwidth forms, most emoji, the media-control
+// symbols), 1 for the rest. Close enough for a song title, without a table.
+export function cellWidth(ch: string): number {
+  const c = ch.codePointAt(0) ?? 0
+  if ((c >= 0x0300 && c <= 0x036f) || (c >= 0x200b && c <= 0x200f) || (c >= 0x20d0 && c <= 0x20ff) || (c >= 0xfe00 && c <= 0xfe0f)) {
+    return 0
+  }
+  if (
+    (c >= 0x1100 && c <= 0x115f) ||
+    (c >= 0x23e9 && c <= 0x23fa) ||
+    (c >= 0x2e80 && c <= 0xa4cf) ||
+    (c >= 0xac00 && c <= 0xd7a3) ||
+    (c >= 0xf900 && c <= 0xfaff) ||
+    (c >= 0xfe30 && c <= 0xfe4f) ||
+    (c >= 0xff00 && c <= 0xff60) ||
+    (c >= 0xffe0 && c <= 0xffe6) ||
+    (c >= 0x1f300 && c <= 0x1faff) ||
+    (c >= 0x20000 && c <= 0x3fffd)
+  ) {
+    return 2
+  }
+  return 1
+}
+
+export function textWidth(text: string): number {
+  let w = 0
+  for (const ch of text) w += cellWidth(ch)
+  return w
+}
+
+// The footer button's whole label, icon and time included, at most this many cells.
+export const LABEL_COLUMNS = 40
+// Between the end of a scrolling title and its start coming round again.
+const MARQUEE_GAP = '   ·   '
+// Ticks the title rests at its start each time round, so its beginning can be read.
+export const MARQUEE_HOLD = 8
+
+// What fits after the fixed part of the label.
+export const titleColumns = (prefix: string) => Math.max(1, LABEL_COLUMNS - textWidth(prefix))
+
+// `text` in a window `width` cells wide, `tick` steps along: as is when it fits,
+// else scrolling left a character a tick, looping through a gap, resting
+// MARQUEE_HOLD ticks at the start of each round. Padded to `width` when a wide
+// character would straddle the window's edge, so the label never jitters.
+export function marquee(text: string, width: number, tick: number): string {
+  if (textWidth(text) <= width) return text
+  const loop = Array.from(text + MARQUEE_GAP)
+  const round = loop.length + MARQUEE_HOLD
+  const step = Math.max(0, (((tick % round) + round) % round) - MARQUEE_HOLD)
+  let out = ''
+  let used = 0
+  for (let i = 0; used < width; i++) {
+    const ch = loop[(step + i) % loop.length]!
+    const w = cellWidth(ch)
+    if (used + w > width) break
+    out += ch
+    used += w
+  }
+  return out + ' '.repeat(width - used)
+}
