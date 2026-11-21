@@ -121,12 +121,12 @@ The row appears only when **all** of these hold:
 3. The baseline is known.
 4. The **old context** is at least 60k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
-6. The overhead is **$0.40 a turn or more**.
+6. The overhead is **$0.40 a turn or more on Opus 5.5**. The line scales with the model's input price: $0.20 on Sonnet 5.5, $0.80 on Fable 5.2, with a floor of $0.05 (Haiku 5.5).
 7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
 
-So the trigger is a cost, not a context size. The context size it takes depends on the model's cache-read price and on how many requests your turns make:
+So the trigger is a cost, not a context size. The context size it takes depends on the model's cache-read and input prices and on how many requests your turns make:
 
-| Median requests per turn | Opus 5.5, Fable 5.2 ($0.20/M) | Sonnet 5.5 ($0.10/M) |
+| Median requests per turn | Opus 5.5, Sonnet 5.5 | Fable 5.2 |
 |---|---|---|
 | 1 | ~2M (never) | ~4M (never) |
 | 5 | ~400k | ~800k |

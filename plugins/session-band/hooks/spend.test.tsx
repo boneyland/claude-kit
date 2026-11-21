@@ -37,6 +37,21 @@ test('the overhead names its cost a turn and when starting over pays back', asyn
   expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
 })
 
+test('the overhead threshold scales with the model: $0.40 on Opus 5.5, $0.20 on Sonnet 5.5', async () => {
+  const sonnet = { ...OPUS, model: 'claude-sonnet-5-5' }
+  // 130k old × $0.10/M × 16 requests = $0.21: over Sonnet's line, under Opus's.
+  expect(overheadWarning(sonnet)?.text).toContain('Old context ≈ $0.21/turn')
+  expect(overheadWarning({ ...sonnet, recentSteps: [15, 15, 15] })).toBe(null)
+  expect(overheadWarning({ ...OPUS, recentSteps: [8, 8, 8] })).toBe(null)
+  // Fable 5.2 reads at Opus's price but its input costs twice: its line is $0.80.
+  expect(overheadWarning({ ...OPUS, model: 'claude-fable-5-2' })).toBe(null)
+  expect(overheadWarning({ ...OPUS, model: 'claude-fable-5-2', recentSteps: [33, 33, 33] })).not.toBe(null)
+  // Haiku 5.5's scaled line would be $0.01: it stops at a floor of $0.05 (130k × $0.01/M × 39 = $0.051).
+  const haiku = { ...OPUS, model: 'claude-haiku-5-5' }
+  expect(overheadWarning({ ...haiku, recentSteps: [38, 38, 38] })).toBe(null)
+  expect(overheadWarning({ ...haiku, recentSteps: [39, 39, 39] })?.text).toContain('Old context ≈ $0.05/turn')
+})
+
 test('the overhead waits for three turns and prices one at their median', async () => {
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 10] })).toBe(null)
   // One long run moves the mean, not the price.

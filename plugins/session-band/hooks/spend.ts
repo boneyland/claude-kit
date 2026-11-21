@@ -76,8 +76,13 @@ export type SpendInputs = {
 const MIN_OLD_TOKENS = 60_000
 // The expired cache: shown when starting over saves at least this much.
 const EXPIRED_MIN_SAVING = 0.1
-// The steady overhead: shown when the old context costs this much a turn.
+// The steady overhead: shown when the old context costs this much a turn on a model
+// whose input price is OVERHEAD_REF_INPUT per million tokens (Opus 5.5); a dearer
+// or cheaper model scales it with its input price (Sonnet 5.5, half of it: $0.20),
+// down to a floor of OVERHEAD_FLOOR_USD (Haiku 5.5).
 export const OVERHEAD_MIN_USD = 0.4
+const OVERHEAD_REF_INPUT = 4
+const OVERHEAD_FLOOR_USD = 0.05
 // Turns seen before the overhead is priced: one turn says little about the next.
 export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
@@ -134,7 +139,8 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   if (s.recentSteps.length < MIN_TURNS) return null
   const { median: steps, mean } = stepsPerTurn(s.recentSteps)!
   const perTurn = old * p.read * steps
-  if (perTurn < OVERHEAD_MIN_USD) return null
+  const line = Math.max(OVERHEAD_FLOOR_USD, (OVERHEAD_MIN_USD * p.input * 1e6) / OVERHEAD_REF_INPUT)
+  if (perTurn < line) return null
 
   const payback = (cost: number, saving: number) => {
     const turns = Math.max(1, Math.ceil(cost / saving))
