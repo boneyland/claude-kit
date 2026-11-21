@@ -1,6 +1,6 @@
 {
   "name": "stream-radio",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "types": "./types/index.d.ts",
   "description": "Play any YouTube (or other mpv-supported) stream's audio from Claude Code with /stream <url>, and show what is playing in the status line.",
   "author": {

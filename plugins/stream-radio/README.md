@@ -9,7 +9,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream stop
 ```
 
-With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer pauses and resumes too. A paused live stream resumes where it paused, behind the live edge.
+With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens a small dialog with the song, its progress and the actions: Pause or Resume, Stop, Play last, Play default (when it differs). Type a URL under "Other" to play that instead; Esc closes it. `/stream pause` still toggles directly. A paused live stream resumes where it paused, behind the live edge.
 
 The footer reads `42% <title>` (cut at 60 characters): how far into the current song or video, as it plays. A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the percentage when there is one.
 

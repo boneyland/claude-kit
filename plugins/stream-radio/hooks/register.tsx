@@ -164,6 +164,54 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
   })()
 }
 
+// Pauses or resumes through mpv; false while it is not listening yet. The new
+// state is decided before sending and written as that value, not a flip: mpv's
+// own status line reports the change while the send runs, and a late flip would
+// undo it.
+async function togglePause($: EngineInterface): Promise<boolean> {
+  if (!control) return false
+  const target = !(await read($, isPaused))
+  const sent = await $.process.run(send(TOGGLE_PAUSE), { timeoutMs: 3000 }).catch(() => undefined)
+  if (sent?.exitCode !== 0) return false
+  await update($, isPaused, () => target)
+
+  return true
+}
+
+// What the footer button opens: a question dialog with the song and the actions;
+// text typed under "Other" is a URL to play.
+async function openMenu($: EngineInterface, config: Config, defaultUrl: string) {
+  const title = await read($, playing)
+  const paused = await read($, isPaused)
+  const done = await read($, percent)
+  const last = await read($, lastUrl)
+  const options = [paused ? 'Resume' : 'Pause', 'Stop']
+  if (last) options.push('Play last')
+  if (defaultUrl && defaultUrl !== last) options.push('Play default')
+  const progress = done >= 0 ? ` (${done}%)` : ''
+  const question = `Now playing: ${title}${progress}${paused ? ', paused' : ''}. Pick an action, or type a URL under Other?`
+  let answer: string
+  try {
+    answer = await $.ui.ask(question, { options, header: 'Radio' })
+  } catch {
+    return // dismissed
+  }
+  if (answer === 'Pause' || answer === 'Resume') {
+    if (!(await togglePause($))) $.ui.toast('The player is not ready yet.')
+  } else if (answer === 'Stop') {
+    await stop()
+    await update($, playing, () => '')
+  } else if (answer === 'Play last' && last) {
+    start($, config, last)
+  } else if (answer === 'Play default' && defaultUrl) {
+    start($, config, defaultUrl)
+  } else {
+    const parsed = parseArgs(answer.trim(), '')
+    if (parsed.kind === 'play') start($, config, parsed.url)
+    else $.ui.toast('Type a full http(s) URL.')
+  }
+}
+
 export const register: Register = (on, options) => {
   const { defaultUrl = '', volume = 60, player = 'mpv', androidClient = false } = options as Options
   const config: Config = { volume, player, androidClient }
@@ -208,12 +256,7 @@ export const register: Register = (on, options) => {
       }
       if (parsed.kind === 'toggle') {
         if (!control) return { text: 'Nothing is playing.' }
-        const target = !(await read($, isPaused))
-        const sent = await $.process
-          .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
-          .catch(() => undefined)
-        if (sent?.exitCode !== 0) return { text: 'The player is not ready yet.' }
-        await update($, isPaused, () => target)
+        if (!(await togglePause($))) return { text: 'The player is not ready yet.' }
 
         return { text: 'Toggled pause.' }
       }
@@ -264,18 +307,7 @@ export const register: Register = (on, options) => {
         <Button
           key="stream-radio"
           label={`${icon} ${shown}`}
-          onPress={async () => {
-            if (!control) return
-            // Decide the new state before sending, and write that value, not a
-            // flip: mpv's own status line reports the change while the send is
-            // still running, and a late flip would undo it.
-            const target = !(await read($, isPaused))
-            const sent = await $.process
-              .run(send(TOGGLE_PAUSE), { timeoutMs: 3000 })
-              .catch(() => undefined)
-            // Not listening yet (still connecting): leave the state alone.
-            if (sent?.exitCode === 0) await update($, isPaused, () => target)
-          }}
+          onPress={() => openMenu($, config, defaultUrl)}
         />
       </Box>
     )
