@@ -21,7 +21,7 @@ const seed = (extra: Record<string, unknown>) =>
     ...extra,
   }) as Record<string, unknown>
 
-test('a running turn shows its elapsed minutes; an idle band does not', async ($, on) => {
+test('a running turn shows its elapsed minutes; an idle band shows the last turn\'s', async ($, on) => {
   const state = seed({ turnClock: { startedAt: NOW - 83_000, seconds: 60 } })
   on('state.get', (_, e) => (e.key in state ? { value: { value: state[e.key], version: 1 } } : { value: { value: undefined, version: 0 } }))
   on('clock.now', () => ({ value: NOW }))
@@ -33,9 +33,16 @@ test('a running turn shows its elapsed minutes; an idle band does not', async ($
     await working.unmount()
   }
 
+  state.turnClock = { startedAt: null, seconds: 7 * 60 + 40 }
   const idle = await $.ui.mount(BAND(false))
-  expect(await idle.find({ type: 'Text', text: '1m' })).toBe(undefined)
+  expect((await idle.find({ type: 'Text', text: '7m' }))?.text).toBe('7m')
   await idle.unmount()
+
+  // Before the first turn there is nothing to show.
+  state.turnClock = { startedAt: null, seconds: 0 }
+  const fresh = await $.ui.mount(BAND(false))
+  expect(await fresh.find({ type: 'Text', text: /^(<1m|\d+m)$/ })).toBe(undefined)
+  await fresh.unmount()
 })
 
 test('the band shows the git branch, marked when dirty, and drops it when narrow', async ($, on) => {

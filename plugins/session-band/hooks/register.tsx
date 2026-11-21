@@ -89,7 +89,9 @@ const warned = atom({ plugin: 'session-band', key: 'warned' } as const, 0)
 // The effort level the main loop's last request carried; null where none was sent.
 const effort = atom({ plugin: 'session-band', key: 'effort' } as const, null as string | null)
 
-// The main loop's running turn: when it began and the seconds since, ticked each second.
+// The main loop's turn: when it began and the seconds since, in whole minutes while
+// it runs. When it ends, startedAt clears and seconds keeps its exact length, shown
+// until the next turn starts.
 const turnClock = atom({ plugin: 'session-band', key: 'turnClock' } as const, { startedAt: null, seconds: 0 } as TurnClock)
 
 // The working tree's branch and whether it has changes; null outside a repository.
@@ -985,7 +987,7 @@ export const register: Register = (on, options) => {
       await update($, cache, () => ({ expiresAt: now + CACHE_TTL_MS, secondsLeft: CACHE_TTL_MS / 1000 }))
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
-      await update($, turnClock, t => ({ ...t, startedAt: null }))
+      await update($, turnClock, t => ({ startedAt: null, seconds: t.startedAt === null ? t.seconds : Math.max(1, (now - t.startedAt) / 1000) }))
       await update($, tokens, tk => ({ ...tk, last: tk.turn, lastCause: tk.cause }))
       await tick($)
       await update($, stats, st =>
@@ -1038,7 +1040,8 @@ export const register: Register = (on, options) => {
     const modelName = shortModel(await $.session.model())
     const effortLevel = await read($, effort)
     const clock = await read($, turnClock)
-    const running = e.props.isWorking && clock.startedAt !== null ? elapsed(clock.seconds) : null
+    // The running turn's minutes, else how long the last one took; nothing before the first.
+    const running = (e.props.isWorking && clock.startedAt !== null) || clock.seconds > 0 ? elapsed(clock.seconds) : null
     const repo = await read($, git)
     const sp = await read($, spend)
     const perTurn = costPerTurn(s.recentCosts ?? [])

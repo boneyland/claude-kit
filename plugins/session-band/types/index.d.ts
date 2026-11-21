@@ -31,7 +31,7 @@ export type Limit = {
   resetsAt: string | null
 }
 
-// The main loop's running turn; startedAt null between turns.
+// The main loop's turn; startedAt null between turns, when seconds holds the last one's length.
 export type TurnClock = {
   startedAt: number | null
   seconds: number

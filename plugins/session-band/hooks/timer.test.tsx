@@ -55,6 +55,8 @@ test('the turn timer and cache countdown move a minute at a time, then stop', as
 
   await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
   expect(await shown($, false, '60m')).toBe('60m')
+  // The finished turn's length stays, and stops moving.
+  expect(await shown($, false, '1h01m')).toBe('1h01m')
   // Rounded up: 59m 30s left still reads 60m.
   await clock.advance(30_000)
   expect(await shown($, false, '60m')).toBe('60m')
@@ -62,4 +64,10 @@ test('the turn timer and cache countdown move a minute at a time, then stop', as
   expect(await shown($, false, '59m')).toBe('59m')
   await clock.advance(59 * 60_000)
   expect(await shown($, false, 'expired')).toBe('expired')
+  expect(await shown($, false, '1h01m')).toBe('1h01m')
+
+  // The next turn starts its own count.
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  expect(await shown($, true, '<1m')).toBe('<1m')
+  expect(await shown($, true, '1h01m')).toBe(undefined)
 })
