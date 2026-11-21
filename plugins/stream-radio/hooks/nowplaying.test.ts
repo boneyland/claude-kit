@@ -18,10 +18,12 @@ test('a cut-off line does not claim to be unpaused', () => {
 })
 
 test('only complete lines are read', () => {
-  expect(completeLines('NP\ta\t\t\tno\t1\rNP\ta\t')).toEqual({
-    complete: 'NP\ta\t\t\tno\t1\r',
-    rest: 'NP\ta\t',
+  expect(completeLines('NP\ta\t\t\tno\t1\tEND\nNP\ta\t')).toEqual({
+    complete: 'NP\ta\t\t\tno\t1\tEND',
+    rest: '\nNP\ta\t',
   })
+  // mpv leaves a line unended until the next update: END alone completes it
+  expect(completeLines('NP\ta\t\t\tno\t0\tEND')).toEqual({ complete: 'NP\ta\t\t\tno\t0\tEND', rest: '' })
   expect(completeLines('NP\ta')).toEqual({ complete: '', rest: 'NP\ta' })
 })
 

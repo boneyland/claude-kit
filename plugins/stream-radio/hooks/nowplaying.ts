@@ -1,7 +1,8 @@
 // mpv prints one status line per update; we ask it for
-// "NP<TAB>title<TAB>icy<TAB>meta<TAB>pause<TAB>percent".
+// "NP<TAB>title<TAB>icy<TAB>meta<TAB>pause<TAB>percent<TAB>END". mpv ends no line:
+// it starts the next update with a newline, so END is what marks a line as whole.
 export const STATUS_FORMAT =
-  'NP\t${media-title:}\t${metadata/by-key/icy-title:}\t${metadata/by-key/title:}\t${pause:}\t${percent-pos:}'
+  'NP\t${media-title:}\t${metadata/by-key/icy-title:}\t${metadata/by-key/title:}\t${pause:}\t${percent-pos:}\tEND'
 
 // percent: how far into the current file, 0 to 100; null for a live stream.
 // isPaused: null when the line does not say (a cut-off line), so nothing changes.
@@ -23,14 +24,16 @@ export function parseNowPlaying(text: string): Track | undefined {
   return title ? { title, isPaused, percent } : undefined
 }
 
-// mpv's output arrives in pieces that do not line up with its lines. Splits what
-// has been read into the complete lines (each ends in \r or \n) and the unfinished
-// rest, which waits for the next piece.
+// mpv's output arrives in pieces that do not line up with its lines, and it
+// does not end a status line until the next one is printed. Splits what has been
+// read into the whole lines (up to the last END marker) and the unfinished rest,
+// which waits for the next piece.
 export function completeLines(buffer: string): { complete: string; rest: string } {
-  const cut = Math.max(buffer.lastIndexOf('\r'), buffer.lastIndexOf('\n'))
-  if (cut < 0) return { complete: '', rest: buffer.length > 10000 ? '' : buffer }
+  const mark = buffer.lastIndexOf('\tEND')
+  if (mark < 0) return { complete: '', rest: buffer.length > 10000 ? '' : buffer }
+  const cut = mark + '\tEND'.length
 
-  return { complete: buffer.slice(0, cut + 1), rest: buffer.slice(cut + 1) }
+  return { complete: buffer.slice(0, cut), rest: buffer.slice(cut) }
 }
 
 export type Command =
