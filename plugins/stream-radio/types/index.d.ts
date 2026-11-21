@@ -6,8 +6,10 @@ declare module 'claude-code' {
     'stream-radio': {
       playing: Playing
       isPaused: boolean
-      // How far into the current file, 0 to 100; -1 for a live stream or nothing playing.
-      percent: number
+      // How far into the current file, in seconds; -1 for a live stream or nothing playing.
+      elapsed: number
+      // The current chapter's title (often the song in a multi-song video); empty when none.
+      chapter: string
       // The last URL that actually played; the idle button plays it again.
       lastUrl: string
       // The default stream the last load saw; a change clears lastUrl.

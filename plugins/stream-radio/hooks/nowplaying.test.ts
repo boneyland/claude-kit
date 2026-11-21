@@ -1,20 +1,27 @@
 import { expect, test } from 'claude-code/testing'
 
-import { completeLines, parseArgs, parseNowPlaying } from './nowplaying'
+import { completeLines, formatTime, parseArgs, parseNowPlaying } from './nowplaying'
 
 test('a song title beats the page title', () => {
   const text = 'NP\tlofi radio\tArtist - Song\t\tno\t41.7\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'Artist - Song', isPaused: false, percent: 41 })
+  expect(parseNowPlaying(text)).toEqual({ title: 'Artist - Song', isPaused: false, seconds: 41, chapter: null })
 })
 
 test('falls back to the media title; takes the last line; reads pause', () => {
   const text = 'NP\told\t\t\tno\t3\rNP\tlofi radio - beats\t\t\tyes\t\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'lofi radio - beats', isPaused: true, percent: null })
+  expect(parseNowPlaying(text)).toEqual({ title: 'lofi radio - beats', isPaused: true, seconds: null, chapter: null })
 })
 
 test('a cut-off line does not claim to be unpaused', () => {
   expect(parseNowPlaying('NP\tlofi\t\t\t')?.isPaused).toBeNull()
   expect(parseNowPlaying('NP\tlofi\t\t\tyes\t7\r')?.isPaused).toBe(true)
+})
+
+test('reads the chapter title from a whole line', () => {
+  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t02. Second Song\tEND')?.chapter).toBe('02. Second Song')
+  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t\tEND')?.chapter).toBe('')
+  // cut off inside the chapter: unknown, not "no chapter"
+  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t02. Sec')?.chapter).toBeNull()
 })
 
 test('only complete lines are read', () => {
@@ -29,6 +36,14 @@ test('only complete lines are read', () => {
 
 test('ignores other output', () => {
   expect(parseNowPlaying('(+) Audio --aid=1\n')).toBeUndefined()
+})
+
+test('time as m:ss, with hours from an hour on', () => {
+  expect(formatTime(0)).toBe('0:00')
+  expect(formatTime(222.9)).toBe('3:42')
+  expect(formatTime(3599)).toBe('59:59')
+  expect(formatTime(3600)).toBe('1:00:00')
+  expect(formatTime(3725)).toBe('1:02:05')
 })
 
 test('arguments', () => {

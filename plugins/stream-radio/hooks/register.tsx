@@ -1,12 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { completeLines, parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
+import { completeLines, formatTime, parseArgs, parseNowPlaying, STATUS_FORMAT } from './nowplaying'
 
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
 const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, false)
-const percent = atom({ plugin: 'stream-radio', key: 'percent' } as const, -1)
+// How far into the current file, in seconds; -1 for a live stream.
+const elapsed = atom({ plugin: 'stream-radio', key: 'elapsed' } as const, -1)
+// The current chapter's title (often the song in a multi-song video); empty when none.
+const chapter = atom({ plugin: 'stream-radio', key: 'chapter' } as const, '')
 // The last URL that actually played: what the idle button plays again.
 const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
 // The default stream the last load saw: when it changes, the new default wins
@@ -61,13 +64,15 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
     let lastError = ''
     let lastTitle = ''
     let lastPaused = false
-    let lastPercent = -1
+    let lastSeconds = -1
+    let lastChapter = ''
     let unread = ''
     let pipe = ''
     try {
       await old?.return(undefined)
       await update($, isPaused, () => false)
-      await update($, percent, () => -1)
+      await update($, elapsed, () => -1)
+      await update($, chapter, () => '')
       await update($, playing, () => 'connecting…')
 
       try {
@@ -126,10 +131,15 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
           lastTitle = track.title
           await update($, playing, () => track.title)
         }
-        const pos = track?.percent ?? -1
-        if (track && pos !== lastPercent) {
-          lastPercent = pos
-          await update($, percent, () => pos)
+        const pos = track?.seconds ?? -1
+        if (track && pos !== lastSeconds) {
+          lastSeconds = pos
+          await update($, elapsed, () => pos)
+        }
+        if (track && track.chapter !== null && track.chapter !== lastChapter) {
+          const next = track.chapter
+          lastChapter = next
+          await update($, chapter, () => next)
         }
         if (track && track.isPaused !== null && track.isPaused !== lastPaused) {
           lastPaused = track.isPaused
@@ -146,6 +156,7 @@ function start($: EngineInterface, config: Config, url: string, retryClient?: st
     current = undefined
     control = undefined
     await update($, playing, () => '')
+    await update($, chapter, () => '')
     if (!lastTitle && !client) {
       // Nothing played with the default client: try once with android.
       $.ui.log(`stream-radio: ${url} would not play; retrying with the android client`)
@@ -183,13 +194,15 @@ async function togglePause($: EngineInterface): Promise<boolean> {
 async function openMenu($: EngineInterface, config: Config, defaultUrl: string) {
   const title = await read($, playing)
   const paused = await read($, isPaused)
-  const done = await read($, percent)
+  const done = await read($, elapsed)
+  const part = await read($, chapter)
   const last = await read($, lastUrl)
   const options = [paused ? 'Resume' : 'Pause', 'Stop']
   if (last) options.push('Play last')
   if (defaultUrl && defaultUrl !== last) options.push('Play default')
-  const progress = done >= 0 ? ` (${done}%)` : ''
-  const question = `Now playing: ${title}${progress}${paused ? ', paused' : ''}. Pick an action, or type a URL under Other?`
+  const progress = done >= 0 ? ` (${formatTime(done)})` : ''
+  const now = part ? `${part} (from ${title})` : title
+  const question = `Now playing: ${now}${progress}${paused ? ', paused' : ''}. Pick an action, or type a URL under Other?`
   let answer: string
   try {
     answer = await $.ui.ask(question, { options, header: 'Radio' })
@@ -222,7 +235,8 @@ export const register: Register = (on, options) => {
     // State outlives a reload but the player does not: start from idle.
     await update($, playing, () => '')
     await update($, isPaused, () => false)
-    await update($, percent, () => -1)
+    await update($, elapsed, () => -1)
+    await update($, chapter, () => '')
     if ((await read($, knownDefault)) !== defaultUrl) {
       await update($, knownDefault, () => defaultUrl)
       await update($, lastUrl, () => '')
@@ -304,11 +318,14 @@ export const register: Register = (on, options) => {
       )
     }
     const paused = await read($, isPaused)
-    const done = await read($, percent)
+    const done = await read($, elapsed)
+    const part = await read($, chapter)
     // A file in a playlist shows how far along it is; a live stream has no end.
-    const progress = done >= 0 ? `${done}%` : ''
+    const progress = done >= 0 ? formatTime(done) : ''
     const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
-    const shown = title.length > 60 ? `${title.slice(0, 59)}…` : title
+    // A video of several songs names each in a chapter: that comes first.
+    const name = part ? `${part} · ${title}` : title
+    const shown = name.length > 60 ? `${name.slice(0, 59)}…` : name
 
     return (
       <Box flexDirection="row" gap={1}>

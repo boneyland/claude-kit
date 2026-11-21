@@ -12,7 +12,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 
 With nothing playing the footer shows `▶ Play radio`: click it to play again what played last in this session (the default stream before anything has), no `/stream` needed. Changing the default stream setting makes the button play the new default again. A URL that fails to play is reported in the transcript and is not remembered. Clicking the title in the footer opens a small dialog with the song, its progress and the actions: Pause or Resume, Stop, Play last, Play default (when it differs). Type a URL under "Other" to play that instead; Esc closes it. `/stream pause` still toggles directly. A paused live stream resumes where it paused, behind the live edge.
 
-The footer reads `42% <title>` (cut at 60 characters): how far into the current song or video, as it plays. A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the percentage when there is one.
+The footer reads `3:42 <title>` (cut at 60 characters): how far into the current song or video, as it plays, with hours from an hour on (`1:02:05`). A live stream has no end, so it shows `♪` instead. Paused shows `⏸`, with the time when there is one.
 
 ## Requirements
 
@@ -23,6 +23,8 @@ The footer reads `42% <title>` (cut at 60 characters): how far into the current 
 ## Now playing
 
 The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives, Claude FM included, only have a fixed title, so expect that rather than a track name.
+
+A video with chapters shows the current chapter first: `3:42 03. Song name · Album title`. Videos that hold several songs or pieces usually name each one in a chapter, so this is the track name. The menu shows it too.
 
 ## When YouTube refuses
 
