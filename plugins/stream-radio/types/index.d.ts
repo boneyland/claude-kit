@@ -1,6 +1,10 @@
 // What the footer shows: the stream's title, or empty when nothing plays.
 export type Playing = string
 
+// The playlist's entries or the file's chapters, by title; current is the one
+// playing, -1 when unknown.
+export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number }
+
 declare module 'claude-code' {
   interface PluginState {
     'stream-radio': {
@@ -16,6 +20,10 @@ declare module 'claude-code' {
       knownDefault: string
       // How far a title too long for the footer has scrolled, in ticks.
       scroll: number
+      // What the panel lists to pick from: the playlist, else the file's chapters.
+      queue: Queue
+      // The reply to the panel's last action; empty for none.
+      notice: string
     }
   }
 }

@@ -61,6 +61,9 @@ export type Command =
   | { kind: 'stop' }
   | { kind: 'toggle' }
   | { kind: 'last' }
+  | { kind: 'next' }
+  | { kind: 'prev' }
+  | { kind: 'panel' }
   | { kind: 'play'; url: string }
   | { kind: 'error'; text: string }
 
@@ -69,8 +72,11 @@ export function parseArgs(args: string, fallback: string): Command {
   if (word === 'stop' || word === 'off') return { kind: 'stop' }
   if (word === 'pause' || word === 'resume' || word === 'toggle') return { kind: 'toggle' }
   if (word === 'last') return { kind: 'last' }
+  if (word === 'next') return { kind: 'next' }
+  if (word === 'prev' || word === 'previous') return { kind: 'prev' }
+  if (word === 'panel') return { kind: 'panel' }
   const url = word || fallback
-  if (!url) return { kind: 'error', text: 'Usage: /stream <url> | last | pause | stop' }
+  if (!url) return { kind: 'error', text: 'Usage: /stream <url> | last | pause | next | prev | panel | stop' }
   if (!/^https?:\/\/\S+$/.test(url)) {
     return { kind: 'error', text: `Not an http(s) URL: ${url}` }
   }
