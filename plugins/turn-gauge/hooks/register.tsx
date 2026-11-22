@@ -274,6 +274,9 @@ const DESKTOP_GAPS = [2, 2, 2, 1, 1] as const
 // 1235px band. Its band text is a little narrower than those cells.
 const DESKTOP_CELL_PX = 8.4
 const DESKTOP_TEXT = 0.92
+// Cells kept free on the desktop app, where the measure is an estimate: a few more
+// characters (an agents part, a larger total) must not run the row off the edge.
+const DESKTOP_MARGIN = 3
 
 // The last draw's width and each density's measured row, for `/turn-gauge width`.
 let lastWidths: { columns: number; widths: number[]; tier: number } | null = null
@@ -1107,7 +1110,7 @@ export const register: Register = (on, options) => {
       // it sits on this row, as it does without a model or warning row below.
       const isHideHere = tier >= 3 && candidates.length === 0
       return Math.ceil(
-        inner.reduce((a, b) => a + b, 0) + gaps[tier]! * (segs.length - 1) + 2 + (level !== null ? 2 : 0) + (isHideHere ? 3 : 0),
+        inner.reduce((a, b) => a + b, 0) + gaps[tier]! * (segs.length - 1) + 2 + (level !== null ? 2 : 0) + (isHideHere ? 3 : 0) + (Svg ? DESKTOP_MARGIN : 0),
       )
     }
     const tier = [0, 1, 2, 3].find(t => rowWidth(t) <= e.props.bodyColumns) ?? 4
