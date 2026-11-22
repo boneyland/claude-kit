@@ -264,14 +264,16 @@ const contextBar = (percent: number) => {
 const usd = (n: number) => `$${n.toFixed(2)}`
 
 // Density, chosen as the fullest whose measured row fits the band's width, so the
-// row drops details instead of running off the edge: 0 full; 1 no context bar or
-// resets; 2 compact turn/speed/cost, no tokens or agents; 3 turn cost and cache only,
+// row drops details instead of running off the edge: 0 full; 1 no resets, short
+// tokens; 2 compact turn/speed/cost, no context bar, tokens or agents; 3 turn cost and cache only,
 // smaller icons; 4 no speed or limits.
 const GAPS = [3, 2, 2, 1, 1] as const
-// The desktop app's cell: its code font's advance, in pixels. Its band text runs a
-// little wider than that font's cells.
-const DESKTOP_CELL_PX = 7.8
-const DESKTOP_TEXT = 1.1
+// The desktop app's gaps are a cell's pixels wide, roomy already: the full row keeps 2.
+const DESKTOP_GAPS = [2, 2, 2, 1, 1] as const
+// The desktop app's cell, its code font's advance, in pixels: 147 columns over a
+// 1235px band. Its band text is a little narrower than those cells.
+const DESKTOP_CELL_PX = 8.4
+const DESKTOP_TEXT = 0.92
 
 // The last draw's width and each density's measured row, for `/turn-gauge width`.
 let lastWidths: { columns: number; widths: number[]; tier: number } | null = null
@@ -1074,7 +1076,7 @@ export const register: Register = (on, options) => {
         key: 'context',
         parts: [
           { kind: 'icon', svg: contextIcon(s.context), alt: 'context', glyph: null },
-          ...(tier === 0 ? [{ kind: 'bar', percent: s.context } as const] : []),
+          ...(tier <= 1 ? [{ kind: 'bar', percent: s.context } as const] : []),
           B(`${s.context}%`),
         ],
       })
@@ -1083,14 +1085,16 @@ export const register: Register = (on, options) => {
 
     // Widths in the surface's cells. The terminal's are exact but for emoji (two cells).
     // The desktop app counts cells in its code font's advance but draws the band in its
-    // own font with pixel icons: text is padded a little and icons are their pixels.
+    // own font with pixel icons: its text is scaled and its icons are their pixels.
+    // Fractions add up across the row; only the total is rounded.
     const iconSize = (tier: number) => (tier >= 3 ? 18 : 22)
+    const gaps = Svg ? DESKTOP_GAPS : GAPS
     const partWidth = (p: Part, tier: number) =>
       p.kind === 'text'
-        ? Svg ? Math.ceil(p.text.length * DESKTOP_TEXT) : [...p.text].length
+        ? Svg ? p.text.length * DESKTOP_TEXT : [...p.text].length
         : p.kind === 'bar'
-          ? Svg ? Math.ceil(80 / DESKTOP_CELL_PX) : BAR_CELLS
-          : Svg ? Math.ceil(iconSize(tier) / DESKTOP_CELL_PX)
+          ? Svg ? 80 / DESKTOP_CELL_PX : BAR_CELLS
+          : Svg ? iconSize(tier) / DESKTOP_CELL_PX
           : p.glyph === null ? 0
           : options.terminalIcons === 'glyphs' ? 1 : 2
     const rowWidth = (tier: number) => {
@@ -1099,8 +1103,12 @@ export const register: Register = (on, options) => {
         const ws = seg.parts.map(p => partWidth(p, tier)).filter(w => w > 0)
         return ws.reduce((a, b) => a + b, 0) + Math.max(0, ws.length - 1)
       })
-      // The padding, a frame's sides and the hide button with its gap.
-      return inner.reduce((a, b) => a + b, 0) + GAPS[tier]! * (segs.length - 1) + 2 + 2 + 3
+      // The padding; a frame's sides while framed; the hide button with its gap when
+      // it sits on this row, as it does without a model or warning row below.
+      const isHideHere = tier >= 3 && candidates.length === 0
+      return Math.ceil(
+        inner.reduce((a, b) => a + b, 0) + gaps[tier]! * (segs.length - 1) + 2 + (level !== null ? 2 : 0) + (isHideHere ? 3 : 0),
+      )
     }
     const tier = [0, 1, 2, 3].find(t => rowWidth(t) <= e.props.bodyColumns) ?? 4
     lastWidths = { columns: e.props.bodyColumns, widths: [0, 1, 2, 3, 4].map(rowWidth), tier }
@@ -1111,9 +1119,9 @@ export const register: Register = (on, options) => {
         <Text key={String(i)} bold={p.bold} dimColor={p.dim} color={p.color}>{p.text}</Text>
       ) : p.kind === 'bar' ? (
         Svg ? (
-          <Svg key={String(i)} source={contextBar(p.percent)} alt={`context ${p.percent}%`} width={80} height={6} />
+          <Svg key="context-bar" source={contextBar(p.percent)} alt={`context ${p.percent}%`} width={80} height={6} />
         ) : (
-          <Box key={String(i)} flexDirection="row" flexShrink={0}>
+          <Box key="context-bar" flexDirection="row" flexShrink={0}>
             <Text color={terminalContextBar(p.percent).color}>{terminalContextBar(p.percent).filled}</Text>
             <Text color={terminalContextBar(p.percent).color}>{terminalContextBar(p.percent).empty}</Text>
           </Box>
@@ -1150,7 +1158,7 @@ export const register: Register = (on, options) => {
     const framed = level !== null && e.props.maxRows >= (hasSecondRow ? 4 : 3)
 
     const row = (
-      <Box flexDirection="row" alignItems="center" columnGap={GAPS[tier]} flexWrap="nowrap" overflow="hidden">
+      <Box flexDirection="row" alignItems="center" columnGap={gaps[tier]} flexWrap="nowrap" overflow="hidden">
         {segmentsFor(tier).flatMap(seg => [
           ...(seg.key === 'context' ? [<Box key="spacer" flexGrow={1} flexShrink={1} />] : []),
           <Box key={seg.key} flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>

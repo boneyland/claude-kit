@@ -38,8 +38,8 @@ The row never wraps or runs off the edge. Each time it draws, it measures the ro
 | Level | What changes |
 |---|---|
 | Full | Everything, including the context bar and the limit reset times. |
-| 1 | No context bar or reset times; tokens as `Σ 840k/21k`. |
-| 2 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no effort level or tokens. |
+| 1 | No reset times; tokens as `Σ 840k/21k`. |
+| 2 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no context bar, effort level or tokens. |
 | 3 | No turn number, session total, model or hit rate; smaller icons. |
 | 4 | No speed and no limits. |
 

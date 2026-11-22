@@ -78,7 +78,7 @@ test('the terminal draws emoji icons and a context bar when wide', async ($, on)
   expect((await wide.find({ type: 'Text', text: '░░░░░░' }))?.props.color).toBe('#4caf6e')
   await wide.unmount()
 
-  const narrow = await $.ui.mount(BAND(90))
+  const narrow = await $.ui.mount(BAND(60))
   expect(await narrow.find({ key: 'context-bar' })).toBe(undefined)
   expect((await narrow.find({ type: 'Text', text: '40%' }))?.text).toBe('40%')
   await narrow.unmount()

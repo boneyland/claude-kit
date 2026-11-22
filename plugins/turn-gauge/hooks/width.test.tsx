@@ -49,14 +49,25 @@ test('a wide band shows everything; a narrower one drops details rather than run
   expect(await has($, 'terminal', 30, '15%')).toBe(true)
 })
 
-test('the desktop app\'s pixel icons count: it drops details at a width the terminal would fit', async ($, on: On) => {
-  seed(on)
-  let terminalFull = 0
-  let desktopFull = 0
-  for (let c = 60; c <= 200; c++) {
-    if (!terminalFull && (await has($, 'terminal', c, /^↻/))) terminalFull = c
-    if (!desktopFull && (await has($, 'desktop', c, /^↻/))) desktopFull = c
+// The desktop band of a 1280px window, as it was drawn at 147 columns: the row had
+// room to spare for the context bar.
+test('a 147-column desktop band shows the whole row, context bar included', async ($, on: On) => {
+  const state: Record<string, unknown> = {
+    stats: { turn: 1, speed: 94, turnCost: 2.28, total: 2.28, context: 15, costAtStart: 0, recentCosts: [2.28] },
+    cache: { expiresAt: NOW + 56 * 60_000, secondsLeft: 56 * 60 },
+    isHidden: false,
+    limits: [
+      { kind: 'five_hour', percentUsed: 22, resetsAt: new Date(NOW + 2 * H).toISOString() },
+      { kind: 'seven_day', percentUsed: 58, resetsAt: new Date(NOW + 72 * H).toISOString() },
+    ],
+    tokens: { input: 3_600_000, output: 21_000, turn: { uncached: 0, read: 0, write: 0, output: 0, missed: 0 }, last: { uncached: 4_000, read: 96_000, write: 0, output: 900, missed: 0 }, prevContext: null, prevModel: null, cause: null, lastCause: null, dismissedTurn: -1 },
   }
-  expect(terminalFull).toBeGreaterThan(0)
-  expect(desktopFull).toBeGreaterThan(terminalFull)
+  on('state.get', (_, e) => ({ value: { value: state[e.key], version: 1 } }))
+  on('clock.now', () => ({ value: NOW }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  const ui = await $.ui.mount(band('desktop', 147))
+  expect((await ui.findAll({ type: 'Svg' })).some(x => x.props.alt === 'context 15%')).toBe(true)
+  // With room for the whole row.
+  expect(await ui.find({ type: 'Text', text: /^↻/ })).toBeDefined()
+  await ui.unmount()
 })
