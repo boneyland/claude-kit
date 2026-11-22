@@ -15,18 +15,16 @@ What every part of the band shows, when it appears, and how its numbers are work
 
 ## The band
 
-One row above the prompt, left to right. In the terminal the icons are emoji (⏱️ ⚡ 💰 ⏳ 🌿) or, with the *Terminal icons* setting, glyphs (`⏱ ⚡ $ ⧗ ⎇`) colored like the band. The desktop app draws its own ring icons.
+One row above the prompt, left to right. In the terminal the icons are emoji (⚡ 💰 ⏳) or, with the *Terminal icons* setting, glyphs (`⚡ $ ⧗`) colored like the band. The desktop app draws its own ring icons.
 
 | Item | Shows | Notes |
 |---|---|---|
 | **Turn** | `Turn 12` | Counts your prompts that ran a turn. A subagent's run is part of the turn that started it, not a turn of its own. |
-| **Timer** | `⏱ 3m` | While a turn runs, whole minutes since it started (`<1m` in the first minute, `1h05m` past an hour). Between turns it holds how long the last turn took, until the next one starts. |
 | **Speed** | `80 tok/s` | Output speed of the last response, timed from its first streamed item, so time-to-first-token is left out. Responses under 20 tokens, under 0.5 s, or over 1000 tok/s are ignored as noise; the last good reading stays. |
 | **Cost** | `$0.12 (agents $0.08) · med $0.30 · avg $0.45 \| $3.40` | The last turn's cost, the **median** and **mean** cost of the last 10 turns, and the session total. A turn's cost is the change in the session cost Claude Code reports since you sent the prompt, so it includes any subagents it ran; `(agents …)` is their part, shown when the window is 80 columns or wider, as `<$0.01` under half a cent (a light Haiku 5.5 subagent often costs that little). It comes from each agent's own cost as Claude Code reports it, counting what the agent spent from the turn's start until the next turn starts: a background agent that is still working after the turn ends adds to that turn, in the band and in the median and mean. The median is a typical turn; the mean, pulled up by long runs, shows what they add. The median and mean appear after the first turn finishes. |
 | **Cache** | `43m · 96%` | Minutes left on the 1-hour prompt cache since the last answer, rounded up; see [below](#the-cache-countdown-and-frame). Then the last turn's **cache hit rate**: the share of its input read from the cache, which is billed at about a tenth of normal input. Amber under 80%, red when the turn had a [cache miss](#cache-miss). Long sessions sit above 90%; a turn that reads big files lowers it without anything being wrong. |
 | **Tokens** | `Σ 840k in · 21k out` | The session's input and output tokens, subagents included. Input counts every request's whole context (cached or not), so it grows fast: it is how much was *read*, not what it cost. Output is priced several times input (5× on most models), so it is the one to watch. |
-| **Limits** | `5h 24% →61% ↻2h10m` `wk 41% →78% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `→` is where the window [ends at this pace](#pace-projection) (80 columns and wider): dim normally, amber from 90%, red `→100%+` when it runs out before the reset. `↻` is the time until the window resets. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
-| **Branch** | `⎇ main*` | The git branch, or the short commit when detached. `*` and amber mean uncommitted changes. Read every 15 seconds and after each turn, but not while the band is hidden; names over 24 characters are cut short. Not shown outside a repository. |
+| **Limits** | `5h 24% ↻2h10m` `wk 41% ↻3d` | Your plan's 5-hour and weekly usage, on a subscription only. Amber from 70%, red from 90%. `↻` is the time until the window resets. Where the window ends at this pace is in `/turn-gauge pace` and the [heads-up](#running-out-before-the-reset) warning. Saved across sessions, so a new session shows them before its first answer; a window whose reset has passed shows 0% until the next reading. |
 | **Model** | `opus-5-5 · high` | The current model and the effort level the last request carried. Shown at the right of the second row, which is always there while the model is shown; warnings go on its left. |
 | **Context** | `████░░░░░░ 40%` | How full the context window is. The bar is green under 45%, yellow from 45%, orange from 65% and red from 85%: 10 cells of `█` and `░` in the terminal, a ring and a bar in the desktop app. |
 | **×** | | Hides the band for the rest of the session. `/turn-gauge` brings it back. |
@@ -35,17 +33,17 @@ Before a session's first answer the band only appears if your plan's limits are 
 
 ## Narrow windows
 
-The row never wraps. As the window narrows it drops details instead:
+The row never wraps or runs off the edge. Each time it draws, it measures the row at each level of detail below against the band's width and shows the fullest that fits. In the desktop app the measure counts its icons' pixels and its wider text, so it steps down sooner there than the terminal at the same column count.
 
-| Width (columns) | What changes |
+| Level | What changes |
 |---|---|
-| 96 and wider | Everything, including the context bar and the limit reset times. |
-| 80–95 | No context bar or reset times; tokens as `Σ 840k/21k`. |
-| 64–79 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no branch, effort level or tokens. |
-| 50–63 | No turn number, session total, model or hit rate; smaller icons. |
-| Under 50 | No speed and no limits. |
+| Full | Everything, including the context bar and the limit reset times. |
+| 1 | No context bar or reset times; tokens as `Σ 840k/21k`. |
+| 2 | `# 12` instead of `Turn 12`, `80/s` instead of `80 tok/s`, cost as `$0.12 · $0.30/$0.45` (no agents part); no effort level or tokens. |
+| 3 | No turn number, session total, model or hit rate; smaller icons. |
+| 4 | No speed and no limits. |
 
-The cost (with its median and mean), cache countdown, context and timer stay at every width.
+The cost (with its median and mean), cache countdown and context stay at every width.
 
 ## The cache countdown and frame
 
@@ -150,7 +148,7 @@ Where each plan window (5-hour and weekly) ends if you keep going at the current
 | **Last window** | `used +` what the previous window used from this same point to its end. This is the *seasonal naive* baseline: a model that can't beat it isn't worth having. For the week it needs the week just before. | Scored only. |
 | **Weekly profile** | Learned from finished weeks: points used in each hour of the week, in local time, averaged. The forecast is `used + level × the profile's expected use until the reset`. The **level** is this week's use so far against the profile's (clamped between 0.5× and 2×), so a busier week scales the rest up. It's multiplicative seasonality: Holt–Winters' idea, by hour of week. | The week, once 2 weeks are learned. |
 
-The band's `→` and the heads-up use the *shown* model. Its run-out time is when it reaches 100%: at the smoothed rate, or hour by hour through the profile.
+The heads-up and `/turn-gauge pace` use the *shown* model. Its run-out time is when it reaches 100%: at the smoothed rate, or hour by hour through the profile.
 
 **When it starts.** Nothing is shown for the first 30 minutes of a 5-hour window or the first 12 hours of a week.
 
@@ -187,7 +185,7 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 | `/turn-gauge compact [turns]` | Compact, keeping the last *turns* turns (default: the setting) word for word. |
 | `/turn-gauge pace` | Each plan window's projection and how accurate past projections were. See [Pace projection](#pace-projection). |
 | `/turn-gauge demo <minutes>` | Pretend the cache has that many minutes left, to preview the colors, frame and notifications. The next answer resets it. |
-| `/turn-gauge width` | Print the band's measured width and tier (for debugging). |
+| `/turn-gauge width` | Print the band's width, the level it chose, and the measured row width at each level (for debugging). |
 
 **Settings** (under the plugin's options in `/plugin`):
 

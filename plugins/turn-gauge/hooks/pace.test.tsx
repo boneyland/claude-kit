@@ -160,7 +160,7 @@ const BAND = {
   props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 140, scroll: { offset: 0, bodyRows: 3 }, isCollapsed: false, view: {} },
 } as const
 
-test('the band shows each window\'s projection and a heads-up that can be dismissed', async ($, on: On) => {
+test('the band shows a heads-up that can be dismissed, and no projection beside the limits', async ($, on: On) => {
   const busy = week([[NOW - D - H, 0], [NOW, 30]])
   const state: Record<string, unknown> = {
     stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38 },
@@ -179,15 +179,14 @@ test('the band shows each window\'s projection and a heads-up that can be dismis
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
 
   const ui = await $.ui.mount(BAND)
-  expect((await ui.find({ type: 'Text', text: '→100%+' }))?.props.color).toBe('#e0846b')
+  expect(await ui.find({ type: 'Text', text: /^→/ })).toBe(undefined)
   expect((await ui.find({ type: 'Text', text: /^Heads up/ }))?.text).toMatch(/weekly limit/)
   await ui.press({ key: 'dismiss-pace' })
   await ui.unmount()
   expect((state.pace as { dismissed: string }).dismissed).toBe(`seven_day:${NOW + 4 * D}`)
   const again = await $.ui.mount(BAND)
   expect(await again.find({ type: 'Text', text: /^Heads up/ })).toBe(undefined)
-  // The projection stays beside the limit.
-  expect(await again.find({ type: 'Text', text: '→100%+' })).toBeTruthy()
+  expect(await again.find({ type: 'Text', text: 'wk' })).toBeTruthy()
   await again.unmount()
 })
 

@@ -31,17 +31,6 @@ export type Limit = {
   resetsAt: string | null
 }
 
-// The main loop's turn; startedAt null between turns, when seconds holds the last one's length.
-export type TurnClock = {
-  startedAt: number | null
-  seconds: number
-}
-
-export type Git = {
-  branch: string
-  isDirty: boolean
-}
-
 // The spend warnings' inputs: measured tokens, and list price calibrated to the engine's cost.
 export type Spend = {
   model: string | null
@@ -108,6 +97,6 @@ declare module 'claude-code' {
   interface PluginState {
     // The separate Cache mod's deadline, read (never written) as a fallback after a reload.
     Cache: { expiresAt: number | null }
-    'turn-gauge': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; turnClock: TurnClock; git: Git | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens; pace: Pace }
+    'turn-gauge': { stats: Stats; cache: Cache; limits: Limit[]; isHidden: boolean; isBusy: boolean; warned: number; effort: string | null; spend: Spend; agentSpend: AgentSpend; tokens: Tokens; pace: Pace }
   }
 }

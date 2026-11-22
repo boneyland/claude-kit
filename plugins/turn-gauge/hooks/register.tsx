@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionCompactResult, SessionMessage, Timer, TurnUsage } from 'claude-code'
 
-import type { AgentSpend, Cache, Git, Limit, Pace, Spend, Stats, Tokens, TurnClock } from '../types'
+import type { AgentSpend, Cache, Limit, Pace, Spend, Stats, Tokens } from '../types'
 import {
   baselineFromBreakdown,
   cacheMissWarning,
@@ -88,55 +88,6 @@ const warned = atom({ plugin: 'turn-gauge', key: 'warned' } as const, 0)
 
 // The effort level the main loop's last request carried; null where none was sent.
 const effort = atom({ plugin: 'turn-gauge', key: 'effort' } as const, null as string | null)
-
-// The main loop's turn: when it began and the seconds since, in whole minutes while
-// it runs. When it ends, startedAt clears and seconds keeps its exact length, shown
-// until the next turn starts.
-const turnClock = atom({ plugin: 'turn-gauge', key: 'turnClock' } as const, { startedAt: null, seconds: 0 } as TurnClock)
-
-// The working tree's branch and whether it has changes; null outside a repository.
-const git = atom({ plugin: 'turn-gauge', key: 'git' } as const, null as Git | null)
-
-// How often git is read between turns, for changes made outside the session.
-const GIT_POLL_MS = 15_000
-const BRANCH_MAX = 24
-
-// `git status --porcelain=v2 --branch`: the head line names the branch, any line
-// that is not a header is a change. A detached head shows its short commit.
-const parseGit = (stdout: string): Git | null => {
-  const lines = stdout.split('\n').filter(Boolean)
-  const head = lines.find(l => l.startsWith('# branch.head '))?.slice(14)
-  if (head === undefined) return null
-  const oid = lines.find(l => l.startsWith('# branch.oid '))?.slice(13)
-  const branch = head === '(detached)' ? (oid?.slice(0, 7) ?? 'detached') : head
-  return { branch, isDirty: lines.some(l => !l.startsWith('#')) }
-}
-
-// `--no-optional-locks` keeps status from taking index.lock, so it never races
-// the person's or Claude's own git commands; `core.fsmonitor=false` keeps a
-// repository's own config from running a command every poll. Rewritten only when it
-// changed; skipped while the band is hidden, and read again when it is shown.
-const refreshGit = async ($: EngineInterface) => {
-  if (await read($, isHidden)) return
-  const result = await $.process
-    .run(['git', '-c', 'core.fsmonitor=false', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], {
-      timeoutMs: 5000,
-    })
-    .catch(() => null)
-  const next = result === null || result.exitCode !== 0 ? null : parseGit(result.stdout)
-  const current = await read($, git)
-  if (current?.branch !== next?.branch || current?.isDirty !== next?.isDirty) await update($, git, () => next)
-}
-
-// Whole minutes only, so the band redraws once a minute rather than every second.
-const elapsed = (seconds: number) => {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return h > 0 ? `${h}h${pad(m)}m` : seconds < 60 ? '<1m' : `${m}m`
-}
-
-const branchLabel = ({ branch, isDirty }: Git) =>
-  `${branch.length > BRANCH_MAX ? `${branch.slice(0, BRANCH_MAX - 1)}…` : branch}${isDirty ? '*' : ''}`
 
 // What the long context costs against starting over: the measured inputs of the
 // spend warnings, and the running sums that calibrate list prices to the engine's cost.
@@ -312,18 +263,18 @@ const contextBar = (percent: number) => {
 
 const usd = (n: number) => `$${n.toFixed(2)}`
 
-// Density by the band's width in cells, so the row shrinks instead of wrapping:
-// 0 full; 1 no context bar; 2 compact turn/speed; 3 turn cost only, smaller icons;
-// 4 no speed. Thresholds are minimum bodyColumns for each tier.
-const TIER_MIN = [96, 80, 64, 50] as const
+// Density, chosen as the fullest whose measured row fits the band's width, so the
+// row drops details instead of running off the edge: 0 full; 1 no context bar or
+// resets; 2 compact turn/speed/cost, no tokens or agents; 3 turn cost and cache only,
+// smaller icons; 4 no speed or limits.
 const GAPS = [3, 2, 2, 1, 1] as const
-const tierFor = (columns: number) => {
-  const i = TIER_MIN.findIndex(min => columns >= min)
-  return i === -1 ? TIER_MIN.length : i
-}
+// The desktop app's cell: its code font's advance, in pixels. Its band text runs a
+// little wider than that font's cells.
+const DESKTOP_CELL_PX = 7.8
+const DESKTOP_TEXT = 1.1
 
-// Last measured width, for `/turn-gauge width` while tuning TIER_MIN; debug only.
-let lastColumns: number | null = null
+// The last draw's width and each density's measured row, for `/turn-gauge width`.
+let lastWidths: { columns: number; widths: number[]; tier: number } | null = null
 
 // The band's labels for the windows it shows, in this order.
 const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'wk' }
@@ -417,8 +368,6 @@ const localOffset = (t: number) => -new Date(t).getTimezoneOffset()
 
 const projectionsAt = (p: Pace, now: number) =>
   Object.fromEntries(KINDS.map(kind => [kind, project(kind, p.windows[kind] ?? null, now, contextOfPace(p, kind, now))])) as Record<Kind, Projection | null>
-
-const PACE_WARN = 90
 
 // A session's figures, saved after each answer under `session:<id>`, so a session the
 // desktop app restarted or resumed draws its band at once instead of after its next answer.
@@ -562,9 +511,9 @@ const desktopSession = async ($: EngineInterface) => {
 // notifications not allowed), Claude Code's own notification, which also reaches
 // the phone over Remote Control; it is skipped while the person is at this session,
 // and then a toast says it instead.
-// The countdowns' one timer. The band shows whole minutes, so it wakes only at the
-// next minute either the turn timer or the cache countdown changes; the cache
-// notifications and the expiry fall on those minutes too. Nothing counting, no wake.
+// The cache countdown's timer. The band shows whole minutes, so it wakes only at the
+// next minute the countdown changes; the cache notifications and the expiry fall on
+// those minutes too. Nothing counting, no wake.
 let wake: Timer | null = null
 
 const tick = async ($: EngineInterface): Promise<void> => {
@@ -572,13 +521,6 @@ const tick = async ($: EngineInterface): Promise<void> => {
   wake = null
   const now = await $.clock.now()
   const next: number[] = []
-
-  const { startedAt } = await read($, turnClock)
-  if (startedAt !== null) {
-    const minutes = Math.floor(Math.max(0, now - startedAt) / 60_000)
-    await update($, turnClock, t => (t.seconds === minutes * 60 ? t : { ...t, seconds: minutes * 60 }))
-    next.push(startedAt + (minutes + 1) * 60_000)
-  }
 
   const expiresAt = (await read($, cache)).expiresAt ?? ((await read($, cacheModExpiresAt)) as number | null)
   if (expiresAt !== null) {
@@ -768,8 +710,8 @@ export const bandBackground = (value: unknown) => {
 
 // The terminal draws no images: its icons are emoji, or glyphs colored like the band.
 const TERMINAL_ICONS = {
-  emoji: { timer: '⏱️', speed: '⚡', cost: '💰', cache: '⏳', branch: '🌿' },
-  glyphs: { timer: '⏱', speed: '⚡\uFE0E', cost: '$', cache: '⧗', branch: '⎇' },
+  emoji: { speed: '⚡', cost: '💰', cache: '⏳' },
+  glyphs: { speed: '⚡\uFE0E', cost: '$', cache: '⧗' },
 } as const
 
 // The terminal's context bar: cells filled as the context fills.
@@ -840,9 +782,6 @@ export const register: Register = (on, options) => {
       description: 'Show or hide the turn gauge band; `pace` projects the plan windows; `compact [turns]` compacts keeping recent turns; `demo <minutes>` previews the cache warning',
     })
 
-    await refreshGit($)
-    $.clock.every(GIT_POLL_MS, () => refreshGit($))
-
     await tick($)
 
     return result
@@ -896,8 +835,10 @@ export const register: Register = (on, options) => {
     }
 
     if (e.args.trim() === 'width') {
-      const columns = lastColumns
-      return { text: columns === null ? 'Band not drawn yet.' : `Band: ${columns} columns, tier ${tierFor(columns)}.` }
+      const w = lastWidths
+      return {
+        text: w === null ? 'Band not drawn yet.' : `Band: ${w.columns} columns, tier ${w.tier}; row widths by tier: ${w.widths.join(', ')}.`,
+      }
     }
 
     const hidden = !(await read($, isHidden))
@@ -905,7 +846,6 @@ export const register: Register = (on, options) => {
     if (!hidden) {
       // Showing the band again brings the dismissed warnings back with it.
       await restoreWarnings($)
-      await refreshGit($)
     }
 
     return { text: hidden ? 'Turn gauge hidden.' : 'Turn gauge shown.' }
@@ -937,10 +877,6 @@ export const register: Register = (on, options) => {
     })
     await startAgentSpend($)
     await update($, isBusy, () => true)
-    const now = await $.clock.now()
-    await update($, turnClock, () => ({ startedAt: now, seconds: 0 }))
-    await tick($)
-
     return next(e)
   })
 
@@ -995,7 +931,6 @@ export const register: Register = (on, options) => {
       await update($, cache, () => ({ expiresAt: now + CACHE_TTL_MS, secondsLeft: CACHE_TTL_MS / 1000 }))
       await update($, isBusy, () => false)
       await update($, warned, () => 0)
-      await update($, turnClock, t => ({ startedAt: null, seconds: t.startedAt === null ? t.seconds : Math.max(1, (now - t.startedAt) / 1000) }))
       await update($, tokens, tk => ({ ...tk, last: tk.turn, lastCause: tk.cause }))
       await tick($)
       await update($, stats, st =>
@@ -1003,7 +938,6 @@ export const register: Register = (on, options) => {
       )
       await settleSpend($)
       await saveSnapshot($)
-      await refreshGit($)
     }
 
     return result
@@ -1041,16 +975,8 @@ export const register: Register = (on, options) => {
       : secondsLeft === 0 ? 'expired'
       : `${Math.ceil(secondsLeft / 60)}m`
 
-    lastColumns = e.props.bodyColumns
-    const tier = tierFor(e.props.bodyColumns)
-    const icon = tier >= 3 ? 18 : 22
-
     const modelName = shortModel(await $.session.model())
     const effortLevel = await read($, effort)
-    const clock = await read($, turnClock)
-    // The running turn's minutes, else how long the last one took; nothing before the first.
-    const running = (e.props.isWorking && clock.startedAt !== null) || clock.seconds > 0 ? elapsed(clock.seconds) : null
-    const repo = await read($, git)
     const sp = await read($, spend)
     const perTurn = costPerTurn(s.recentCosts ?? [])
 
@@ -1085,6 +1011,119 @@ export const register: Register = (on, options) => {
             isOverheadDismissed ? null : overheadWarning(spendInputs(sp, s.recentCosts ?? [])),
           ]
     const candidates = ranked.filter((w): w is Warning => w !== null)
+    const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
+    // A window whose reset has passed since it was saved stands at 0 until the next reading.
+    const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
+      const w = saved.find(l => l.kind === kind)
+      if (w === undefined) return []
+      return w.resetsAt !== null && Date.parse(w.resetsAt) <= now ? [{ ...w, percentUsed: 0, resetsAt: null }] : [w]
+    })
+
+    // The row as segments of parts, at a density: measured to choose the density
+    // that fits, then drawn. `tier` 0 is the fullest.
+    type Part =
+      | { kind: 'text'; text: string; bold?: boolean; dim?: boolean; color?: string }
+      | { kind: 'icon'; svg: string; alt: string; glyph: string | null; color?: string }
+      | { kind: 'bar'; percent: number }
+    type Segment = { key: string; parts: Part[] }
+    const T = (text: string, style: Omit<Extract<Part, { kind: 'text' }>, 'kind' | 'text'> = {}): Part => ({ kind: 'text', text, ...style })
+    const B = (text: string, color?: string) => T(text, { bold: true, color })
+    const D = (text: string) => T(text, { dim: true })
+
+    const segmentsFor = (tier: number): Segment[] => {
+      const segs: Segment[] = []
+      if (tier <= 2) segs.push({ key: 'turn', parts: [D(tier <= 1 ? 'Turn' : '#'), B(String(s.turn))] })
+      if (tier <= 3) {
+        segs.push({
+          key: 'speed',
+          parts: [
+            { kind: 'icon', svg: SPEED_ICON, alt: 'speed', glyph: glyphs.speed, color: SPEED },
+            B(tier <= 1 || s.speed === null ? speed : `${s.speed}/s`),
+          ],
+        })
+      }
+      const cost: Part[] = [{ kind: 'icon', svg: MONEY_ICON, alt: 'cost', glyph: glyphs.cost, color: MONEY }, B(turnCost, MONEY)]
+      if (tier <= 1 && agentsCost !== null) cost.push(D(`(agents ${agentsCost < 0.005 ? '<$0.01' : usd(agentsCost)})`))
+      if (perTurn !== null) cost.push(D(tier <= 1 ? '· med' : '·'), B(usd(perTurn.median)), D(tier <= 1 ? '· avg' : '/'), B(usd(perTurn.mean)))
+      if (tier <= 2) cost.push(D('|'), B(usd(s.total)))
+      segs.push({ key: 'cost', parts: cost })
+      const cachePart: Part[] = [{ kind: 'icon', svg: cacheIcon(cacheColor), alt: 'cache', glyph: glyphs.cache, color: cacheColor }, B(cacheText, level ?? undefined)]
+      if (rate !== null && tier <= 2) cachePart.push(D('·'), B(`${Math.round(rate * 100)}%`, rateColor))
+      segs.push({ key: 'cache', parts: cachePart })
+      if (tier <= 1 && tk.input + tk.output > 0) {
+        segs.push({
+          key: 'tokens',
+          parts: [
+            D('Σ'),
+            B(tier === 0 ? `${formatTokens(tk.input)} in` : formatTokens(tk.input)),
+            D(tier === 0 ? '·' : '/'),
+            B(tier === 0 ? `${formatTokens(tk.output)} out` : formatTokens(tk.output)),
+          ],
+        })
+      }
+      if (tier <= 3) {
+        for (const w of windows) {
+          const reset = tier === 0 ? resetIn(w.resetsAt, now) : null
+          segs.push({
+            key: w.kind,
+            parts: [D(LIMIT_LABELS[w.kind]!), B(`${Math.round(w.percentUsed)}%`, limitColor(w.percentUsed)), ...(reset !== null ? [D(`↻${reset}`)] : [])],
+          })
+        }
+      }
+      segs.push({
+        key: 'context',
+        parts: [
+          { kind: 'icon', svg: contextIcon(s.context), alt: 'context', glyph: null },
+          ...(tier === 0 ? [{ kind: 'bar', percent: s.context } as const] : []),
+          B(`${s.context}%`),
+        ],
+      })
+      return segs
+    }
+
+    // Widths in the surface's cells. The terminal's are exact but for emoji (two cells).
+    // The desktop app counts cells in its code font's advance but draws the band in its
+    // own font with pixel icons: text is padded a little and icons are their pixels.
+    const iconSize = (tier: number) => (tier >= 3 ? 18 : 22)
+    const partWidth = (p: Part, tier: number) =>
+      p.kind === 'text'
+        ? Svg ? Math.ceil(p.text.length * DESKTOP_TEXT) : [...p.text].length
+        : p.kind === 'bar'
+          ? Svg ? Math.ceil(80 / DESKTOP_CELL_PX) : BAR_CELLS
+          : Svg ? Math.ceil(iconSize(tier) / DESKTOP_CELL_PX)
+          : p.glyph === null ? 0
+          : options.terminalIcons === 'glyphs' ? 1 : 2
+    const rowWidth = (tier: number) => {
+      const segs = segmentsFor(tier)
+      const inner = segs.map(seg => {
+        const ws = seg.parts.map(p => partWidth(p, tier)).filter(w => w > 0)
+        return ws.reduce((a, b) => a + b, 0) + Math.max(0, ws.length - 1)
+      })
+      // The padding, a frame's sides and the hide button with its gap.
+      return inner.reduce((a, b) => a + b, 0) + GAPS[tier]! * (segs.length - 1) + 2 + 2 + 3
+    }
+    const tier = [0, 1, 2, 3].find(t => rowWidth(t) <= e.props.bodyColumns) ?? 4
+    lastWidths = { columns: e.props.bodyColumns, widths: [0, 1, 2, 3, 4].map(rowWidth), tier }
+    const icon = iconSize(tier)
+
+    const drawPart = (p: Part, i: number) =>
+      p.kind === 'text' ? (
+        <Text key={String(i)} bold={p.bold} dimColor={p.dim} color={p.color}>{p.text}</Text>
+      ) : p.kind === 'bar' ? (
+        Svg ? (
+          <Svg key={String(i)} source={contextBar(p.percent)} alt={`context ${p.percent}%`} width={80} height={6} />
+        ) : (
+          <Box key={String(i)} flexDirection="row" flexShrink={0}>
+            <Text color={terminalContextBar(p.percent).color}>{terminalContextBar(p.percent).filled}</Text>
+            <Text color={terminalContextBar(p.percent).color}>{terminalContextBar(p.percent).empty}</Text>
+          </Box>
+        )
+      ) : Svg ? (
+        <Svg key={String(i)} source={p.svg} alt={p.alt} width={icon} height={icon} />
+      ) : p.glyph !== null ? (
+        <Text key={String(i)} color={p.color}>{p.glyph}</Text>
+      ) : null
+
     // A warning's width: its text, its buttons with their gaps.
     const compactLabel = `compact, keep ${keepTurns}`
     const widthOf = (w: Warning) => w.text.length + 2 + (w.kind === 'overhead' ? compactLabel.length + 5 : 0)
@@ -1104,104 +1143,20 @@ export const register: Register = (on, options) => {
         ? candidates.slice(0, 2)
         : candidates.slice(0, 1)
     const warning = warnings[0] ?? null
-    const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined
     // The frame takes two rows: dropped when the warning row would not fit with it.
     const hasSecondRow = warning !== null || modelBox !== null
     // At the right end of the second row, after the effort level; on the first when there is none.
     const hideButton = <Button key="hide" label="×" role="dismiss" plain dimColor onPress={() => update($, isHidden, () => true)} />
     const framed = level !== null && e.props.maxRows >= (hasSecondRow ? 4 : 3)
 
-    // A window whose reset has passed since it was saved stands at 0 until the next reading.
-    const windows = Object.keys(LIMIT_LABELS).flatMap(kind => {
-      const w = saved.find(l => l.kind === kind)
-      if (w === undefined) return []
-      return w.resetsAt !== null && Date.parse(w.resetsAt) <= now ? [{ ...w, percentUsed: 0, resetsAt: null }] : [w]
-    })
-
     const row = (
       <Box flexDirection="row" alignItems="center" columnGap={GAPS[tier]} flexWrap="nowrap" overflow="hidden">
-        {tier <= 2 ? (
-          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            {tier <= 1 ? <Text dimColor>Turn</Text> : <Text dimColor>#</Text>}
-            <Text bold>{String(s.turn)}</Text>
-          </Box>
-        ) : null}
-        {running !== null ? (
-          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            {tier <= 1 ? <Text dimColor>{glyphs.timer}</Text> : null}
-            <Text bold>{running}</Text>
-          </Box>
-        ) : null}
-        {tier <= 3 ? (
-          <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            {Svg ? <Svg source={SPEED_ICON} alt="speed" width={icon} height={icon} /> : <Text color={SPEED}>{glyphs.speed}</Text>}
-            <Text bold wrap="truncate-end">{tier <= 1 || s.speed === null ? speed : `${s.speed}/s`}</Text>
-          </Box>
-        ) : null}
-        <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-          {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>{glyphs.cost}</Text>}
-          <Text bold color={MONEY}>{turnCost}</Text>
-          {tier <= 1 && agentsCost !== null ? <Text dimColor>{`(agents ${agentsCost < 0.005 ? '<$0.01' : usd(agentsCost)})`}</Text> : null}
-          {perTurn !== null && tier <= 1 ? <Text dimColor>· med</Text> : null}
-          {perTurn !== null && tier >= 2 ? <Text dimColor>·</Text> : null}
-          {perTurn !== null ? <Text bold>{usd(perTurn.median)}</Text> : null}
-          {perTurn !== null ? <Text dimColor>{tier <= 1 ? '· avg' : '/'}</Text> : null}
-          {perTurn !== null ? <Text bold>{usd(perTurn.mean)}</Text> : null}
-          {tier <= 2 ? <Text dimColor>|</Text> : null}
-          {tier <= 2 ? <Text bold>{usd(s.total)}</Text> : null}
-        </Box>
-        <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-          {Svg ? <Svg source={cacheIcon(cacheColor)} alt="cache" width={icon} height={icon} /> : <Text color={cacheColor}>{glyphs.cache}</Text>}
-          <Text bold color={level ?? undefined}>{cacheText}</Text>
-          {rate !== null && tier <= 2 ? <Text dimColor>·</Text> : null}
-          {rate !== null && tier <= 2 ? <Text bold color={rateColor}>{`${Math.round(rate * 100)}%`}</Text> : null}
-        </Box>
-        {tier <= 1 && tk.input + tk.output > 0 ? (
-          <Box key="tokens" flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-            <Text dimColor>Σ</Text>
-            <Text bold>{tier === 0 ? `${formatTokens(tk.input)} in` : formatTokens(tk.input)}</Text>
-            <Text dimColor>{tier === 0 ? '·' : '/'}</Text>
-            <Text bold>{tier === 0 ? `${formatTokens(tk.output)} out` : formatTokens(tk.output)}</Text>
-          </Box>
-        ) : null}
-        {tier <= 3
-          ? windows.map(w => {
-              const reset = tier === 0 ? resetIn(w.resetsAt, now) : null
-              const p = tier <= 1 && isKind(w.kind) ? projections[w.kind] : null
-              return (
-                <Box key={w.kind} flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-                  <Text dimColor>{LIMIT_LABELS[w.kind]}</Text>
-                  <Text bold color={limitColor(w.percentUsed)}>{`${Math.round(w.percentUsed)}%`}</Text>
-                  {p !== null ? (
-                    <Text color={p.projected >= 100 ? ALERT : p.projected >= PACE_WARN ? WARN : undefined} dimColor={p.projected < PACE_WARN}>
-                      {`→${p.projected >= 100 ? '100%+' : `${Math.round(p.projected)}%`}`}
-                    </Text>
-                  ) : null}
-                  {reset !== null ? <Text dimColor>{`↻${reset}`}</Text> : null}
-                </Box>
-              )
-            })
-          : null}
-        {/* One growing box holds the branch at its right end, so the gap on either side is the row's own. */}
-        <Box flexDirection="row" alignItems="center" justifyContent="flex-end" columnGap={1} flexGrow={1} flexShrink={1} overflow="hidden">
-          {tier <= 1 && repo !== null ? <Text dimColor>{Svg ? '⎇' : glyphs.branch}</Text> : null}
-          {tier <= 1 && repo !== null ? (
-            <Text bold color={repo.isDirty ? WARN : undefined} wrap="truncate-end">{branchLabel(repo)}</Text>
-          ) : null}
-        </Box>
-        <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
-          {Svg ? <Svg source={contextIcon(s.context)} alt="context" width={icon} height={icon} /> : null}
-          {Svg && tier === 0 ? (
-            <Svg source={contextBar(s.context)} alt={`context ${s.context}%`} width={80} height={6} />
-          ) : null}
-          {!Svg && tier === 0 ? (
-            <Box key="context-bar" flexDirection="row" flexShrink={0}>
-              <Text color={terminalContextBar(s.context).color}>{terminalContextBar(s.context).filled}</Text>
-              <Text color={terminalContextBar(s.context).color}>{terminalContextBar(s.context).empty}</Text>
-            </Box>
-          ) : null}
-          <Text bold>{`${s.context}%`}</Text>
-        </Box>
+        {segmentsFor(tier).flatMap(seg => [
+          ...(seg.key === 'context' ? [<Box key="spacer" flexGrow={1} flexShrink={1} />] : []),
+          <Box key={seg.key} flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
+            {seg.parts.map(drawPart)}
+          </Box>,
+        ])}
         {hasSecondRow ? null : hideButton}
       </Box>
     )
