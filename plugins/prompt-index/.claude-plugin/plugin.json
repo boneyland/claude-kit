@@ -1,6 +1,7 @@
 {
   "name": "prompt-index",
-  "version": "0.3.0",
+  "version": "0.3.1",
+  "icon": "./.claude-plugin/icon.png",
   "description": "A pane listing this session's prompts: click one to jump the transcript there, filter them, step through matches, and see which ones are on screen.",
   "author": {
     "name": "boneyland",

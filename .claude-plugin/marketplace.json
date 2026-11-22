@@ -26,28 +26,28 @@
       "name": "turn-gauge",
       "source": "./plugins/turn-gauge",
       "description": "Mod: band above the prompt with turn, speed, cost, prompt cache countdown, git branch, model, effort, context, cache hit rate and token counts; plan-limit pace projection; warnings for running out before a reset, spend, cache misses and output-heavy turns; a compact-keeping-recent-turns button; notifies before the cache expires.",
-      "version": "0.19.1",
+      "version": "0.19.2",
       "category": "mod"
     },
     {
       "name": "prompt-index",
       "source": "./plugins/prompt-index",
       "description": "Mod: pane listing this session's prompts; click one to jump there, filter and step through matches, see which are on screen. /prompts or the footer button toggles it. Slash commands Claude didn't answer (/plugin, /exit) are left out.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "category": "mod"
     },
     {
       "name": "stream-radio",
       "source": "./plugins/stream-radio",
       "description": "Mod: /stream <url> plays a YouTube stream's audio, or local music files and folders, through mpv and a footer button shows the song and progress and opens a side panel to pause, skip, stop, pick a song from the playlist or enter a URL.",
-      "version": "0.24.1",
+      "version": "0.24.2",
       "category": "mod"
     },
     {
       "name": "pr-watch",
       "source": "./plugins/pr-watch",
       "description": "Mod: watches PRs from a session; when CI fails or a merge conflict appears it wakes this same session to fix it and push, with no cloud session. A footer button sums up the PRs and opens a side panel to watch, check and stop them.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "category": "mod"
     }
   ]
