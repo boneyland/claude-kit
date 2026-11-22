@@ -124,7 +124,7 @@ export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
   if (resume - fresh < EXPIRED_MIN_SAVING) return null
   return {
     kind: 'expired',
-    text: `Cache expired: next message re-caches ${tokens(s.context)} ≈ ${usd(resume)} · new session ≈ ${usd(fresh)}`,
+    text: `Cache expired: next turn rewrites ${tokens(s.context)} ≈ ${usd(resume)} · new session ≈ ${usd(fresh)}`,
   }
 }
 
@@ -137,7 +137,7 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   if (old < MIN_OLD_TOKENS) return null
 
   if (s.recentSteps.length < MIN_TURNS) return null
-  const { median: steps, mean } = stepsPerTurn(s.recentSteps)!
+  const steps = stepsPerTurn(s.recentSteps)!.median
   const perTurn = old * p.read * steps
   const line = Math.max(OVERHEAD_FLOOR_USD, (OVERHEAD_MIN_USD * p.input * 1e6) / OVERHEAD_REF_INPUT)
   if (perTurn < line) return null
@@ -146,9 +146,10 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
     const turns = Math.max(1, Math.ceil(cost / saving))
     return `${turns} turn${turns === 1 ? '' : 's'}`
   }
+  const fresh = s.baseline * p.write1h
   const parts = [
-    `Old context ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req median, ${mean} mean)`,
-    `new session pays back in ${payback(s.baseline * p.write1h, perTurn)}`,
+    `Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`,
+    `new session ≈ ${usd(fresh)} once → pays back in ${payback(fresh, perTurn)}`,
   ]
 
   // A compaction reads the context once, writes the summary, then re-caches
@@ -156,7 +157,7 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   if (s.summary !== null) {
     const cost = s.context * p.read + s.summary * p.output + (s.baseline + s.summary) * p.write1h
     const saving = (old - s.summary) * p.read * steps
-    if (saving > 0) parts.push(`/compact ≈ ${usd(cost)}, pays back in ${payback(cost, saving)}`)
+    if (saving > 0) parts.push(`/compact ≈ ${usd(cost)} once → pays back in ${payback(cost, saving)}`)
   }
   return { kind: 'overhead', text: parts.join(' · ') }
 }

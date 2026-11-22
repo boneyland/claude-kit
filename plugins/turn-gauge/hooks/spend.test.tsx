@@ -22,7 +22,7 @@ test('prices by model, the longer id first', async () => {
 })
 
 test('an expired cache prices re-caching the context against a fresh session', async () => {
-  expect(expiredWarning(OPUS)?.text).toBe('Cache expired: next message re-caches 150k ≈ $1.20 · new session ≈ $0.16')
+  expect(expiredWarning(OPUS)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $1.20 · new session ≈ $0.16')
   // Little carried: nothing to say.
   expect(expiredWarning({ ...OPUS, context: 30_000 })).toBe(null)
   // 50k above the baseline is still early in a session.
@@ -30,9 +30,9 @@ test('an expired cache prices re-caching the context against a fresh session', a
 })
 
 test('the overhead names its cost a turn and when starting over pays back', async () => {
-  expect(overheadWarning(OPUS)?.text).toBe('Old context ≈ $0.42/turn (130k × 16 req median, 16 mean) · new session pays back in 1 turn')
+  expect(overheadWarning(OPUS)?.text).toBe('Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn')
   expect(overheadWarning({ ...OPUS, summary: 10_000 })?.text).toBe(
-    'Old context ≈ $0.42/turn (130k × 16 req median, 16 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns',
+    'Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn · /compact ≈ $0.47 once → pays back in 2 turns',
   )
   expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
 })
@@ -40,7 +40,7 @@ test('the overhead names its cost a turn and when starting over pays back', asyn
 test('the overhead threshold scales with the model: $0.40 on Opus 5.5, $0.20 on Sonnet 5.5', async () => {
   const sonnet = { ...OPUS, model: 'claude-sonnet-5-5' }
   // 130k old × $0.10/M × 16 requests = $0.21: over Sonnet's line, under Opus's.
-  expect(overheadWarning(sonnet)?.text).toContain('Old context ≈ $0.21/turn')
+  expect(overheadWarning(sonnet)?.text).toContain('Carry cost ≈ $0.21/turn')
   expect(overheadWarning({ ...sonnet, recentSteps: [15, 15, 15] })).toBe(null)
   expect(overheadWarning({ ...OPUS, recentSteps: [8, 8, 8] })).toBe(null)
   // Fable 5.2 reads at Opus's price but its input costs twice: its line is $0.80.
@@ -49,14 +49,14 @@ test('the overhead threshold scales with the model: $0.40 on Opus 5.5, $0.20 on 
   // Haiku 5.5's scaled line would be $0.01: it stops at a floor of $0.05 (130k × $0.01/M × 39 = $0.051).
   const haiku = { ...OPUS, model: 'claude-haiku-5-5' }
   expect(overheadWarning({ ...haiku, recentSteps: [38, 38, 38] })).toBe(null)
-  expect(overheadWarning({ ...haiku, recentSteps: [39, 39, 39] })?.text).toContain('Old context ≈ $0.05/turn')
+  expect(overheadWarning({ ...haiku, recentSteps: [39, 39, 39] })?.text).toContain('Carry cost ≈ $0.05/turn')
 })
 
 test('the overhead waits for three turns and prices one at their median', async () => {
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 10] })).toBe(null)
-  // One long run moves the mean, not the price.
+  // One long run does not set the price.
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 16, 20] })?.text).toBe(
-    'Old context ≈ $0.52/turn (130k × 20 req median, 38 mean) · new session pays back in 1 turn',
+    'Carry cost ≈ $0.52/turn (130k × 20 req) · new session ≈ $0.16 once → pays back in 1 turn',
   )
 })
 
@@ -99,7 +99,7 @@ test('no agents part when the turn ran no subagents', async ($, on) => {
 
 test('an unknown model waits for calibration; the scale follows the engine', async () => {
   expect(expiredWarning({ ...OPUS, model: 'mystery' })).toBe(null)
-  expect(expiredWarning({ ...OPUS, scale: 2 })?.text).toBe('Cache expired: next message re-caches 150k ≈ $2.40 · new session ≈ $0.32')
+  expect(expiredWarning({ ...OPUS, scale: 2 })?.text).toBe('Cache expired: next turn rewrites 150k ≈ $2.40 · new session ≈ $0.32')
 })
 
 test('B from the breakdown is everything in use but the conversation, else nothing', async () => {
@@ -154,7 +154,7 @@ const seedBand = (on: On, extra: Record<string, unknown>) => {
 test('the band shows the overhead warning while idle and the cache is warm', async ($, on) => {
   seedBand(on, {})
   const ui = await $.ui.mount(BAND())
-  expect((await ui.find({ type: 'Text', text: /^Old context/ }))?.text).toMatch(/\$0\.42\/turn/)
+  expect((await ui.find({ type: 'Text', text: /^Carry cost/ }))?.text).toMatch(/\$0\.42\/turn/)
   expect(await ui.find({ type: 'Button', key: 'dismiss-spend' })).not.toBe(undefined)
   expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.label).toBe('compact, keep 3')
   await ui.unmount()
@@ -164,7 +164,7 @@ test('the band shows the expired-cache warning once the cache lapsed', async ($,
   seedBand(on, { cache: { expiresAt: NOW - 1000, secondsLeft: 0 } })
   const ui = await $.ui.mount(BAND())
   expect((await ui.find({ type: 'Text', text: /^Cache expired/ }))?.text).toBe(
-    'Cache expired: next message re-caches 150k ≈ $1.20 · new session ≈ $0.16',
+    'Cache expired: next turn rewrites 150k ≈ $1.20 · new session ≈ $0.16',
   )
   await ui.unmount()
 })

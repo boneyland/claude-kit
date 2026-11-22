@@ -69,7 +69,7 @@ Cache expired and overhead are about carrying a long context, and both compare a
 
 ### Cache expired
 
-> `Cache expired: next message re-caches 180k ≈ $1.44 · new session ≈ $0.16`
+> `Cache expired: next turn rewrites 180k ≈ $1.44 · new session ≈ $0.16`
 
 Shown once the cache has lapsed, when starting over would save at least $0.10. It compares writing the whole context back against writing only a new session's baseline. A `/compact` at this point costs more than either, because it also reads the uncached context.
 
@@ -102,17 +102,17 @@ Shown when the last main turn wrote 30k output tokens or more **and** that outpu
 
 ### Overhead
 
-> `Old context ≈ $0.42/turn (130k × 16 req median, 18 mean) · new session pays back in 1 turn · /compact ≈ $0.47, pays back in 2 turns`
+> `Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn · /compact ≈ $0.47 once → pays back in 2 turns`
 
 The `/compact` part appears only once a compaction's summary size has been measured; until then the row ends after the new-session payback. See [Payback](#payback) below.
 
-Shown while the cache is still warm. Even with caching, every request in a turn re-reads the whole context, so the old context has a steady cost each turn:
+Shown while the cache is still warm. Even with caching, every request in a turn re-reads the whole context, so carrying the old context costs something every turn:
 
 ```
-overhead per turn = old context tokens × cache-read price × median requests per turn
+carry cost per turn = old context tokens × cache-read price × median requests per turn
 ```
 
-The median is taken over the last 10 turns, so one long agentic run doesn't set the price for the rest. The mean is shown beside it.
+The median is taken over the last 10 turns, so one long agentic run doesn't set the price for the rest.
 
 The row appears only when **all** of these hold:
 
@@ -121,7 +121,7 @@ The row appears only when **all** of these hold:
 3. The baseline is known.
 4. The **old context** is at least 60k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
-6. The overhead is **$0.40 a turn or more on Opus 5.5**. The line scales with the model's input price: $0.20 on Sonnet 5.5, $0.80 on Fable 5.2, with a floor of $0.05 (Haiku 5.5).
+6. The carry cost is **$0.40 a turn or more on Opus 5.5**. The line scales with the model's input price: $0.20 on Sonnet 5.5, $0.80 on Fable 5.2, with a floor of $0.05 (Haiku 5.5).
 7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
 
 So the trigger is a cost, not a context size. The context size it takes depends on the model's cache-read and input prices and on how many requests your turns make:
@@ -138,9 +138,9 @@ These are old-context sizes, before the price scale is applied. Short question-a
 
 ### Payback
 
-The row says how many turns of overhead it takes to pay for the alternative:
+The row gives each alternative's one-off cost and how many turns of carry cost it takes to pay for itself:
 
-- **New session:** the cost of caching a fresh baseline, divided by the overhead per turn.
+- **New session:** the cost of caching a fresh baseline, divided by the carry cost per turn.
 - **`/compact`:** reading the context once, writing the summary, and re-caching baseline plus summary, divided by what the summary saves each turn. Left out when the summary wouldn't be smaller than the old context.
 
 The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/turn-gauge compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
