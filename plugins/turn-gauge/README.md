@@ -28,7 +28,9 @@ It builds `notifier/Turn Gauge.app` next to the script; on its first notificatio
 
 - **Programs**: `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` in the session's folder, for the branch and whether the tree has changes; it takes no lock and runs no repository hooks, and is skipped while the band is hidden. On macOS, if you built it, `notifier/Turn Gauge.app` posts the cache notification.
 - **Network**: none. Nothing leaves your machine. Without the notifier it falls back to Claude Code's own `PushNotification`, which Remote Control may forward to your phone.
-- **Files**: in the desktop app on macOS, the session's title from Claude's own session record (`~/Library/Application Support/Claude/claude-code-sessions/…/<session>.json`), for the notification's title. Its own state (spend history, the learned weekly pace, dismissed warnings) stays in the plugin's store (`$.store`) on this machine.
+- **Files**: in the desktop app on macOS, the session's title from Claude's own session record (`~/Library/Application Support/Claude/claude-code-sessions/<account>/<organization>/<session>.json`), for the notification's title. Its own state (spend history, the learned weekly pace, dismissed warnings) stays in the plugin's store (`$.store`) on this machine.
+- **Environment**: `CLAUDE_CODE_HOST_SESSION_ID`, to know it runs in the desktop app and which session, and to name the band's saved figures for that session in its store; `CLAUDE_CODE_ACCOUNT_UUID` and `CLAUDE_CODE_ORGANIZATION_UUID`, only to build the path of that session record above; `HOME`. None of them leaves your machine.
+- **Other plugins**: if the Cache mod is installed, its `expiresAt` state, read only to restore the cache countdown after a plugin reload missed the end of a turn.
 - **Conversation**: token counts, costs and timings of the session and its subagents, as Claude Code reports them; never the text of your prompts or Claude's answers. `/turn-gauge compact` and the compact button ask Claude Code to compact the conversation, only when you click or run them.
 
 ## Commands

@@ -39,7 +39,7 @@ If the player stops by itself after it had been playing (a live stream drops, th
 ## What it runs, reads and sends
 
 - **Programs**: the `player` setting (`mpv` by default) on the URL or path you give it, with `--no-video` and an IPC socket; `mpv` itself calls `yt-dlp` for YouTube links. `python3 -I hooks/mpv-ipc.py` sends one command at a time to that socket (pause, skip, volume, read the playlist). `rm -f` removes the socket when playback stops. `<player> --version` checks the player is installed.
-- **Network**: only what mpv and yt-dlp fetch for the URL you play (for YouTube, youtube.com and its media hosts). The plugin itself makes no network requests and sends nothing anywhere.
+- **Network**: only what mpv and yt-dlp fetch for the URL you play. For YouTube that is `youtube.com`, `*.youtube.com` and `*.googlevideo.com`, the hosts the manifest declares; any other URL you give it reaches that URL's own host. The plugin itself makes no network requests and sends nothing anywhere.
 - **Files**: reads the local files and folders you ask it to play. Saves the last URL, its place in it, the volume and the repeat choice in the plugin's store (`$.store`) on this machine, so they survive a new session.
 - **Conversation**: it reads no prompts or transcript. Its `/stream` replies and errors (a URL that failed to play) show in the transcript like any command's.
 

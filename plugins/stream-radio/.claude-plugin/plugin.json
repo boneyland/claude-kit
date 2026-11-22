@@ -1,6 +1,6 @@
 {
   "name": "stream-radio",
-  "version": "0.24.0",
+  "version": "0.24.1",
   "types": "./types/index.d.ts",
   "description": "Play any YouTube (or other mpv-supported) stream's audio, or local music files and folders, from Claude Code with /stream <url | path>, and show what is playing in the prompt footer, with a side panel to pick songs from a playlist.",
   "author": {
@@ -10,6 +10,13 @@
   "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/stream-radio",
   "repository": "https://github.com/boneyland/claude-kit",
   "license": "MIT",
+  "network": {
+    "hosts": [
+      "youtube.com",
+      "*.youtube.com",
+      "*.googlevideo.com"
+    ]
+  },
   "userConfig": {
     "defaultUrl": {
       "type": "string",
