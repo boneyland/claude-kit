@@ -1,7 +1,7 @@
 import type { TurnUsage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { baselineFromBreakdown, expiredWarning, overheadWarning, costPerTurn, ratesFor, stepsPerTurn } from './spend'
+import { baselineFromBreakdown, expiredWarning, overheadWarning, costPerTurn, predictUsd, ratesFor, stepsPerTurn } from './spend'
 
 // Opus 5.5: cache reads $0.20/M, 1-hour writes $8/M, output $20/M.
 const OPUS = {
@@ -10,6 +10,8 @@ const OPUS = {
   baseline: 20_000,
   scale: null,
   recentSteps: [16, 16, 16],
+  // A typical turn at $0.60: carrying 130k (≈ $0.42) is 69% of it.
+  recentCosts: [0.6, 0.6, 0.6],
   summary: null,
 }
 
@@ -19,6 +21,31 @@ test('prices by model, the longer id first', async () => {
   expect(ratesFor('claude-opus-5-5[1m]')?.input).toBe(4)
   expect(ratesFor('claude-sonnet-4-6')?.input).toBe(3)
   expect(ratesFor('some-other-model')).toBe(null)
+})
+
+test('Haiku 5.5 prices a prompt over 100k at its long-prompt rates, on all of it', async () => {
+  expect(ratesFor('claude-haiku-5-5')?.read).toBe(0.01)
+  expect(ratesFor('claude-haiku-5-5', 100_000)?.read).toBe(0.01)
+  expect(ratesFor('claude-haiku-5-5', 100_001)?.read).toBe(0.05)
+  expect(ratesFor('claude-haiku-5-5', 150_000)?.input).toBe(0.5)
+  // Models without a long-prompt row keep one price.
+  expect(ratesFor('claude-opus-5-5', 500_000)?.read).toBe(0.2)
+  const read = (n: number) => ({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: n, cache_creation_input_tokens: 0 })
+  expect(Math.round(predictUsd('claude-haiku-5-5', read(50_000)) * 1e6)).toBe(500)
+  expect(Math.round(predictUsd('claude-haiku-5-5', read(150_000)) * 1e6)).toBe(7500)
+})
+
+test('on Haiku 5.5 the long context pays long-prompt rates, a fresh session short ones', async () => {
+  const haiku = { ...OPUS, model: 'claude-haiku-5-5' }
+  // 150k × $1/M against 20k × $0.20/M.
+  expect(expiredWarning(haiku)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $0.15 · new session ≈ $0.004')
+  // A request: 150k × $0.05/M − 20k × $0.01/M = $0.0073; under $0.05 a turn stays quiet,
+  // however large its share.
+  const cheap = { ...haiku, recentCosts: [0.06, 0.06, 0.06] }
+  expect(overheadWarning({ ...cheap, recentSteps: [6, 6, 6] })).toBe(null)
+  expect(overheadWarning({ ...cheap, recentSteps: [7, 7, 7] })?.text).toBe(
+    'Carry cost ≈ $0.05/turn (130k × 7 req) · new session ≈ $0.004 once → pays back in 1 turn',
+  )
 })
 
 test('an expired cache prices re-caching the context against a fresh session', async () => {
@@ -37,23 +64,21 @@ test('the overhead names its cost a turn and when starting over pays back', asyn
   expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
 })
 
-test('the overhead threshold scales with the model: $0.40 on Opus 5.5, $0.20 on Sonnet 5.5', async () => {
+test('the overhead shows once carrying the old context is 60% of a typical turn', async () => {
+  // $0.42 against a $0.70 turn: 59%.
+  expect(overheadWarning({ ...OPUS, recentCosts: [0.7, 0.7, 0.7] })).toBe(null)
+  expect(overheadWarning({ ...OPUS, recentCosts: [0.69, 0.69, 0.69] })).not.toBe(null)
+  // The median turn, so one costly turn does not hide it.
+  expect(overheadWarning({ ...OPUS, recentCosts: [0.5, 0.6, 9] })).not.toBe(null)
+  // The same on every model: Sonnet 5.5 carries 130k for $0.21 a turn.
   const sonnet = { ...OPUS, model: 'claude-sonnet-5-5' }
-  // 130k old × $0.10/M × 16 requests = $0.21: over Sonnet's line, under Opus's.
-  expect(overheadWarning(sonnet)?.text).toContain('Carry cost ≈ $0.21/turn')
-  expect(overheadWarning({ ...sonnet, recentSteps: [15, 15, 15] })).toBe(null)
-  expect(overheadWarning({ ...OPUS, recentSteps: [8, 8, 8] })).toBe(null)
-  // Fable 5.2 reads at Opus's price but its input costs twice: its line is $0.80.
-  expect(overheadWarning({ ...OPUS, model: 'claude-fable-5-2' })).toBe(null)
-  expect(overheadWarning({ ...OPUS, model: 'claude-fable-5-2', recentSteps: [33, 33, 33] })).not.toBe(null)
-  // Haiku 5.5's scaled line would be $0.01: it stops at a floor of $0.05 (130k × $0.01/M × 39 = $0.051).
-  const haiku = { ...OPUS, model: 'claude-haiku-5-5' }
-  expect(overheadWarning({ ...haiku, recentSteps: [38, 38, 38] })).toBe(null)
-  expect(overheadWarning({ ...haiku, recentSteps: [39, 39, 39] })?.text).toContain('Carry cost ≈ $0.05/turn')
+  expect(overheadWarning({ ...sonnet, recentCosts: [0.3, 0.3, 0.3] })?.text).toContain('Carry cost ≈ $0.21/turn')
+  expect(overheadWarning({ ...sonnet, recentCosts: [0.4, 0.4, 0.4] })).toBe(null)
 })
 
 test('the overhead waits for three turns and prices one at their median', async () => {
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 10] })).toBe(null)
+  expect(overheadWarning({ ...OPUS, recentCosts: [0.6, 0.6] })).toBe(null)
   // One long run does not set the price.
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 16, 20] })?.text).toBe(
     'Carry cost ≈ $0.52/turn (130k × 20 req) · new session ≈ $0.16 once → pays back in 1 turn',
@@ -129,7 +154,7 @@ type On = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => u
 
 const seedBand = (on: On, extra: Record<string, unknown>) => {
   const state: Record<string, unknown> = {
-    stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38 },
+    stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, recentCosts: [0.6, 0.6, 0.6] },
     cache: { expiresAt: NOW + 30 * 60_000, secondsLeft: 1800 },
     isHidden: false,
     spend: {

@@ -4,7 +4,7 @@ import { expect, test } from 'claude-code/testing'
 import { cacheMissWarning, formatTokens, hitRate, missedOf, NO_TOKENS, outputWarning } from './spend'
 
 // Opus 5.5: input $4/M, cache reads $0.20/M, 1-hour writes $8/M, output $20/M.
-const OPUS = { model: 'claude-opus-5-5', context: 150_000, baseline: 20_000, scale: null, recentSteps: [4, 4, 4], summary: null }
+const OPUS = { model: 'claude-opus-5-5', context: 150_000, baseline: 20_000, scale: null, recentSteps: [4, 4, 4], recentCosts: [0.2, 0.2, 0.2], summary: null }
 
 test('token counts read exactly when small', () => {
   expect(formatTokens(0)).toBe('0')

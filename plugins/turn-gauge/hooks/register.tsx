@@ -227,12 +227,14 @@ const SAMPLES_KEPT = 5
 // The overhead warning, dismissed, returns once the context grew this much more.
 const DISMISS_GROWTH = 50_000
 
-const spendInputs = (s: Spend): SpendInputs => ({
+// The recent turns' costs live with the band's stats; only the overhead weighs them.
+const spendInputs = (s: Spend, recentCosts: readonly number[] = []): SpendInputs => ({
   model: s.model,
   context: s.context,
   baseline: s.baseline,
   scale: s.scale,
   recentSteps: s.recentSteps ?? [],
+  recentCosts,
   summary: s.summary,
 })
 
@@ -1074,7 +1076,7 @@ export const register: Register = (on, options) => {
             isTurnDismissed ? null : missWarning,
             isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last),
             paceWarning,
-            isOverheadDismissed ? null : overheadWarning(spendInputs(sp)),
+            isOverheadDismissed ? null : overheadWarning(spendInputs(sp, s.recentCosts ?? [])),
           ]
     const candidates = ranked.filter((w): w is Warning => w !== null)
     // A warning's width: its text, its buttons with their gaps.

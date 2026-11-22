@@ -5,6 +5,12 @@
 // 1.25x (5 minutes) and 2x (1 hour). Claude API list prices, 2026-11-03.
 type Rates = { input: number; read: number; output: number }
 
+// A request whose input (uncached, cache read and cache write together) is over
+// this many tokens pays a model's long-prompt rates, when it has them, on all of it.
+export const LONG_PROMPT = 100_000
+
+const LONG_RATES: [prefix: string, rates: Rates][] = [['haiku-5-5', { input: 0.5, read: 0.05, output: 2.5 }]]
+
 const RATES: [prefix: string, rates: Rates][] = [
   ['fable-5-2', { input: 8, read: 0.2, output: 40 }],
   ['mythos-5-2', { input: 8, read: 0.2, output: 40 }],
@@ -25,10 +31,14 @@ const RATES: [prefix: string, rates: Rates][] = [
 // A model not in the table: the usual ratios, its scale left to calibration.
 const RELATIVE: Rates = { input: 1, read: 0.1, output: 5 }
 
-export const ratesFor = (model: string): Rates | null => {
+const lookup = (table: [string, Rates][], model: string) => {
   const id = model.replace(/^(us\.|eu\.)?(anthropic\.)?claude-/, '')
-  return RATES.find(([prefix]) => id === prefix || id.startsWith(`${prefix}-`) || id.startsWith(`${prefix}[`))?.[1] ?? null
+  return table.find(([prefix]) => id === prefix || id.startsWith(`${prefix}-`) || id.startsWith(`${prefix}[`))?.[1] ?? null
 }
+
+// A model's rates for a request carrying `prompt` input tokens; a short prompt when unsaid.
+export const ratesFor = (model: string, prompt = 0): Rates | null =>
+  (prompt > LONG_PROMPT ? lookup(LONG_RATES, model) : null) ?? lookup(RATES, model)
 
 export type StepUsage = {
   input_tokens: number
@@ -42,7 +52,7 @@ export type StepUsage = {
 // What one response cost at list price; a write with no lifetime prices as 5
 // minutes, as /cost does.
 export const predictUsd = (model: string, u: StepUsage) => {
-  const r = ratesFor(model) ?? RELATIVE
+  const r = ratesFor(model, contextOf(u)) ?? RELATIVE
   const hour = u.ephemeral_1h_input_tokens ?? 0
   const fiveMin = u.cache_creation_input_tokens - hour
   return (
@@ -68,6 +78,8 @@ export type SpendInputs = {
   scale: number | null
   // Requests each recent main turn made: their median prices a turn, so one long run does not.
   recentSteps: readonly number[]
+  // What each recent main turn cost in USD, subagents included: the carry cost is weighed against their median.
+  recentCosts: readonly number[]
   // Median tokens a compaction summary came to, measured; null until one ran.
   summary: number | null
 }
@@ -76,13 +88,11 @@ export type SpendInputs = {
 const MIN_OLD_TOKENS = 60_000
 // The expired cache: shown when starting over saves at least this much.
 const EXPIRED_MIN_SAVING = 0.1
-// The steady overhead: shown when the old context costs this much a turn on a model
-// whose input price is OVERHEAD_REF_INPUT per million tokens (Opus 5.5); a dearer
-// or cheaper model scales it with its input price (Sonnet 5.5, half of it: $0.20),
-// down to a floor of OVERHEAD_FLOOR_USD (Haiku 5.5).
-export const OVERHEAD_MIN_USD = 0.4
-const OVERHEAD_REF_INPUT = 4
-const OVERHEAD_FLOOR_USD = 0.05
+// The steady overhead: shown when carrying the old context comes to this share of a
+// typical turn's cost, the same on every model since both sides use its prices...
+export const OVERHEAD_MIN_SHARE = 0.6
+// ...and to at least this much a turn, so a large share of pennies stays quiet.
+export const OVERHEAD_MIN_USD = 0.05
 // Turns seen before the overhead is priced: one turn says little about the next.
 export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
@@ -97,12 +107,14 @@ const tokens = (n: number) =>
       : n >= 1000
         ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
         : String(Math.round(n))
-const usd = (n: number) => `$${n.toFixed(2)}`
+// $0.42; under a cent, $0.004, so a cheap fresh session never shows as $0.00.
+const usd = (n: number) => `$${n.toFixed(n > 0 && n < 0.01 ? 3 : 2)}`
 
-// Prices per token for this session, scaled to what the engine's cost says.
-const unitPrices = (s: SpendInputs) => {
+// Prices per token for a request carrying `prompt` input tokens in this session,
+// scaled to what the engine's cost says.
+const unitPrices = (s: SpendInputs, prompt: number) => {
   if (s.model === null) return null
-  const known = ratesFor(s.model)
+  const known = ratesFor(s.model, prompt)
   if (known === null && s.scale === null) return null
   const r = known ?? RELATIVE
   const k = (s.scale ?? 1) / 1e6
@@ -115,12 +127,14 @@ export type SpendWarning = { kind: 'expired' | 'overhead' | 'cache-miss' | 'outp
 // 1-hour rate; a fresh session writes only its baseline. (A /compact then costs
 // more than either: it reads the uncached context too.)
 export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
-  const p = unitPrices(s)
-  if (p === null || s.context === null || s.baseline === null) return null
+  if (s.context === null || s.baseline === null) return null
+  const p = unitPrices(s, s.context)
+  const b = unitPrices(s, s.baseline)
+  if (p === null || b === null) return null
   if (s.context - s.baseline < MIN_OLD_TOKENS) return null
 
   const resume = s.context * p.write1h
-  const fresh = s.baseline * p.write1h
+  const fresh = s.baseline * b.write1h
   if (resume - fresh < EXPIRED_MIN_SAVING) return null
   return {
     kind: 'expired',
@@ -128,25 +142,28 @@ export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
   }
 }
 
-// With the cache warm each request still reads the whole context; the part a
-// fresh session would not carry, times the requests a turn makes, is the overhead.
+// With the cache warm each request still reads the whole context; what that costs
+// over reading a fresh session's baseline, times the requests a turn makes, is the
+// overhead. (A long prompt can pay higher rates on all of it, not just the old part.)
 export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
-  const p = unitPrices(s)
-  if (p === null || s.context === null || s.baseline === null) return null
+  if (s.context === null || s.baseline === null) return null
+  const p = unitPrices(s, s.context)
+  const b = unitPrices(s, s.baseline)
+  if (p === null || b === null) return null
   const old = s.context - s.baseline
   if (old < MIN_OLD_TOKENS) return null
 
-  if (s.recentSteps.length < MIN_TURNS) return null
+  if (s.recentSteps.length < MIN_TURNS || s.recentCosts.length < MIN_TURNS) return null
   const steps = stepsPerTurn(s.recentSteps)!.median
-  const perTurn = old * p.read * steps
-  const line = Math.max(OVERHEAD_FLOOR_USD, (OVERHEAD_MIN_USD * p.input * 1e6) / OVERHEAD_REF_INPUT)
-  if (perTurn < line) return null
+  const perTurn = (s.context * p.read - s.baseline * b.read) * steps
+  const typical = costPerTurn(s.recentCosts)!.median
+  if (perTurn < OVERHEAD_MIN_USD || perTurn < OVERHEAD_MIN_SHARE * typical) return null
 
   const payback = (cost: number, saving: number) => {
     const turns = Math.max(1, Math.ceil(cost / saving))
     return `${turns} turn${turns === 1 ? '' : 's'}`
   }
-  const fresh = s.baseline * p.write1h
+  const fresh = s.baseline * b.write1h
   const parts = [
     `Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`,
     `new session ≈ ${usd(fresh)} once → pays back in ${payback(fresh, perTurn)}`,
@@ -155,8 +172,10 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   // A compaction reads the context once, writes the summary, then re-caches
   // baseline and summary; it saves what the summary does not carry.
   if (s.summary !== null) {
-    const cost = s.context * p.read + s.summary * p.output + (s.baseline + s.summary) * p.write1h
-    const saving = (old - s.summary) * p.read * steps
+    const kept = s.baseline + s.summary
+    const k = unitPrices(s, kept)!
+    const cost = s.context * p.read + s.summary * p.output + kept * k.write1h
+    const saving = (s.context * p.read - kept * k.read) * steps
     if (saving > 0) parts.push(`/compact ≈ ${usd(cost)} once → pays back in ${payback(cost, saving)}`)
   }
   return { kind: 'overhead', text: parts.join(' · ') }
@@ -164,8 +183,9 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
 
 // The next message's cost once the cache lapses, for the expiry notification.
 export const resumeCost = (s: SpendInputs) => {
-  const p = unitPrices(s)
-  return p === null || s.context === null ? null : s.context * p.write1h
+  if (s.context === null) return null
+  const p = unitPrices(s, s.context)
+  return p === null ? null : s.context * p.write1h
 }
 
 export const formatUsd = usd
@@ -244,7 +264,7 @@ export const formatTokens = tokens
 // something in the prompt's prefix changed.
 export const cacheMissWarning = (s: SpendInputs, t: TurnTokens | null, cause: string | null): SpendWarning | null => {
   if (t === null || cause !== null || t.missed < MISS_MIN_TOKENS) return null
-  const p = unitPrices(s)
+  const p = s.context === null ? null : unitPrices(s, s.context)
   const rate = hitRate(t)
   const extra = p === null ? '' : ` ≈ ${usd(t.missed * (p.write1h - p.read))} extra`
   return {
@@ -259,12 +279,12 @@ export const cacheMissWarning = (s: SpendInputs, t: TurnTokens | null, cause: st
 export const outputWarning = (s: SpendInputs, t: TurnTokens | null): SpendWarning | null => {
   if (t === null || t.output < OUTPUT_WARN_TOKENS) return null
   // The share needs only the price ratios, which hold without a measured scale.
-  const r = (s.model === null ? null : ratesFor(s.model)) ?? RELATIVE
+  const r = (s.model === null ? null : ratesFor(s.model, s.context ?? 0)) ?? RELATIVE
   const out = t.output * r.output
   const total = t.uncached * r.input + t.read * r.read + t.write * 2 * r.input + out
   const share = out / total
   if (share < OUTPUT_WARN_SHARE) return null
-  const p = unitPrices(s)
+  const p = unitPrices(s, s.context ?? 0)
   const cost = p === null ? '' : ` ≈ ${usd(t.output * p.output)}`
   return {
     kind: 'output',

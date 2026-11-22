@@ -112,7 +112,7 @@ Shown while the cache is still warm. Even with caching, every request in a turn 
 carry cost per turn = old context tokens × cache-read price × median requests per turn
 ```
 
-The median is taken over the last 10 turns, so one long agentic run doesn't set the price for the rest.
+The median is taken over the last 10 turns, so one long agentic run doesn't set the price for the rest. On Haiku 5.5, a prompt over 100k tokens pays its long-prompt rates (5× the short ones) on all of it, while a new session's baseline is priced at the short rates; the carry cost is then the whole context read at the long rate minus the baseline read at the short one.
 
 The row appears only when **all** of these hold:
 
@@ -121,20 +121,10 @@ The row appears only when **all** of these hold:
 3. The baseline is known.
 4. The **old context** is at least 60k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
-6. The carry cost is **$0.40 a turn or more on Opus 5.5**. The line scales with the model's input price: $0.20 on Sonnet 5.5, $0.80 on Fable 5.2, with a floor of $0.05 (Haiku 5.5).
+6. The carry cost is **at least 60% of a typical turn's cost** (the median of the last 10 turns, subagents included) **and at least $0.05**.
 7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
 
-So the trigger is a cost, not a context size. The context size it takes depends on the model's cache-read and input prices and on how many requests your turns make:
-
-| Median requests per turn | Opus 5.5, Sonnet 5.5 | Fable 5.2 |
-|---|---|---|
-| 1 | ~2M (never) | ~4M (never) |
-| 5 | ~400k | ~800k |
-| 10 | ~200k | ~400k |
-| 16 | ~125k | ~250k |
-| 20 | ~100k | ~200k |
-
-These are old-context sizes, before the price scale is applied. Short question-and-answer turns rarely show it; long tool-heavy turns show it sooner.
+So the trigger is a share, not a price line: the row says most of what you pay each turn goes to re-reading context a new session wouldn't carry. Both sides use the same model's prices, so it works the same on every model; the $0.05 floor keeps a large share of pennies quiet. Short question-and-answer turns rarely reach it; long tool-heavy turns over a long context do.
 
 ### Payback
 
@@ -185,7 +175,7 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 ## How costs are measured
 
 - **Turn and session cost** come from the cost Claude Code reports for the session; the band doesn't estimate them.
-- **Warning prices** start from list prices per model (Claude API, 2026-11-03). Cache reads cost 0.1× input or less, and 1-hour cache writes cost 2× input. After each turn, the mod compares its list-price estimate with the cost Claude Code reported and keeps the ratio as a **scale** (limited to 0.25–4), so the warnings match what you're actually billed. A model not in the table shows no warnings until that scale has been measured. Switching models starts the scale over.
+- **Warning prices** start from list prices per model (Claude API, 2026-11-03). Cache reads cost 0.1× input or less, and 1-hour cache writes cost 2× input. Haiku 5.5 has a second, 5× dearer row for prompts over 100k tokens, applied to a request's whole input. After each turn, the mod compares its list-price estimate with the cost Claude Code reported and keeps the ratio as a **scale** (limited to 0.25–4), so the warnings match what you're actually billed. A model not in the table shows no warnings until that scale has been measured. Switching models starts the scale over.
 - **The baseline** is measured from the first request of a fresh session in the same project directory, keeping the smallest of the last 5. Until one has been seen, it is taken from `/context`'s breakdown minus the conversation.
 - **The compaction summary size** is measured from the first request after a `/compact`, as the median of the last 5. Until a compaction has been seen, the overhead row leaves out the `/compact` estimate.
 
