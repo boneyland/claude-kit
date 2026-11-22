@@ -517,13 +517,19 @@ const resetIn = (resetsAt: string | null, now: number) => {
   return `${minutes}m`
 }
 
-const refresh = async ($: EngineInterface) => {
+// `isAgent`: a subagent's request or end. Between turns, what a background agent spends
+// still belongs to the turn that started it, so that turn's place in the recent costs grows too.
+const refresh = async ($: EngineInterface, isAgent = false) => {
   const { cost, context, rateLimits } = await $.session.usage()
   await saveLimits($, rateLimits)
   const usd = cost?.usd ?? 0
+  const isBetweenTurns = isAgent && !(await read($, isBusy))
   await update($, stats, s => {
     const total = (s.costOffset ?? 0) + usd
-    return { ...s, total, turnCost: total - s.costAtStart, context: context.percent ?? s.context }
+    const turnCost = total - s.costAtStart
+    const recent = s.recentCosts ?? []
+    const recentCosts = isBetweenTurns && recent.length > 0 ? [...recent.slice(0, -1), turnCost] : s.recentCosts
+    return { ...s, total, turnCost, recentCosts, context: context.percent ?? s.context }
   })
   await sampleAgents($)
 }
@@ -944,7 +950,7 @@ export const register: Register = (on, options) => {
         if (chunk.kind === 'stop' && chunk.usage !== null) {
           await recordTokens($, chunk.usage, false)
           await recordUsage($, chunk.usage, false)
-          await sampleAgents($)
+          await refresh($, true)
         }
         yield chunk
       }
@@ -982,7 +988,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    await refresh($)
+    await refresh($, e.agentId !== undefined)
 
     if (e.agentId === undefined) {
       const now = await $.clock.now()
@@ -1016,8 +1022,8 @@ export const register: Register = (on, options) => {
     const Svg = !isTerminal && 'Svg' in ui ? ui.Svg : null
     const speed = s.speed === null ? '—' : `${s.speed} tok/s`
     const turnCost = s.turnCost === null ? '—' : usd(s.turnCost)
-    // The part of the turn's cost its subagents spent, once it reaches a cent.
-    const agentsCost = s.turnCost !== null && (s.agentsCost ?? 0) >= 0.005 ? s.agentsCost! : null
+    // The part of the turn's cost its subagents spent; under half a cent it reads <$0.01.
+    const agentsCost = s.turnCost !== null && (s.agentsCost ?? 0) > 0 ? s.agentsCost! : null
 
     const { secondsLeft } = await read($, cache)
     const level =
@@ -1135,7 +1141,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" alignItems="center" columnGap={1} flexShrink={0}>
           {Svg ? <Svg source={MONEY_ICON} alt="cost" width={icon} height={icon} /> : <Text color={MONEY}>{glyphs.cost}</Text>}
           <Text bold color={MONEY}>{turnCost}</Text>
-          {tier <= 1 && agentsCost !== null ? <Text dimColor>{`(agents ${usd(agentsCost)})`}</Text> : null}
+          {tier <= 1 && agentsCost !== null ? <Text dimColor>{`(agents ${agentsCost < 0.005 ? '<$0.01' : usd(agentsCost)})`}</Text> : null}
           {perTurn !== null && tier <= 1 ? <Text dimColor>· med</Text> : null}
           {perTurn !== null && tier >= 2 ? <Text dimColor>·</Text> : null}
           {perTurn !== null ? <Text bold>{usd(perTurn.median)}</Text> : null}

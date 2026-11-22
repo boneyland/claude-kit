@@ -115,6 +115,13 @@ test('the band shows what the last turn\'s subagents spent beside its cost', asy
   await ui.unmount()
 })
 
+test('an agents part under a cent still shows, as under a cent', async ($, on) => {
+  seedBand(on, { stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, agentsCost: 0.0045 } })
+  const ui = await $.ui.mount(BAND())
+  expect((await ui.find({ type: 'Text', text: '(agents <$0.01)' }))?.text).toBe('(agents <$0.01)')
+  await ui.unmount()
+})
+
 test('no agents part when the turn ran no subagents', async ($, on) => {
   seedBand(on, { stats: { turn: 9, speed: 80, turnCost: 0.12, total: 4.5, context: 15, costAtStart: 4.38, agentsCost: 0 } })
   const ui = await $.ui.mount(BAND())
@@ -297,4 +304,27 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   usd = 1.2
   await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't3', reason: 'answer' })
   expect(Math.round(statsNow.agentsCost * 1000) / 1000).toBe(0.17)
+  expect(statsNow.recentCosts?.length).toBe(3)
+  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.6)
+
+  // A background agent that goes on after the turn ended: its spend is still that turn's,
+  // in the band and in the turn's place among the recent costs.
+  agents = [{ id: 'bg', usd: 0.03 }]
+  usd = 1.23
+  steps.push([usage({ cache_read_input_tokens: 1_000 })])
+  for await (const _ of $.turn.step({ turnId: 'b1', index: 0, model: 'claude-haiku-5-5', messageCount: 1, agentId: 'bg' })) void _
+  expect(Math.round(statsNow.turnCost * 1000) / 1000).toBe(0.63)
+  expect(Math.round(statsNow.agentsCost * 1000) / 1000).toBe(0.2)
+  expect(statsNow.recentCosts?.length).toBe(3)
+  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.63)
+  agents = [{ id: 'bg', usd: 0.04 }]
+  usd = 1.24
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 'b1', reason: 'answer', agentId: 'bg' })
+  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.64)
+  expect(statsNow.recentCosts?.length).toBe(3)
+
+  // The next turn starts from there and counts none of it.
+  await $.turn.start({ text: 'go', turnId: 't4' })
+  expect(statsNow.agentsCost).toBe(0)
+  expect(statsNow.recentCosts?.length).toBe(3)
 })
