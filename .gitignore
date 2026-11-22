@@ -1,5 +1,5 @@
-.DS_Store
 node_modules/
+
 # Generated per machine by /plugin-types
 .claude-plugin/types/
 tsconfig.json
@@ -7,6 +7,8 @@ tsconfig.json
 # Built locally by plugins/turn-gauge/notifier/build.sh
 notifier/*.app/
 
-# Claude Code
+# local only
 CLAUDE.md
 .claude/
+superpowers/
+
