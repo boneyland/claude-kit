@@ -3,7 +3,7 @@
 Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) or your own music files from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
 
 ```
-/stream https://www.youtube.com/watch?v=<id>
+/stream https://www.youtube.com/watch?v=tRsQsTMvPNg   # Claude FM, music for thinking and building
 /stream ~/Music/Album          # a folder plays as a playlist; a file or .m3u works too
 /stream            # plays the default stream, once you set one
 /stream pause      # pause or resume
@@ -45,7 +45,7 @@ If the player stops by itself after it had been playing (a live stream drops, th
 
 ## Now playing
 
-The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives only have a fixed title, so expect that rather than a track name.
+The title shown is whatever mpv knows: the stream's own song metadata when it sends some (ICY title, as many internet radios do), otherwise the video title. Most YouTube lives, Claude FM included, only have a fixed title, so expect that rather than a track name.
 
 A video with chapters shows only the current chapter in the footer: `3:42 03. Song name`; the panel shows the video's title under it. Videos that hold several songs or pieces usually name each one in a chapter, so this is the track name. The panel lists the chapters to pick from.
 
