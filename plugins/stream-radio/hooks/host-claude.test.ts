@@ -23,7 +23,7 @@ function stub(reply: { exitCode: number; stdout: string }, chunks: Chunk[] = [])
       },
     },
   }
-  return { h: hostOf($ as never, quiet), ran, spawned }
+  return { h: hostOf($ as never, {} as never, quiet), ran, spawned }
 }
 
 test('ipc runs mpv-ipc.py with the command, as the mod always has', async () => {

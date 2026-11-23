@@ -44,9 +44,11 @@ export type PlayerKeys = {
   isShuffled: boolean
 }
 
+// Named read/change, not get/set: Claude Code's validator reads any
+// `.state.get(` as its own `$.state.get`.
 export interface StateStore {
-  get<K extends keyof PlayerKeys>(key: K): Promise<PlayerKeys[K]>
-  update<K extends keyof PlayerKeys>(key: K, fn: (prev: PlayerKeys[K]) => PlayerKeys[K]): Promise<PlayerKeys[K]>
+  read<K extends keyof PlayerKeys>(key: K): Promise<PlayerKeys[K]>
+  change<K extends keyof PlayerKeys>(key: K, fn: (prev: PlayerKeys[K]) => PlayerKeys[K]): Promise<PlayerKeys[K]>
 }
 
 export interface Host {
@@ -67,16 +69,18 @@ export interface Host {
     exists(path: string): Promise<boolean>
     stat(path: string): Promise<{ kind: 'file' | 'dir' | 'other'; mtimeMs: number }>
   }
-  env(name: string): Promise<string | undefined>
+  // the person's home folder (HOME); empty when unknown
+  home(): Promise<string>
   cwd(): Promise<string>
   // The folder holding mpv.sock, player.json, reconnect.lock and mpv.log.
   dataDir(): Promise<string>
   // Kept across sessions on this machine.
   saved: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
-  state: StateStore
-  log(text: string): void
+  vars: StateStore
+  // shown to the person, or only in the debug log with to 'debug'
+  log(text: string, to?: 'debug'): void
   toast(text: string): void
   // What the drawing side reacts to: a new title (restart the scroll), and
   // following a player or not (run the scroller or stop it).
-  events: { titleChanged(): void; watching(isOn: boolean): void }
+  events: { titleChanged(): void | Promise<void>; watching(isOn: boolean): void }
 }
