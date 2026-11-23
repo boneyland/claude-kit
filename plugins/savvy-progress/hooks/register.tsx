@@ -3,6 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, Flow, Panel, Phase, PlannedTask } from '../types'
 import { SPRITE_COLS, SPRITE_FRAMES, SPRITE_ROWS, spritePixels, spritePng } from './sprite'
+import { activityOf, applyTaskCall, isOpen, NUDGE_AFTER, nudgeText, TASK_TOOLS, taskFlow } from './tasks'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -14,6 +15,8 @@ const panel = atom({ plugin: 'savvy-progress', key: 'panel' } as const, {
 const now = atom({ plugin: 'savvy-progress', key: 'now' } as const, 0)
 // Whether the agents pane is up, for the footer button's label.
 const paneOpen = atom({ plugin: 'savvy-progress', key: 'isOpen' } as const, false)
+const taskList = atom({ plugin: 'savvy-progress', key: 'tasks' } as const, { items: [], kind: 'task', sinceUpdate: 0 })
+const activity = atom({ plugin: 'savvy-progress', key: 'activity' } as const, '')
 
 const TOOL = 'mcp__savvy-progress__progress'
 const STEP_TOOL = 'mcp__savvy-progress__step'
@@ -1174,6 +1177,43 @@ export const register: Register = (on, options) => {
     }
   })
 
+  // Claude Code's own task list, mirrored for the band; the main session's latest
+  // tool call as its activity; and, when the list goes stale, one reminder riding
+  // on a tool result. A subagent's task calls write the same list, so they count.
+  const taskMode = String(options.taskList ?? 'nudge')
+  on('tool.call', async ($, e, next) => {
+    if (taskMode === 'off') return next(e)
+    const call = e as unknown as Record<string, unknown> & { tool: string }
+    const isMain = !e.agentId
+    const isTaskTool = TASK_TOOLS.has(e.tool)
+    if (isMain && !isTaskTool) await update($, activity, () => activityOf(call))
+
+    const r = await next(e)
+    if (r.deny !== undefined) return r
+    if (isTaskTool) {
+      if (!r.isError) await update($, taskList, m => applyTaskCall(m, call, r.result))
+      return r
+    }
+    if (!isMain || taskMode !== 'nudge') return r
+
+    let kind: 'task' | 'todo' | null = null
+    await update($, taskList, m => {
+      if (!isOpen(m)) return m.sinceUpdate ? { ...m, sinceUpdate: 0 } : m
+      const count = m.sinceUpdate + 1
+      if (count < NUDGE_AFTER) return { ...m, sinceUpdate: count }
+      kind = m.kind
+      return { ...m, sinceUpdate: 0 }
+    })
+    return kind ? { ...r, context: [...(r.context ?? []), nudgeText(kind)] } : r
+  })
+
+  // A list finished in the last turn has been seen: the next prompt clears it.
+  on('prompt.submit', async ($, e, next) => {
+    const m = await read($, taskList)
+    if (m.items.length && !isOpen(m)) await update($, taskList, prev => ({ ...prev, items: [], sinceUpdate: 0 }))
+    return next(e)
+  })
+
   on('agent.spawn', async ($, e, next) => {
     const isUnbriefed = e.subagentType.startsWith('savvy-') && !e.prompt.includes(STEP_TOOL)
     const started = await next(isUnbriefed ? { ...e, prompt: e.prompt + STEP_BRIEF } : e)
@@ -1275,6 +1315,8 @@ export const register: Register = (on, options) => {
         }),
       )
       await update($, now, () => at)
+    } else {
+      await update($, activity, () => '')
     }
     return next(e)
   })
@@ -1534,8 +1576,14 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const f = await read($, flow)
-    if (f === null || e.props.hasSurvey) return next(e)
+    if (e.props.hasSurvey) return next(e)
+    // A reported flow wins; else Claude Code's own task list, when it has any.
+    const reported = await read($, flow)
+    const mirror = reported === null && taskMode !== 'off' ? await read($, taskList) : null
+    const isTasks = mirror !== null && mirror.items.length > 0
+    const f = reported ?? (isTasks ? taskFlow(mirror, tr().tasks) : null)
+    if (f === null) return next(e)
+    const doing = f.isFinished ? '' : await read($, activity)
     // Draw this row with the other mods' bands beneath it. Claude Code's own placeholder ({ type: 'engine' }) is
     // never nested: the desktop drops a band that nests it.
     const drawn = await Promise.resolve(next(e)).catch(() => null)
@@ -1546,7 +1594,7 @@ export const register: Register = (on, options) => {
     const list = await read($, agents)
     const crew = list.length + plannedOf(f, list).length
     const isWorking = list.some(a => a.status === 'running')
-    const crewButton = (
+    const crewButton = isTasks && crew === 0 ? null : (
       <Button key="savvy-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} />
     )
     const percent = `${Math.round(ratio(f) * 100)}%`
@@ -1556,7 +1604,9 @@ export const register: Register = (on, options) => {
         label="✕"
         plain
         role="dismiss"
-        onPress={() => update($, flow, () => null)}
+        onPress={() =>
+          isTasks ? update($, taskList, m => ({ ...m, items: [], sinceUpdate: 0 })) : update($, flow, () => null)
+        }
       />
     )
 
@@ -1573,6 +1623,7 @@ export const register: Register = (on, options) => {
             {crewButton}
             {dismiss}
           </Box>
+          {doing ? <Text dimColor wrap="truncate-end">{doing}</Text> : null}
           {below}
         </Box>
       )
@@ -1580,7 +1631,8 @@ export const register: Register = (on, options) => {
 
     const cols = e.props.bodyColumns
     const titleW = Math.max(8, Math.min(30, f.title.length + 2, Math.floor(cols / 3)))
-    const width = Math.max(6, Math.min(40, cols - titleW - 32))
+    // An activity takes up to 20 columns from the bar; it truncates past what is left.
+    const width = Math.max(6, Math.min(doing ? 28 : 40, cols - titleW - 32 - (doing ? 20 : 0)))
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={2}>
@@ -1591,7 +1643,12 @@ export const register: Register = (on, options) => {
           <Text color={f.isFinished ? DONE : ACCENT}>{barText(f, width)}</Text>
           <Text bold>{label(f)}</Text>
           <Text dimColor>{percent}</Text>
-          <Text color={CLAY}>▣</Text>
+          {doing ? (
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-end">{`· ${doing}`}</Text>
+            </Box>
+          ) : null}
+          {crewButton ? <Text color={CLAY}>▣</Text> : null}
           {crewButton}
           {dismiss}
         </Box>

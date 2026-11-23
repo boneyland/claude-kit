@@ -40,6 +40,24 @@ export type AgentRun = {
   stepNote?: string
 }
 
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+
+/** One row of Claude Code's own task list, as the task tools' calls and results told it. */
+export type TaskItem = {
+  id: string
+  subject: string
+  activeForm?: string
+  status: TaskStatus
+}
+
+export type TaskMirror = {
+  items: TaskItem[]
+  /** Which tools keep the list: TaskCreate/TaskUpdate (`task`) or TodoWrite (`todo`); the nudge names them. */
+  kind: 'task' | 'todo'
+  /** Main-session tool calls since the list last changed, counted while a task is open. */
+  sinceUpdate: number
+}
+
 export type Panel = {
   isCompact: boolean
   isDoneCollapsed: boolean
@@ -55,6 +73,10 @@ declare module 'claude-code' {
       now: number
       // Whether the agents pane is up, for the footer button's label.
       isOpen: boolean
+      // Claude Code's own task list, mirrored for the bar when no flow is reported.
+      tasks: TaskMirror
+      // What the main session is doing: its latest tool call, in a few words; empty between turns.
+      activity: string
     }
   }
 }
