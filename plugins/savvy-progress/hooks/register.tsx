@@ -79,6 +79,8 @@ const STRINGS = {
     review: 'Review',
     busy: 'running',
     ctx: 'ctx',
+    open: 'Open',
+    noTranscript: 'Transcript not available',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -112,6 +114,8 @@ const STRINGS = {
     review: 'Ревью',
     busy: 'в работе',
     ctx: 'ctx',
+    open: 'Открыть',
+    noTranscript: 'Лог недоступен',
     tier: { light: 'light', medium: 'medium', careful: 'careful', heavy: 'heavy', fable: 'fable', other: 'other' },
     effort: { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' },
   },
@@ -145,6 +149,8 @@ const STRINGS = {
     review: 'בדיקה',
     busy: 'בעבודה',
     ctx: 'הקשר',
+    open: 'פתח',
+    noTranscript: 'התמליל אינו זמין',
     tier: { light: 'קל', medium: 'בינוני', careful: 'זהיר', heavy: 'כבד', fable: 'פייבל', other: 'אחר' },
     effort: { low: 'נמוך', medium: 'בינוני', high: 'גבוה', xhigh: 'גבוה מאוד', max: 'מקסימלי' },
   },
@@ -500,6 +506,8 @@ const totals = (list: AgentRun[], at: number) => {
 const GRID_STEP = 16
 // A Text or Button row on the desktop is about 20px; the grid errs taller.
 const LINE_H = 24
+// The column beside each desktop agent card that holds its Open button.
+const VIEW_W = 88
 // The engine refuses an Svg taller than 4096px, so a long grid is stacked from
 // tiles of at most this height; a multiple of GRID_STEP keeps the dots aligned.
 const GRID_TILE = 4096
@@ -1105,6 +1113,27 @@ export const register: Register = (on, options) => {
     const p: Panel = await read($, panel)
     const at = Math.max(await read($, now), ...list.map(a => a.startedAt), 0)
 
+    // The engine drops a finished agent's task a while after it ends; a row it
+    // no longer holds gets no button. Where the list can't be read, every row
+    // with an id keeps one, and a refused press says why.
+    const held = await $.agent
+      .list()
+      .then(xs => new Set(xs.map(x => x.id)))
+      .catch(() => null)
+    const canView = (a: AgentRun): a is AgentRun & { agentId: string } =>
+      a.agentId !== undefined && (held === null || held.has(a.agentId))
+    const viewButton = (a: AgentRun & { agentId: string }) => (
+      <Button
+        key={`view-${a.agentId}`}
+        label={s.open}
+        plain
+        onPress={async () => {
+          const r = await $.ui.view({ agentId: a.agentId })
+          if (r.deny) $.ui.toast(`${s.noTranscript}: ${r.deny}`)
+        }}
+      />
+    )
+
     const running = list.filter(a => a.status === 'running').reverse()
     const finished = list.filter(a => a.status !== 'running').reverse()
     const planned = plannedOf(f, list)
@@ -1142,6 +1171,17 @@ export const register: Register = (on, options) => {
 
       // In Hebrew the column hugs the right edge: section heads and buttons right-aligned.
       const align = isRtl() ? 'flex-end' : undefined
+      // Each card leaves room beside it for its Open button, so the cards line up
+      // whether or not a row has one, and the grid's height math stays per card.
+      const cardW = Math.max(160, W - VIEW_W)
+      const card = (a: AgentRun, state: string) => (
+        <Box key={a.id} flexDirection={isRtl() ? 'row-reverse' : 'row'} alignItems="center">
+          <Svg source={agentSvg(cardW, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${state}`} width={cardW} height={66} />
+          <Box width={VIEW_W} justifyContent="center" flexDirection="row">
+            {canView(a) ? viewButton(a) : null}
+          </Box>
+        </Box>
+      )
       if (p.isCompact) {
         return (
           <Box flexDirection="column" gap={1} alignItems={align}>
@@ -1165,14 +1205,10 @@ export const register: Register = (on, options) => {
             {toggleCompact}
             {isEmpty && <Text dimColor>{s.empty}</Text>}
             {running.length > 0 && section('h-run', `${s.running} · ${running.length}`)}
-            {running.map(a => (
-              <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isRunning}`} width={W} height={66} />
-            ))}
+            {running.map(a => card(a, s.isRunning))}
             {finished.length > 0 && toggleDone}
             {!p.isDoneCollapsed &&
-              finished.map(a => (
-                <Svg key={a.id} source={agentSvg(W, a, at)} alt={`${a.description}: ${modelName(a.model)}, ${s.isFinished}`} width={W} height={66} />
-              ))}
+              finished.map(a => card(a, s.isFinished))}
             {planned.length > 0 && section('h-plan', `${s.planned} · ${planned.length}`)}
             {planned.map(pl => (
               <Svg key={`plan-${pl.n}`} source={plannedSvg(W, pl)} alt={`${pl.n}. ${pl.title}: ${s.isPlanned}`} width={W} height={46} />
@@ -1220,6 +1256,7 @@ export const register: Register = (on, options) => {
               {a.description || a.type}
             </Text>
             <Text color={a.status === 'failed' ? 'red' : a.status === 'done' ? 'green' : color}>{STATUS_GLYPH[a.status]}</Text>
+            {canView(a) ? viewButton(a) : null}
           </Box>
           <Text dimColor wrap="truncate-end">
             {'  '}
