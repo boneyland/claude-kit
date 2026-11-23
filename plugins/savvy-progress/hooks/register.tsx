@@ -575,13 +575,23 @@ const TERM_CRAB: readonly (readonly string[])[] = [
 const QUADRANTS = [' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█']
 export type CrabCell = { ch: string; fg?: string }
 
-export const termCrab = (frame: number): CrabCell[][] => {
+// A running crab scuttles side to side in a box two cells wider than itself:
+// one pixel (half a cell) each frame, swapping legs every other frame.
+export const CRAB_FRAME_MS = 125
+const SWAY_PX = 4
+export const CRAB_COLS = (TERM_CRAB[0]![0]!.length + SWAY_PX) / 2
+export const CRAB_ROWS = TERM_CRAB[0]!.length / 2
+const SWAY = [0, 1, 2, 3, 4, 3, 2, 1]
+
+// `frame` picks the legs, `shift` the pixels from the left; a crab at rest
+// stands in the middle.
+export const termCrab = (frame: number, shift = SWAY_PX / 2): CrabCell[][] => {
   const px = TERM_CRAB[frame % 2]!
-  const on = (x: number, y: number) => px[y]![x] === '#'
+  const on = (x: number, y: number) => px[y]![x - shift] === '#'
   const rows: CrabCell[][] = []
   for (let y = 0; y < px.length; y += 2) {
     const cells: CrabCell[] = []
-    for (let x = 0; x < px[0]!.length; x += 2) {
+    for (let x = 0; x < CRAB_COLS * 2; x += 2) {
       const q = (on(x, y) ? 1 : 0) | (on(x + 1, y) ? 2 : 0) | (on(x, y + 1) ? 4 : 0) | (on(x + 1, y + 1) ? 8 : 0)
       cells.push(q === 0 ? { ch: ' ' } : { ch: QUADRANTS[q]!, fg: CLAY })
     }
@@ -589,6 +599,33 @@ export const termCrab = (frame: number): CrabCell[][] => {
   }
   return rows
 }
+
+// Where a running agent's crab is at time `t`. Each agent starts at its own
+// point of the cycle, so a crowd doesn't march in step.
+export const crabPose = (t: number, id: string): [frame: number, shift: number] => {
+  let phase = 0
+  for (const ch of id) phase = (phase * 31 + ch.charCodeAt(0)) % SWAY.length
+  const tick = Math.floor(t / CRAB_FRAME_MS) + phase
+  return [Math.floor(tick / 2), SWAY[tick % SWAY.length]!]
+}
+
+// A Raster's `cells`: base64 of [codePoint, fg, bg] u32 triplets, row-major.
+const TERM_DEFAULT = 0x01000000
+export const rasterCells = (rows: CrabCell[][]): string => {
+  const words = new Uint32Array(rows.length * rows[0]!.length * 3)
+  let i = 0
+  for (const row of rows) {
+    for (const c of row) {
+      words[i++] = c.ch.codePointAt(0)!
+      words[i++] = c.fg ? parseInt(c.fg.slice(1), 16) : TERM_DEFAULT
+      words[i++] = TERM_DEFAULT
+    }
+  }
+  // toBase64 is the runtime's (ES2026); the bundled lib doesn't declare it yet.
+  return (new Uint8Array(words.buffer) as Uint8Array & { toBase64(): string }).toBase64()
+}
+
+export const crabKey = (id: string) => `crab-${id}`
 
 // Pure CSS, run by the compositor: no redraws. Periods divide one second, so the
 // once-a-second redraw of a running row restarts them in phase. Every crab walks;
@@ -907,6 +944,21 @@ export const register: Register = (on, options) => {
         await update($, now, () => at)
       })()
     })
+
+    // Walks the running agents' crabs between those redraws: each frame repaints
+    // only the crab's cells. Quiet while the panel is closed or nothing runs; a
+    // panel drawing no crab (narrow, compact, not the terminal) refuses the blit.
+    $.clock.every(CRAB_FRAME_MS, () => {
+      void (async () => {
+        if (!(await read($, paneOpen))) return
+        const running = (await read($, agents)).filter(a => a.status === 'running')
+        if (running.length === 0) return
+        const t = await $.clock.now()
+        for (const a of running) {
+          void $.ui.blit({ requestId: PANE, key: crabKey(a.id), cells: rasterCells(termCrab(...crabPose(t, a.id))) }).catch(() => {})
+        }
+      })()
+    })
     return started
   })
 
@@ -1219,26 +1271,26 @@ export const register: Register = (on, options) => {
     }
 
     // Terminal: the same content in text rows, each agent beside a crab when
-    // there is room. A running crab walks on the panel's one-second tick (the
-    // clock that already redraws its timers, and only while something runs).
+    // there is room. A crab is a Raster: a running one is repainted in place by
+    // the crab clock's blits, between the one-second redraws of the timers.
+    // Only the terminal's table has Raster; other text surfaces keep the plain mark.
+    const Raster = 'Raster' in ui ? ui.Raster : null
     const cols = Math.max(24, e.props.bodyColumns || 40)
-    const hasCrab = cols >= 40
+    const hasCrab = Raster !== null && cols >= 40
     // Two columns of agents when each still fits a crab and a full stats line.
     const COLUMN_GAP = 2
-    const isTwoColumns = cols >= 94
+    const isTwoColumns = cols >= 98
     const colW = isTwoColumns ? Math.floor((cols - COLUMN_GAP) / 2) : undefined
-    const frame = Math.floor(at / 1000)
-    const crab = (a: AgentRun) => (
-      <Box key="crab" flexDirection="column" flexShrink={0}>
-        {termCrab(a.status === 'running' ? frame : 0).map((cells, y) => (
-          <Text key={`r${y}`}>
-            {cells.map((c, x) => (
-              <Text key={`c${x}`} color={c.fg}>
-                {c.ch}
-              </Text>
-            ))}
-          </Text>
-        ))}
+    // The crab's pose now, so a redraw lands where the blits had it.
+    const clockAt = await $.clock.now().catch(() => at)
+    const crab = (a: AgentRun) => Raster && (
+      <Box key="crab" flexShrink={0}>
+        <Raster
+          key={crabKey(a.id)}
+          columns={CRAB_COLS}
+          rows={CRAB_ROWS}
+          cells={rasterCells(a.status === 'running' ? termCrab(...crabPose(clockAt, a.id)) : termCrab(0))}
+        />
       </Box>
     )
     const row = (a: AgentRun) => {
