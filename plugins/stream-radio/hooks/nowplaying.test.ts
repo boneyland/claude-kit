@@ -1,43 +1,30 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, completeLines, filterRows, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, parseNowPlaying, resolveTarget, textWidth, titleColumns } from './nowplaying'
+import { baseName, filterRows, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, repeatOf, resolveTarget, splitEvents, textWidth, titleColumns, trackTitle } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
-test('a song title beats the page title', () => {
-  const text = 'NP\tlofi radio\tArtist - Song\t\tno\t41.7\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'Artist - Song', isPaused: false, seconds: 41, chapter: null })
+test('a song title beats the page title, any case', () => {
+  expect(trackTitle('Lofi radio', { 'icy-title': 'Artist - Song' })).toBe('Artist - Song')
+  expect(trackTitle('one.flac', { TITLE: 'One' })).toBe('One')
+  expect(trackTitle(' lofi radio ', {})).toBe('lofi radio')
+  expect(trackTitle(undefined, undefined)).toBe('')
 })
 
-test('falls back to the media title; takes the last line; reads pause', () => {
-  const text = 'NP\told\t\t\tno\t3\rNP\tlofi radio - beats\t\t\tyes\t\r'
-  expect(parseNowPlaying(text)).toEqual({ title: 'lofi radio - beats', isPaused: true, seconds: null, chapter: null })
+test('whole watcher lines become events; the rest waits', () => {
+  const { events, rest } = splitEvents('{"event":"property-change","name":"pause","data":true}\nnoise\n{"event":"end-file","reason":"eof"}\n{"event":"fil')
+  expect(events).toEqual([
+    { event: 'property-change', name: 'pause', data: true },
+    { event: 'end-file', reason: 'eof' },
+  ])
+  expect(rest).toBe('{"event":"fil')
 })
 
-test('a cut-off line does not claim to be unpaused', () => {
-  expect(parseNowPlaying('NP\tlofi\t\t\t')?.isPaused).toBeNull()
-  expect(parseNowPlaying('NP\tlofi\t\t\tyes\t7\r')?.isPaused).toBe(true)
-})
-
-test('reads the chapter title from a whole line', () => {
-  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t02. Second Song\tEND')?.chapter).toBe('02. Second Song')
-  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t\tEND')?.chapter).toBe('')
-  // cut off inside the chapter: unknown, not "no chapter"
-  expect(parseNowPlaying('NP\tAlbum\t\t\tno\t12\t02. Sec')?.chapter).toBeNull()
-})
-
-test('only complete lines are read', () => {
-  expect(completeLines('NP\ta\t\t\tno\t1\tEND\nNP\ta\t')).toEqual({
-    complete: 'NP\ta\t\t\tno\t1\tEND',
-    rest: '\nNP\ta\t',
-  })
-  // mpv leaves a line unended until the next update: END alone completes it
-  expect(completeLines('NP\ta\t\t\tno\t0\tEND')).toEqual({ complete: 'NP\ta\t\t\tno\t0\tEND', rest: '' })
-  expect(completeLines('NP\ta')).toEqual({ complete: '', rest: 'NP\ta' })
-})
-
-test('ignores other output', () => {
-  expect(parseNowPlaying('(+) Audio --aid=1\n')).toBeUndefined()
+test('repeat from the loops', () => {
+  expect(repeatOf('inf', 'inf')).toBe('one')
+  expect(repeatOf('no', 'inf')).toBe('all')
+  expect(repeatOf('no', 'no')).toBe('off')
+  expect(repeatOf(false, 'force')).toBe('all')
 })
 
 test('time as m:ss, with hours from an hour on', () => {

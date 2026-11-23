@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 for (const surface of ['terminal', 'desktop'] as const) {
   test(
     `${surface}: pressing Play radio starts the player without /stream`,
@@ -34,28 +36,21 @@ for (const surface of ['terminal', 'desktop'] as const) {
 }
 
 const SCROLL_STEP = 1000
+const FOOTER = { plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } } as const
 
 test('a long title scrolls in a 40-column label while the time stays put', async ($, on) => {
   const clock = mock.clock(on)
-  on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '' } }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
   const title = 'A very long lofi hip hop radio title that will not fit in the footer'
-  // The player prints one status line, then keeps playing.
-  let release: () => void = () => undefined
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: `NP\t${title}\t\t\tno\t222\t\tEND` } as never
-    await new Promise<void>(resolve => (release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
+  fakeMpv(on, { title, props: { 'time-pos': 222, duration: true } })
 
-  await $.command.run({ command: 'stream', args: 'https://example.com/v' } as never).catch(() => undefined)
+  await $.command.run({ command: 'stream', args: 'https://example.com/v' } as never)
   const label = async () => {
-    const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } })
+    const ui = await $.ui.mount(FOOTER)
     const text = (await ui.find({ type: 'Button', key: 'stream-radio' }))?.props.label as string
     await ui.unmount()
     return text
   }
-  await clock.advance(0)
+  await clock.advance(10)
   const first = await label()
   expect(first.startsWith('3:42 A very long')).toBe(true)
   expect(first.length).toBe(40)
@@ -64,28 +59,22 @@ test('a long title scrolls in a 40-column label while the time stays put', async
   expect(later.startsWith('3:42 ')).toBe(true)
   expect(later.length).toBe(40)
   expect(later).not.toBe(first)
-  // The player exits; its loop winds down inside the test, and a later tick moves nothing.
-  release()
-  await $.command.run({ command: 'stream', args: 'stop' } as never).catch(() => undefined)
+  // Stopped, a later tick moves nothing.
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(SCROLL_STEP * 3)
 })
 
 test('a video with chapters shows only the chapter in the footer', async ($, on) => {
   const clock = mock.clock(on)
-  on('process.run', () => ({ value: { exitCode: 0, stdout: 'null', stderr: '' } }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  let release: () => void = () => undefined
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: 'NP\tDebussy & Hokusai | Classical Music\t\t\tno\t76\tNocturne, L. 82\tEND' } as never
-    await new Promise<void>(resolve => (release = resolve))
-    return { value: { code: 0, signal: null } } as never
+  fakeMpv(on, {
+    title: 'Debussy & Hokusai | Classical Music',
+    props: { 'time-pos': 76, duration: true, 'chapter-metadata': { title: 'Nocturne, L. 82' } },
   })
   await $.command.run({ command: 'stream', args: 'https://example.com/v' } as never)
   await clock.advance(10)
-  const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } })
+  const ui = await $.ui.mount(FOOTER)
   expect((await ui.find({ type: 'Button', key: 'stream-radio' }))?.props.label).toBe('1:16 Nocturne, L. 82')
   await ui.unmount()
-  release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
@@ -104,14 +93,7 @@ test('on the desktop app the footer is an icon that opens the panel', async ($, 
 
     return { value: undefined } as never
   })
-  on('process.run', () => ({ value: { exitCode: 0, stdout: 'null', stderr: '' } }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  let release: () => void = () => undefined
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: 'NP\tClaude FM\t\t\tno\t\t\tEND' } as never
-    await new Promise<void>(resolve => (release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
+  fakeMpv(on, { title: 'Claude FM' })
   await $.command.run({ command: 'stream', args: 'https://example.com/live' } as never)
   await clock.advance(10)
 
@@ -128,7 +110,6 @@ test('on the desktop app the footer is an icon that opens the panel', async ($, 
   await clock.advance(10)
   expect(await label()).toBe('⏸')
   await ui.unmount()
-  release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

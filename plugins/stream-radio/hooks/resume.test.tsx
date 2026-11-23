@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const SONGS = ['Santa Claus Is Comin\' To Town', 'Santa Baby', 'Winter Wonderland']
 const URL = 'https://example.com/list'
 
@@ -12,52 +14,31 @@ const PANE = {
   props: { title: 'Radio', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
-// An mpv that plays a three-song playlist: each player prints the status of the
-// song it is on, and a jump or seek through the socket prints the new status.
+// The shared player with a three-song playlist: a jump through the socket
+// changes the song and its title, and loads it.
 function engine(on: On) {
-  const world = {
-    sent: [] as unknown[][],
-    current: 0,
-    seconds: 0,
-    say: (_line: string) => undefined as void,
-    end: () => undefined as void,
+  const world = fakeMpv(on, {
+    title: SONGS[0],
+    props: { 'time-pos': 0, duration: true },
+    playlist: SONGS.map((title, i) => ({ filename: `https://example.com/${i}`, title })),
+    onCommand: command => {
+      if (command[0] !== 'playlist-play-index') return undefined
+      const i = command[1] as number
+      world.set('playlist-pos', i)
+      world.set('media-title', SONGS[i])
+      world.set('time-pos', 0)
+      world.load()
+      return { data: null }
+    },
+  })
+  // The person moves to song `i` and listens to `seconds` of it.
+  const listen = (i: number, seconds: number) => {
+    world.set('playlist-pos', i)
+    world.set('media-title', SONGS[i])
+    world.load()
+    world.set('time-pos', seconds)
   }
-  const status = () => `NP\t${SONGS[world.current]}\t\t\tno\t${world.seconds}\t\tEND`
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('process.run', (_$, e) => {
-    const argv = [...e.argv]
-    if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[4]!) as unknown[]
-    world.sent.push(command)
-    let data: unknown = null
-    if (command[0] === 'get_property' && command[1] === 'playlist') {
-      data = SONGS.map((title, i) => ({ filename: `https://example.com/${i}`, title, ...(i === world.current ? { current: true } : {}) }))
-    } else if (command[0] === 'playlist-play-index') {
-      world.current = command[1] as number
-      world.seconds = 0
-      world.say(status())
-    } else if (command[0] === 'seek') {
-      world.seconds = command[1] as number
-      world.say(status())
-    }
-    return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
-  })
-  on('process.spawn', async function* () {
-    world.current = 0
-    world.seconds = 0
-    const lines: string[] = [status()]
-    let wake: () => void = () => undefined
-    let isOver = false
-    world.say = line => (lines.push(line), wake())
-    world.end = () => ((isOver = true), wake())
-    while (!isOver) {
-      while (lines.length > 0) yield { stream: 'stdout', text: lines.shift()! } as never
-      if (!isOver) await new Promise<void>(resolve => (wake = resolve))
-    }
-    return { value: { code: 0, signal: null } } as never
-  })
-  return world
+  return Object.assign(world, { listen })
 }
 
 test('playing the last URL again resumes at its song and time', async ($, on) => {
@@ -67,13 +48,10 @@ test('playing the last URL again resumes at its song and time', async ($, on) =>
   await clock.advance(10)
 
   // The person moves to the third song and listens to 1:20 of it.
-  world.current = 2
-  world.seconds = 80
-  world.say(`NP\t${SONGS[2]}\t\t\tno\t80\t\tEND`)
+  world.listen(2, 80)
   await clock.advance(10)
 
   // The panel offers to resume there.
-  world.end()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
   const pane = await $.ui.mount(PANE)
@@ -92,7 +70,6 @@ test('playing the last URL again resumes at its song and time', async ($, on) =>
   const seek = world.sent.findIndex(c => c[0] === 'seek')
   expect(jump < seek).toBe(true)
 
-  world.end()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
@@ -102,10 +79,8 @@ test('a URL typed again starts at the beginning', async ($, on) => {
   const world = engine(on)
   await $.command.run({ command: 'stream', args: URL } as never)
   await clock.advance(10)
-  world.current = 2
-  world.say(`NP\t${SONGS[2]}\t\t\tno\t80\t\tEND`)
+  world.listen(2, 80)
   await clock.advance(10)
-  world.end()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 
@@ -114,7 +89,30 @@ test('a URL typed again starts at the beginning', async ($, on) => {
   await clock.advance(10)
   expect(world.sent.some(c => c[0] === 'playlist-play-index' || c[0] === 'seek')).toBe(false)
 
-  world.end()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('the resume jump happens for a file that loaded before the watcher began', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = fakeMpv(on, {
+    title: SONGS[0],
+    loadsBeforeWatch: true,
+    exists: () => true,
+    playlist: SONGS.map((title, i) => ({ filename: `/m/${i}.flac`, title })),
+  })
+  on('store.get', (_$, e) => ({ value: e.key === 'last' ? { url: '/m', resumeAt: { url: '/m', index: 2, seconds: 80, title: SONGS[2] }, knownDefault: '' } : undefined }) as never)
+  on('store.set', () => ({ value: undefined }) as never)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: { command: 'stream' } }) as never)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.command.run({ command: 'stream', args: 'last' } as never)
+  await clock.advance(10)
+  await clock.advance(10)
+  expect(world.sent).toContainEqual(['playlist-play-index', 2])
+  expect(world.sent).toContainEqual(['seek', 80, 'absolute'])
+
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

@@ -1,50 +1,67 @@
-// mpv prints one status line per update; we ask it for
-// "NP<TAB>title<TAB>icy<TAB>meta<TAB>pause<TAB>seconds<TAB>chapter<TAB>END". mpv ends no line:
-// it starts the next update with a newline, so END is what marks a line as whole.
-export const STATUS_FORMAT =
-  'NP\t${media-title:}\t${metadata/by-key/icy-title:}\t${metadata/by-key/title:}\t${pause:}\t${?percent-pos:${=time-pos}}\t${chapter-metadata/by-key/title:}\tEND'
+// The properties each session watches on the shared player's IPC socket.
+export const WATCHED = [
+  'media-title',
+  'metadata',
+  'pause',
+  'duration',
+  'chapter-metadata',
+  'chapter',
+  'playlist-pos',
+  'playlist-count',
+  'volume',
+  'loop-file',
+  'loop-playlist',
+  'user-data/stream-radio/url',
+  'user-data/stream-radio/shuffled',
+  // last: its first value means a player already playing, and finds the rest known
+  'time-pos',
+] as const
 
-// seconds: how far into the current file, whole seconds; null for a live stream
-// (mpv has a percentage only for a file with an end, so the field is empty then).
-// isPaused: null when the line does not say (a cut-off line), so nothing changes.
-// chapter: the current chapter's title, empty when the file has none; null for a
-// cut-off line. A video of several songs often names each song in a chapter.
-export type Track = {
-  title: string
-  isPaused: boolean | null
-  seconds: number | null
-  chapter: string | null
+// One line of the watcher's output: a property change, or a file starting,
+// loaded or ended (with why: eof, stop, quit, error, redirect).
+export type PlayerEvent =
+  | { event: 'property-change'; name: string; data?: unknown }
+  | { event: 'start-file' | 'file-loaded' }
+  | { event: 'end-file'; reason?: string; file_error?: string }
+
+// The watcher's output arrives in pieces that do not line up with its lines:
+// the whole lines read so far, as events, and the unfinished rest. A rest that
+// grows past any sane line is dropped rather than kept growing.
+export function splitEvents(buffer: string): { events: PlayerEvent[]; rest: string } {
+  const lines = buffer.split('\n')
+  const rest = lines.pop() ?? ''
+  const events: PlayerEvent[] = []
+  for (const line of lines) {
+    if (!line.trim()) continue
+    try {
+      const value = JSON.parse(line) as unknown
+      if (value && typeof value === 'object' && typeof (value as { event?: unknown }).event === 'string') events.push(value as PlayerEvent)
+    } catch {
+      // not a line of ours
+    }
+  }
+  return { events, rest: rest.length > 1_000_000 ? '' : rest }
 }
 
-// The last complete NP line in a chunk of mpv output (lines end in \r or \n).
-// A song title (stream metadata) wins over the page's media title.
-export function parseNowPlaying(text: string): Track | undefined {
-  const lines = text.split(/[\r\n]+/).filter(line => line.startsWith('NP\t'))
-  const last = lines[lines.length - 1]
-  if (!last) return undefined
-  const [, media = '', icy = '', meta = '', pause = '', pos = '', chapter = ''] = last.split('\t')
-  const title = icy.trim() || meta.trim() || media.trim()
-
-  const seconds = pos.trim() === '' || Number.isNaN(Number(pos)) ? null : Math.max(0, Math.floor(Number(pos)))
-
-  const isPaused = pause.trim() === 'yes' ? true : pause.trim() === 'no' ? false : null
-
-  // a cut-off line can end inside the chapter field; END marks it as whole
-  const chapterTitle = last.endsWith('\tEND') ? chapter.trim() : null
-
-  return title ? { title, isPaused, seconds, chapter: chapterTitle } : undefined
+// A metadata map's value for `key`, any case (stream tags come as icy-title,
+// files' as title or TITLE); empty when absent.
+export function metaValue(meta: unknown, key: string): string {
+  if (!meta || typeof meta !== 'object') return ''
+  for (const [k, v] of Object.entries(meta as Record<string, unknown>)) {
+    if (k.toLowerCase() === key && typeof v === 'string') return v.trim()
+  }
+  return ''
 }
 
-// mpv's output arrives in pieces that do not line up with its lines, and it
-// does not end a status line until the next one is printed. Splits what has been
-// read into the whole lines (up to the last END marker) and the unfinished rest,
-// which waits for the next piece.
-export function completeLines(buffer: string): { complete: string; rest: string } {
-  const mark = buffer.lastIndexOf('\tEND')
-  if (mark < 0) return { complete: '', rest: buffer.length > 10000 ? '' : buffer }
-  const cut = mark + '\tEND'.length
+// What the footer shows: a song title (stream metadata) wins over the page's
+// media title.
+export const trackTitle = (media: unknown, meta: unknown) =>
+  metaValue(meta, 'icy-title') || metaValue(meta, 'title') || (typeof media === 'string' ? media.trim() : '')
 
-  return { complete: buffer.slice(0, cut), rest: buffer.slice(cut) }
+// The repeat mode mpv's loop-file and loop-playlist amount to.
+export function repeatOf(loopFile: unknown, loopPlaylist: unknown): 'all' | 'one' | 'off' {
+  const on = (v: unknown) => v !== undefined && v !== 'no' && v !== false && v !== 0
+  return on(loopFile) ? 'one' : on(loopPlaylist) ? 'all' : 'off'
 }
 
 // A position as m:ss, or h:mm:ss from an hour on.

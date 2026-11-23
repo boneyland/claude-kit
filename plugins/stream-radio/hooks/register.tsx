@@ -4,7 +4,6 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { Queue, Resume } from '../types'
 
 import {
-  completeLines,
   fit,
   formatTime,
   holdTicks,
@@ -19,13 +18,17 @@ import {
   foldersOf,
   playlistRows,
   type TreeRow,
+  metaValue,
   parseArgs,
-  parseNowPlaying,
+  type PlayerEvent,
+  repeatOf,
   SCROLL_CHARS,
   SCROLL_MS,
-  STATUS_FORMAT,
+  splitEvents,
   textWidth,
   titleColumns,
+  trackTitle,
+  WATCHED,
 } from './nowplaying'
 
 // What the footer shows; empty when nothing plays.
@@ -62,8 +65,8 @@ let rowsCache: { key: string; rows: TreeRow[] } | undefined
 const notice = atom({ plugin: 'stream-radio', key: 'notice' } as const, '')
 
 // Where the last URL got to: its playlist entry (-1 when it has no playlist) and
-// the seconds into it (-1 for a live stream), with the song's title. Outlives a
-// reload, which kills the player, so playing the last URL again resumes there.
+// the seconds into it (-1 for a live stream), with the song's title, so playing
+// the last URL again after a stop resumes there.
 const NO_RESUME: Resume = { url: '', index: -1, seconds: -1, title: '' }
 const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_RESUME)
 // The last URL, where it got to and the default it went with, kept in $.store so
@@ -118,13 +121,15 @@ async function setRepeat($: EngineInterface, mode: Repeat): Promise<string> {
 }
 
 // Shuffles the playing playlist, or puts it back in order; mpv keeps the song
-// playing where it is. The list is read again, as its order changed.
+// playing where it is. The list is read again, as its order changed; the mark
+// on the player tells the other sessions to read it again too.
 async function toggleShuffle($: EngineInterface): Promise<string> {
   if ((await read($, queue)).kind !== 'playlist') return 'Nothing to shuffle: this is not a playlist.'
   const on = !(await read($, isShuffled))
   if (!(await mpv($, [on ? 'playlist-shuffle' : 'playlist-unshuffle']))) return 'The player is not ready yet.'
   await update($, isShuffled, () => on)
-  await refreshQueue($, true)
+  await mpv($, ['set_property', 'user-data/stream-radio/shuffled', on])
+  await refreshQueue($, { isReordered: true })
   return on ? 'Shuffled.' : 'Back in order.'
 }
 
@@ -161,9 +166,7 @@ async function loadLast($: EngineInterface) {
 // Closer to a song's start than this, it resumes at the start.
 const RESUME_MIN_SECONDS = 5
 
-
-// Sends one command to mpv's IPC socket and prints its reply's data as JSON;
-// exits 1 when mpv answers with an error.
+// Talks to mpv's IPC socket: one command, or --watch to follow properties.
 const IPC = 'hooks/mpv-ipc.py'
 
 // The panel; also the footer button's target.
@@ -183,17 +186,128 @@ type Options = {
 // instead); scrollMs: the time between redraws.
 type Config = { volume: number; player: string; androidClient: boolean; toggleOnly: boolean; scrollChars: number; scrollMs: number }
 
-// URLs that only played with the android client; they start with it directly.
-const needsAndroid = new Set<string>()
+// ONE player for every session. mpv runs detached from all of them (setsid),
+// listening on one socket in the plugin's data folder, and keeps playing until
+// someone stops it. Next to it in that folder:
+// - player.json, what was last asked of the player (Intent): every session
+//   reads it when the player goes away, to tell a stop or a new start from a
+//   drop worth reconnecting;
+// - reconnect.lock, held by the one session that reconnects after a drop;
+// - mpv.log, the player's errors, for saying why something would not play.
+type Paths = { sock: string; intent: string; lock: string; log: string }
+let dataDir: string | undefined
 
-// The running player's stream: ending its loop kills the child.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let current: { return: (value: any) => Promise<unknown> } | undefined
-// The socket path mpv listens on; undefined when nothing plays.
+async function paths($: EngineInterface): Promise<Paths> {
+  dataDir ??= (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA
+  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log` }
+}
+
+// id: one per start; isStopped: someone pressed stop; attempt: reconnect tries
+// before this start; playedAt: when it first played (0 until it has).
+type Intent = { id: string; url: string; client: string; isStopped: boolean; attempt: number; playedAt: number }
+
+async function readIntent($: EngineInterface): Promise<Intent | undefined> {
+  try {
+    const value = JSON.parse(await $.fs.read((await paths($)).intent)) as Partial<Intent>
+    if (typeof value.id !== 'string') return undefined
+    return {
+      id: value.id,
+      url: typeof value.url === 'string' ? value.url : '',
+      client: typeof value.client === 'string' ? value.client : '',
+      isStopped: value.isStopped === true,
+      attempt: typeof value.attempt === 'number' ? value.attempt : 0,
+      playedAt: typeof value.playedAt === 'number' ? value.playedAt : 0,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+async function writeIntent($: EngineInterface, intent: Intent) {
+  await $.fs.write((await paths($)).intent, JSON.stringify(intent)).catch(() => undefined)
+}
+
+// Runs one mpv command on `socket`; resolves to its reply's data, or undefined
+// when nothing listens or mpv refused.
+async function ipc($: EngineInterface, socket: string, command: readonly unknown[]): Promise<{ data: unknown } | undefined> {
+  const result = await $.process
+    .run(['python3', '-I', `${$.plugin.root}/${IPC}`, socket, JSON.stringify(command)], { timeoutMs: 3000 })
+    .catch(() => undefined)
+  if (result?.exitCode !== 0) return undefined
+  try {
+    return { data: JSON.parse(result.stdout || 'null') as unknown }
+  } catch {
+    return { data: null }
+  }
+}
+
+// The command on the player this session follows; undefined while it follows none.
+async function mpv($: EngineInterface, command: readonly unknown[]) {
+  return control ? ipc($, control, command) : undefined
+}
+
+// The live player's pid; undefined when none answers on the socket.
+async function probe($: EngineInterface): Promise<number | undefined> {
+  const reply = await ipc($, (await paths($)).sock, ['get_property', 'pid'])
+  return typeof reply?.data === 'number' ? reply.data : undefined
+}
+
+// The socket of the player this session follows; undefined while it follows none.
 let control: string | undefined
+// The running watcher, and its generation: a newer one (or none) makes an older
+// one's end mean nothing.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let watcher: { return: (value: any) => Promise<unknown> } | undefined
+let watchRun = 0
+// This session's starts; a newer one (or a stop) cancels an older one's steps.
 let run = 0
+let isStarting = false
+// What this session started and waits to hear has played: on a player that
+// ends before that, this session says why (or retries with the android client).
+let launch: Launch | undefined
+// Where to jump once what this session started has loaded (its resume point).
+let pending: Resume | undefined
+// Whether this session holds reconnect.lock.
+let holdsLock = false
 // Steps a long title along while something plays; undefined otherwise.
 let scroller: Timer | undefined
+// Looks for a player another session started, while this one follows none.
+let poller: Timer | undefined
+let isPolling = false
+// The socket file's time when no player answered on it: not asked again until
+// a new player makes a new one.
+let staleMtime = -1
+
+// What the watcher has told of the player this session follows.
+type Seen = {
+  media: unknown
+  meta: unknown
+  hasEnd: boolean
+  count: number
+  pos: number
+  chapter: number
+  loopFile: unknown
+  loopPlaylist: unknown
+  isLoaded: boolean
+  url: string
+  endReason: string
+  error: string
+}
+const fresh = (): Seen => ({
+  media: undefined,
+  meta: undefined,
+  hasEnd: false,
+  count: 0,
+  pos: -1,
+  chapter: -1,
+  loopFile: undefined,
+  loopPlaylist: undefined,
+  isLoaded: false,
+  url: '',
+  endReason: '',
+  error: '',
+})
+let seen = fresh()
 
 // The footer label's fixed part and its title: the icon and time stay put,
 // only the title scrolls.
@@ -232,29 +346,485 @@ function stopScroller() {
   scroller = undefined
 }
 
-// Ends the running player (if any); the caller clears the footer.
-async function stop() {
-  run += 1
-  const old = current
-  current = undefined
-  control = undefined
+// Back to showing nothing playing.
+async function goIdle($: EngineInterface) {
   stopScroller()
-  await old?.return(undefined)
+  await update($, playing, () => '')
+  await update($, isPaused, () => false)
+  await update($, elapsed, () => -1)
+  await update($, chapter, () => '')
+  await update($, queue, () => NO_QUEUE)
 }
 
-// Runs one mpv command; resolves to its reply's data, or undefined when nothing
-// plays, mpv is not listening yet or it refused.
-async function mpv($: EngineInterface, command: readonly unknown[]): Promise<{ data: unknown } | undefined> {
-  if (!control) return undefined
-  const result = await $.process
-    .run(['python3', '-I', `${$.plugin.root}/${IPC}`, control, JSON.stringify(command)], { timeoutMs: 3000 })
-    .catch(() => undefined)
-  if (result?.exitCode !== 0) return undefined
-  try {
-    return { data: JSON.parse(result.stdout || 'null') as unknown }
-  } catch {
-    return { data: null }
+// While this session follows no player, a look every POLL_MS at the socket file
+// (no process: a stat) finds one another session started.
+const POLL_MS = 3000
+
+function startPoller($: EngineInterface, config: Config) {
+  if (poller) return
+  poller = $.clock.every(POLL_MS, () => {
+    if (control || isStarting || isPolling) return
+    isPolling = true
+    void (async () => {
+      const p = await paths($)
+      const stat = await $.fs.stat(p.sock).catch(() => undefined)
+      if (!stat || stat.mtimeMs === staleMtime || control || isStarting) return
+      if (await probe($)) {
+        if (!control && !isStarting) attach($, config, p.sock, (await readIntent($))?.id ?? '')
+      } else {
+        staleMtime = stat.mtimeMs
+      }
+    })()
+      .catch(() => undefined)
+      .finally(() => (isPolling = false))
+  })
+}
+
+function stopPoller() {
+  poller?.cancel()
+  poller = undefined
+}
+
+// Stops following the player (it plays on).
+function detach() {
+  watchRun += 1
+  const old = watcher
+  watcher = undefined
+  control = undefined
+  void old?.return(undefined).catch(() => undefined)
+}
+
+// Follows the live player on the socket: a watcher streams its changes into
+// this session's footer and panel until it goes away. `id`: the Intent it was
+// started under, to tell later whether it was replaced.
+function attach($: EngineInterface, config: Config, sock: string, id: string) {
+  detach()
+  const mine = watchRun
+  control = sock
+  stopPoller()
+  seen = fresh()
+  startScroller($, config)
+  void (async () => {
+    let rest = ''
+    try {
+      const stream = $.process.spawn({ argv: ['python3', '-I', `${$.plugin.root}/${IPC}`, sock, '--watch', JSON.stringify(WATCHED)] })
+      if (mine !== watchRun) return void stream.return(undefined as never).catch(() => undefined)
+      watcher = stream
+      for await (const { stream: from, text } of stream) {
+        if (mine !== watchRun) return
+        if (from === 'stderr') continue
+        const split = splitEvents(rest + text)
+        rest = split.rest
+        for (const event of split.events) {
+          if (mine !== watchRun) return
+          await onEvent($, event)
+        }
+      }
+    } catch {
+      // the watcher could not start or was ended: the player is gone or not ours
+    }
+    if (mine !== watchRun) return
+    watcher = undefined
+    control = undefined
+    await onGone($, config, id)
+  })().catch(error => $.ui.log(`stream-radio: watcher failed: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' }))
+}
+
+// One change of the player, as every session following it sees it.
+async function onEvent($: EngineInterface, event: PlayerEvent) {
+  if (event.event === 'end-file') {
+    seen.endReason = event.reason ?? ''
+    if (event.file_error) seen.error = event.file_error
+    return
   }
+  if (event.event !== 'property-change') {
+    if (event.event === 'file-loaded') {
+      await markLoaded($)
+      await onLoaded($)
+    }
+    return
+  }
+  const { name, data } = event
+  switch (name) {
+    case 'media-title':
+    case 'metadata': {
+      if (name === 'media-title') seen.media = data
+      else seen.meta = data
+      const title = trackTitle(seen.media, seen.meta)
+      if (title && title !== (await read($, playing))) {
+        await update($, scroll, () => 0)
+        await update($, playing, () => title)
+      }
+      return
+    }
+    case 'pause':
+      if (typeof data === 'boolean') await update($, isPaused, () => data)
+      return
+    case 'duration':
+      seen.hasEnd = data === true
+      return
+    case 'time-pos': {
+      if (typeof data !== 'number') return
+      // The file loaded before the watcher began (a local file loads at once,
+      // and a player another session started plays already): no file-loaded
+      // comes for it, so its position is the sign.
+      if (!seen.isLoaded) {
+        await markLoaded($)
+        await onLoaded($)
+      }
+      const pos = seen.hasEnd ? data : -1
+      if (pos !== (await read($, elapsed))) await update($, elapsed, () => pos)
+      await recordPosition($, pos)
+      return
+    }
+    case 'chapter-metadata': {
+      const part = metaValue(data, 'title')
+      if (part !== (await read($, chapter))) {
+        await update($, scroll, () => 0)
+        await update($, chapter, () => part)
+      }
+      return
+    }
+    case 'chapter':
+      seen.chapter = typeof data === 'number' ? data : -1
+      if ((await read($, queue)).kind === 'chapters') await refreshQueue($)
+      return
+    case 'playlist-pos':
+    case 'playlist-count':
+      if (name === 'playlist-pos') seen.pos = typeof data === 'number' ? data : -1
+      else seen.count = typeof data === 'number' ? data : 0
+      if (seen.isLoaded) await refreshQueue($)
+      return
+    case 'volume':
+      // The player's own volume wins over what this session last knew.
+      if (typeof data === 'number') await update($, volumeLevel, () => clampVolume(data))
+      return
+    case 'loop-file':
+    case 'loop-playlist': {
+      if (name === 'loop-file') seen.loopFile = data
+      else seen.loopPlaylist = data
+      if (seen.loopFile !== undefined && seen.loopPlaylist !== undefined) {
+        const mode = repeatOf(seen.loopFile, seen.loopPlaylist)
+        await update($, repeatMode, () => mode)
+      }
+      return
+    }
+    case 'user-data/stream-radio/url':
+      seen.url = typeof data === 'string' ? data : ''
+      if (seen.isLoaded) await markLoaded($)
+      return
+    case 'user-data/stream-radio/shuffled': {
+      const on = data === true
+      if (on !== (await read($, isShuffled))) {
+        await update($, isShuffled, () => on)
+        if (seen.isLoaded) await refreshQueue($, { isReordered: true })
+      }
+      return
+    }
+  }
+}
+
+// The player plays: what it plays becomes the URL played last, here too.
+async function markLoaded($: EngineInterface) {
+  seen.isLoaded = true
+  const url = seen.url
+  if (url && url !== (await read($, lastUrl))) await update($, lastUrl, () => url)
+}
+
+// A file loaded: the list (or the file's chapters) read again; for what this
+// session started, the first load means it really plays.
+async function onLoaded($: EngineInterface) {
+  await refreshQueue($, { isNewFile: true }).catch(() => undefined)
+  const intent = await readIntent($)
+  if (launch && intent?.id === launch.id && !intent.playedAt) {
+    const now = await $.clock.now().catch(() => 0)
+    await writeIntent($, { ...intent, playedAt: now || 1 })
+    if (launch.client) needsAndroid.add(launch.url)
+    await saveLast($, true)
+    await releaseLock($)
+  }
+  if (!pending) return
+  const q = await read($, queue)
+  if (q.kind === 'playlist' && pending.index >= 0 && pending.index < q.items.length && q.current !== pending.index) {
+    // The jump loads another file; its file-loaded comes back through here.
+    if (!(await mpv($, ['playlist-play-index', pending.index]))) pending = undefined
+  } else {
+    if (pending.seconds >= RESUME_MIN_SECONDS) await mpv($, ['seek', pending.seconds, 'absolute'])
+    pending = undefined
+  }
+}
+
+// Where the playing URL got to, for resuming it later; not while a resume
+// point is still being reached, or the first song's start would overwrite it.
+async function recordPosition($: EngineInterface, pos: number) {
+  const url = await read($, lastUrl)
+  const title = (await read($, chapter)) || (await read($, playing))
+  if (pending || !url || !title || title === 'connecting…') return
+  const q = await read($, queue)
+  const index = q.kind === 'playlist' ? q.current : -1
+  const was = await read($, resumeAt)
+  if (was.url === url && was.index === index && was.seconds === pos && was.title === title) return
+  await update($, resumeAt, () => ({ url, index, seconds: pos, title }))
+  await saveLast($, was.url !== url || was.index !== index || was.title !== title)
+}
+
+// The player this session followed went away. Stopped, replaced by a new start
+// or ended on purpose: nothing more. Never played, and this session started
+// it: say why. Dropped after playing: one session (whichever takes the lock)
+// starts it again.
+async function onGone($: EngineInterface, config: Config, id: string) {
+  const was = seen
+  await saveLast($, true)
+  await goIdle($)
+  startPoller($, config)
+  // The watcher ended but the player answers: the watcher was killed (as at
+  // this session's exit), not the player. The poller follows it again.
+  if (await probe($)) return
+  const intent = await readIntent($)
+  const mine = launch && launch.id === id ? launch : undefined
+  if (!intent || intent.isStopped || intent.id !== id) return
+  if (!was.isLoaded) {
+    if (mine) await failed($, config, mine, was.error)
+    return
+  }
+  if (was.endReason === 'quit') return
+  if (was.endReason === 'eof' && (await read($, repeatMode)) === 'off') return
+  await reconnect($, config, intent, was.error)
+}
+
+// What this session started never played: once more with the android client
+// for a URL, else say why where it stays (a toast alone is easy to miss).
+type Launch = { id: string; url: string; client?: string; from?: Resume }
+async function failed($: EngineInterface, config: Config, what: Launch, error: string) {
+  launch = undefined
+  await releaseLock($)
+  const log = await $.fs
+    .read((await paths($)).log)
+    .then(text => text.trim().split('\n').pop() ?? '')
+    .catch(() => '')
+  const lastError = log || error
+  if (!what.client && /^https?:/.test(what.url)) {
+    $.ui.log(`stream-radio: ${what.url} would not play; retrying with the android client`)
+    start($, config, what.url, what.from, 'android')
+    return
+  }
+  const why = lastError ? lastError.slice(0, 300) : 'the player exited before anything played; is the URL playable?'
+  $.ui.log(`stream-radio: could not play ${what.url}: ${why}`)
+  $.ui.toast(`stream failed: ${why.slice(0, 120)}`)
+}
+
+// After a player that was playing ends by itself (a dropped stream, a crash),
+// the waits before each try to start it again; past the last, it gives up.
+const RECONNECT_MS = [2000, 5000, 15_000]
+// Playing this long since the last try counts as recovered: a later drop starts
+// the tries over.
+const STEADY_MS = 60_000
+// A lock older than this was left by a session that went away mid-reconnect.
+const LOCK_STALE_MS = 60_000
+
+// Takes reconnect.lock: created only if absent (O_EXCL, by the shell's
+// noclobber), or taken over when stale.
+async function takeLock($: EngineInterface): Promise<boolean> {
+  const p = await paths($)
+  const now = await $.clock.now().catch(() => 0)
+  const create = async () =>
+    (await $.process.run(['sh', '-c', 'set -C; printf %s "$1" > "$2"', 'sh', String(now), p.lock]).catch(() => undefined))?.exitCode === 0
+  if (!(await create())) {
+    const stat = await $.fs.stat(p.lock).catch(() => undefined)
+    if (!stat || now - stat.mtimeMs < LOCK_STALE_MS) return false
+    await $.process.run(['rm', '-f', p.lock]).catch(() => undefined)
+    if (!(await create())) return false
+  }
+  holdsLock = true
+  return true
+}
+
+async function releaseLock($: EngineInterface) {
+  if (!holdsLock) return
+  holdsLock = false
+  await $.process.run(['rm', '-f', (await paths($)).lock]).catch(() => undefined)
+}
+
+async function reconnect($: EngineInterface, config: Config, intent: Intent, error: string) {
+  if (!(await takeLock($))) return
+  const now = await $.clock.now().catch(() => 0)
+  const tries = intent.playedAt && now - intent.playedAt >= STEADY_MS ? 0 : intent.attempt
+  const wait = RECONNECT_MS[tries]
+  const why = error ? `: ${error.slice(0, 200)}` : ''
+  if (wait === undefined) {
+    await releaseLock($)
+    $.ui.log(`stream-radio: ${intent.url} stopped${why}; gave up after ${RECONNECT_MS.length} tries`)
+    $.ui.toast(`stream stopped; gave up after ${RECONNECT_MS.length} tries`)
+    return
+  }
+  $.ui.log(`stream-radio: ${intent.url} stopped${why}; trying again in ${wait / 1000} s`)
+  await update($, playing, () => `reconnecting in ${wait / 1000} s…`)
+  const token = run
+  // A reload or the session's end while it waits aborts the wait.
+  if (!(await $.clock.sleep(wait).then(() => true, () => false))) return releaseLock($)
+  // Stopped, or something else started (here or elsewhere), while it waited.
+  const now2 = await readIntent($)
+  if (run !== token || control || !now2 || now2.isStopped || now2.id !== intent.id || (await probe($))) {
+    await releaseLock($)
+    if (run === token && !control) await update($, playing, () => '')
+    return
+  }
+  const at = await read($, resumeAt)
+  start($, config, intent.url, at.url === intent.url ? at : undefined, intent.client || undefined, tries + 1)
+}
+
+// Ends the live player, if one answers: asked to quit, killed if it will not.
+async function endPlayer($: EngineInterface) {
+  const pid = await probe($)
+  if (!pid) return
+  await ipc($, (await paths($)).sock, ['quit'])
+  for (let i = 0; i < 15; i++) {
+    if (!(await probe($))) return
+    await $.clock.sleep(200).catch(() => undefined)
+  }
+  await $.process.run(['kill', String(pid)]).catch(() => undefined)
+}
+
+// URLs that only played with the android client; they start with it directly.
+const needsAndroid = new Set<string>()
+
+// Starts playing `url` on the one shared player, replacing what it played.
+// Returns at once: the first start after a reload is slow, and a hook that
+// takes too long is reported as unanswered, so the startup runs in the
+// background.
+// `from`: a place to resume at once it plays, for the URL played last.
+// `attempt`: how many reconnect tries came before this start.
+function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string, attempt = 0) {
+  const { player, androidClient } = config
+  // YouTube refuses the default client's stream URLs for some content (403);
+  // the android client gets through, with muxed AAC and no audio-only Opus.
+  const client = retryClient ?? (androidClient || needsAndroid.has(url) ? 'android' : undefined)
+  detach()
+  run += 1
+  const mine = run
+  isStarting = true
+  pending = from?.url === url && (from.index > 0 || from.seconds >= RESUME_MIN_SECONDS) ? from : undefined
+  void (async () => {
+    try {
+      await update($, isPaused, () => false)
+      await update($, elapsed, () => -1)
+      await update($, chapter, () => '')
+      await update($, scroll, () => 0)
+      await update($, queue, () => NO_QUEUE)
+      await update($, isShuffled, () => false)
+      await update($, listFilter, () => '')
+      await update($, playing, () => 'connecting…')
+      startScroller($, config)
+
+      try {
+        await $.process.run([player, '--version'], { timeoutMs: 5000 })
+      } catch {
+        stopScroller()
+        await update($, playing, () => '')
+        $.ui.toast(`Can't start "${player}". Install mpv (and yt-dlp for YouTube).`)
+        return
+      }
+      if (mine !== run) return
+
+      const p = await paths($)
+      const now = await $.clock.now().catch(() => 0)
+      const id = `${now}-${Math.random().toString(36).slice(2, 10)}`
+      const what: Launch = { id, url, client, from }
+      launch = what
+      // Written first: the old player's watchers read it when it goes, and
+      // know it was replaced rather than dropped.
+      await writeIntent($, { id, url, client: client ?? '', isStopped: false, attempt, playedAt: 0 })
+      await endPlayer($)
+      if (mine !== run) return
+      await $.process.run(['rm', '-f', p.sock]).catch(() => undefined)
+
+      const loops = loopsFor(await read($, repeatMode))
+      const argv = [
+        player,
+        '--no-video',
+        '--no-input-terminal',
+        '--idle=no',
+        // Repeat as set, whatever your mpv.conf loops; a stream plays on.
+        `--loop-file=${loops.file}`,
+        `--loop-playlist=${loops.playlist}`,
+        '--keep-open=no',
+        `--input-ipc-server=${p.sock}`,
+        '--ytdl-format=bestaudio/best',
+        // A local folder plays its sound and video files (sound only), not its
+        // cover art or archives, which would each take a turn; its subfolders
+        // are read at once, so the panel can show them whole.
+        ...(/^https?:/.test(url) ? [] : ['--directory-filter-types=audio,video,playlist', '--directory-mode=recursive']),
+        ...(client ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`] : []),
+        `--volume=${await read($, volumeLevel)}`,
+        '--msg-level=all=error',
+        '--',
+        url,
+      ]
+      // Detached: in its own session, no terminal, its errors to mpv.log, so it
+      // outlives this session and every other.
+      await $.process.run(['sh', '-c', 'log=$1; shift; exec setsid -f "$@" </dev/null >/dev/null 2>"$log"', 'sh', p.log, ...argv], {
+        timeoutMs: 10_000,
+      })
+      // mpv makes its socket before it opens anything.
+      let pid: number | undefined
+      for (let i = 0; i < 25 && !pid; i++) {
+        if (mine !== run) return
+        pid = await probe($)
+        if (!pid) await $.clock.sleep(200).catch(() => undefined)
+      }
+      if (mine !== run) return
+      if (!pid) {
+        isStarting = false
+        await goIdle($)
+        startPoller($, config)
+        await failed($, config, what, '')
+        return
+      }
+      // Every session learns what plays from the player itself.
+      await ipc($, p.sock, ['set_property', 'user-data/stream-radio/url', url])
+      if (mine !== run) return
+      attach($, config, p.sock, id)
+    } finally {
+      if (mine === run) isStarting = false
+    }
+  })().catch(error => {
+    isStarting = false
+    $.ui.log(`stream-radio: player task failed: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' })
+  })
+}
+
+// Ends the shared player, for every session: marked stopped first, so none of
+// them reconnects.
+async function stopPlaying($: EngineInterface, config: Config) {
+  await saveLast($, true)
+  run += 1
+  isStarting = false
+  launch = undefined
+  pending = undefined
+  const intent = await readIntent($)
+  await writeIntent($, { ...(intent ?? { id: '', url: '', client: '', attempt: 0, playedAt: 0 }), isStopped: true })
+  detach()
+  await endPlayer($)
+  await releaseLock($)
+  await goIdle($)
+  startPoller($, config)
+}
+
+// Follows the player another session started, if one plays; else watches for
+// one. One look at a time: a command that needs the player waits for the look
+// session.start began.
+let connecting: Promise<void> | undefined
+
+function connect($: EngineInterface, config: Config): Promise<void> {
+  if (control || isStarting) return Promise.resolve()
+  connecting ??= (async () => {
+    if (await probe($)) {
+      if (!control && !isStarting) attach($, config, (await paths($)).sock, (await readIntent($))?.id ?? '')
+    } else {
+      startPoller($, config)
+    }
+  })().finally(() => (connecting = undefined))
+  return connecting
 }
 
 // Local paths already found to be folders or not; a path's kind does not change
@@ -283,10 +853,13 @@ async function entryName($: EngineInterface, e: { filename?: string; title?: str
 
 // What the panel lists: the playlist's entries, else the file's chapters (a
 // video of several songs), else nothing to pick from.
-// `isOrderChanged`: the entries moved (a shuffle), so the whole list is read.
-async function refreshQueue($: EngineInterface, isOrderChanged = false) {
+// isReordered: the entries moved (a shuffle), so the whole list is read;
+// isNewFile: a file loaded, so its chapters are read.
+type Refresh = { isReordered?: boolean; isNewFile?: boolean }
+
+async function refreshQueue($: EngineInterface, how: Refresh = {}) {
   const before = await read($, queue)
-  const next = await readQueue($, isOrderChanged ? NO_QUEUE : before)
+  const next = await readQueue($, before, how)
   await update($, queue, () => next)
   // A new folder starts shut; the current song's folders open when it changes,
   // so it shows, and a folder shut by hand stays shut until then.
@@ -297,46 +870,40 @@ async function refreshQueue($: EngineInterface, isOrderChanged = false) {
   }
 }
 
-// The queue as mpv has it now. A playlist of the same length as last read is
-// the same playlist (a new URL starts from no queue): only the position is
-// asked for, a small reply, instead of every entry again.
-async function readQueue($: EngineInterface, before: Queue): Promise<Queue> {
-  if (before.kind === 'playlist') {
-    const count = (await mpv($, ['get_property', 'playlist-count']))?.data
-    if (count === before.items.length) {
-      const pos = (await mpv($, ['get_property', 'playlist-pos']))?.data
-      return { ...before, current: typeof pos === 'number' ? pos : -1 }
-    }
-  }
-  const list = (await mpv($, ['get_property', 'playlist']))?.data
-  let next: Queue = NO_QUEUE
-  if (Array.isArray(list) && list.length > 1) {
+// The queue as mpv has it now. The watcher tells the playlist's length and
+// position: a playlist of the length last read is the same playlist, and needs
+// no asking; only a new one (or a shuffled one) is read whole.
+async function readQueue($: EngineInterface, before: Queue, how: Refresh): Promise<Queue> {
+  if (seen.count > 1) {
+    if (!how.isReordered && before.kind === 'playlist' && before.items.length === seen.count) return { ...before, current: seen.pos }
+    const list = (await mpv($, ['get_property', 'playlist']))?.data
+    if (!Array.isArray(list) || list.length <= 1) return NO_QUEUE
     const entries = list as { filename?: string; title?: string; current?: boolean }[]
     const paths = entries.map(e => e.filename ?? '')
     // A local folder played whole: its entries are grouped under it.
     const url = await read($, lastUrl)
     const root = url.startsWith('/') && paths.some(p => p.startsWith(`${url.replace(/\/$/, '')}/`)) ? url.replace(/\/$/, '') : ''
-    next = {
+    const current = entries.findIndex(e => e.current)
+    return {
       kind: 'playlist',
       items: await Promise.all(entries.map(e => entryName($, e, root))),
-      current: entries.findIndex(e => e.current),
+      current: current >= 0 ? current : seen.pos,
       paths,
       root,
     }
-  } else {
-    const chapters = (await mpv($, ['get_property', 'chapter-list']))?.data
-    if (Array.isArray(chapters) && chapters.length > 1) {
-      const at = (await mpv($, ['get_property', 'chapter']))?.data
-      next = {
-        kind: 'chapters',
-        items: (chapters as { title?: string }[]).map((c, i) => c.title || `Chapter ${i + 1}`),
-        current: typeof at === 'number' ? at : -1,
-        paths: [],
-        root: '',
-      }
-    }
   }
-  return next
+  if (!how.isNewFile && !how.isReordered && before.kind === 'chapters') return { ...before, current: seen.chapter }
+  if (!how.isNewFile && before.kind === 'none' && seen.isLoaded && seen.chapter < 0) return NO_QUEUE
+  const chapters = (await mpv($, ['get_property', 'chapter-list']))?.data
+  if (!Array.isArray(chapters) || chapters.length <= 1) return NO_QUEUE
+  const at = (await mpv($, ['get_property', 'chapter']))?.data
+  return {
+    kind: 'chapters',
+    items: (chapters as { title?: string }[]).map((c, i) => c.title || `Chapter ${i + 1}`),
+    current: typeof at === 'number' ? at : seen.chapter,
+    paths: [],
+    root: '',
+  }
 }
 
 // Plays entry `index` of the queue, unpaused.
@@ -354,220 +921,13 @@ async function pick($: EngineInterface, index: number): Promise<string> {
 async function step($: EngineInterface, by: 1 | -1): Promise<string> {
   const q = await read($, queue)
   if (q.kind === 'none') return 'Nothing before or after this.'
-  const command =
-    q.kind === 'playlist' ? [by > 0 ? 'playlist-next' : 'playlist-prev'] : ['add', 'chapter', by]
+  const command = q.kind === 'playlist' ? [by > 0 ? 'playlist-next' : 'playlist-prev'] : ['add', 'chapter', by]
   return (await mpv($, command)) ? '' : 'The player is not ready yet.'
 }
 
-// Starts playing `url`. Returns at once: the first start after a reload is slow,
-// and a hook that takes too long is reported as unanswered, so the startup runs
-// in the background.
-// After a player that was playing ends by itself (a dropped stream, a crash),
-// the waits before each try to start it again; past the last, it gives up.
-const RECONNECT_MS = [2000, 5000, 15_000]
-// Playing this long since the last try counts as recovered: a later drop starts
-// the tries over.
-const STEADY_MS = 60_000
-// Signals that mean someone ended the player on purpose: no reconnecting.
-const DELIBERATE = new Set(['SIGTERM', 'SIGINT', 'SIGKILL'])
-
-// `from`: a place to resume at once it plays, for the URL played last.
-// `attempt`: how many reconnect tries came before this start.
-function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string, attempt = 0) {
-  const { player, androidClient } = config
-  // YouTube refuses the default client's stream URLs for some content (403);
-  // the android client gets through, with muxed AAC and no audio-only Opus.
-  const client = retryClient ?? (androidClient || needsAndroid.has(url) ? 'android' : undefined)
-  const old = current
-  current = undefined
-  control = undefined
-  run += 1
-  const mine = run
-  void (async () => {
-    let lastError = ''
-    let lastTitle = ''
-    let lastPaused = false
-    let lastSeconds = -1
-    let lastChapter = ''
-    let unread = ''
-    let pipe = ''
-    // When the first title came, and how the player ended.
-    let playedAt = 0
-    let exit: { code: number | null; signal: string | null } | undefined
-    // Cleared once reached; until then the position is not recorded, or the first
-    // song's start would overwrite where to go.
-    let pending = from?.url === url && (from.index > 0 || from.seconds >= RESUME_MIN_SECONDS) ? from : undefined
-    try {
-      await old?.return(undefined)
-      await update($, isPaused, () => false)
-      await update($, elapsed, () => -1)
-      await update($, chapter, () => '')
-      await update($, scroll, () => 0)
-      await update($, queue, () => NO_QUEUE)
-      await update($, isShuffled, () => false)
-      await update($, listFilter, () => '')
-      await update($, playing, () => 'connecting…')
-      startScroller($, config)
-
-      try {
-        await $.process.run([player, '--version'], { timeoutMs: 5000 })
-      } catch {
-        await update($, playing, () => '')
-        $.ui.toast(`Can't start "${player}". Install mpv (and yt-dlp for YouTube).`)
-        return
-      }
-
-      // mpv's IPC socket, in the plugin's data folder; pause and resume go through it.
-      const dir = (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA
-      pipe = `${dir}/mpv-${mine}.sock`
-      await $.process.run(['rm', '-f', pipe])
-      if (mine !== run) return
-      control = pipe
-
-      const loops = loopsFor(await read($, repeatMode))
-      const argv = [
-        player,
-        '--no-video',
-        '--no-input-terminal',
-        // Repeat as set, whatever your mpv.conf loops; a stream plays on.
-        `--loop-file=${loops.file}`,
-        `--loop-playlist=${loops.playlist}`,
-        '--keep-open=no',
-        `--input-ipc-server=${pipe}`,
-        '--ytdl-format=bestaudio/best',
-        // A local folder plays its sound and video files (sound only), not its
-        // cover art or archives, which would each take a turn; its subfolders
-        // are read at once, so the panel can show them whole.
-        ...(/^https?:/.test(url) ? [] : ['--directory-filter-types=audio,video,playlist', '--directory-mode=recursive']),
-        ...(client
-          ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`]
-          : []),
-        `--volume=${await read($, volumeLevel)}`,
-        '--msg-level=all=error,statusline=status',
-        `--term-status-msg=${STATUS_FORMAT}`,
-        '--',
-        url,
-      ]
-      const stream = $.process.spawn({ argv })
-      current = stream
-      for await (const { stream: from, text } of stream) {
-        if (mine !== run) return
-        if (from === 'stderr') {
-          lastError = text.trim().split('\n').pop() ?? lastError
-          continue
-        }
-        // Output comes in pieces: read complete lines only, or a half-printed
-        // line can claim the stream is not paused.
-        const { complete, rest } = completeLines(unread + text)
-        unread = rest
-        const track = parseNowPlaying(complete)
-        if (track && track.title !== lastTitle) {
-          // The first title means it really plays: remember it for the button.
-          if (!lastTitle) {
-            playedAt = await $.clock.now().catch(() => 0)
-            await update($, lastUrl, () => url)
-            await saveLast($, true)
-            if (client) needsAndroid.add(url)
-          }
-          lastTitle = track.title
-          await update($, scroll, () => 0)
-          await update($, playing, () => track.title)
-          // Waited for: the position recorded below needs this song's place in it.
-          await refreshQueue($).catch(() => undefined)
-          if (pending) {
-            const q = await read($, queue)
-            if (q.kind === 'playlist' && pending.index >= 0 && pending.index < q.items.length && q.current !== pending.index) {
-              // The jump starts another song; its title comes back through here.
-              if (!(await mpv($, ['playlist-play-index', pending.index]))) pending = undefined
-            } else {
-              if (pending.seconds >= RESUME_MIN_SECONDS) await mpv($, ['seek', pending.seconds, 'absolute'])
-              pending = undefined
-            }
-          }
-        }
-        const pos = track?.seconds ?? -1
-        if (track && pos !== lastSeconds) {
-          lastSeconds = pos
-          await update($, elapsed, () => pos)
-          if (!pending && lastTitle) {
-            const q = await read($, queue)
-            const index = q.kind === 'playlist' ? q.current : -1
-            const title = (await read($, chapter)) || lastTitle
-            const was = await read($, resumeAt)
-            await update($, resumeAt, () => ({ url, index, seconds: pos, title }))
-            await saveLast($, was.url !== url || was.index !== index || was.title !== title)
-          }
-        }
-        if (track && track.chapter !== null && track.chapter !== lastChapter) {
-          const next = track.chapter
-          lastChapter = next
-          await update($, scroll, () => 0)
-          await update($, chapter, () => next)
-          void refreshQueue($).catch(() => undefined)
-        }
-        if (track && track.isPaused !== null && track.isPaused !== lastPaused) {
-          lastPaused = track.isPaused
-          await update($, isPaused, () => track.isPaused)
-        }
-      }
-      exit = await stream.result.catch(() => undefined)
-    } catch (error) {
-      // a child that cannot start or was killed ends the loop; reported below
-      lastError ||= error instanceof Error ? error.message : String(error)
-    } finally {
-      if (pipe) await $.process.run(['rm', '-f', pipe]).catch(() => undefined)
-    }
-    if (mine !== run) return
-    current = undefined
-    control = undefined
-    stopScroller()
-    await update($, playing, () => '')
-    await update($, chapter, () => '')
-    await update($, queue, () => NO_QUEUE)
-    if (!lastTitle && !client && /^https?:/.test(url)) {
-      // Nothing played with the default client: try once with android.
-      $.ui.log(`stream-radio: ${url} would not play; retrying with the android client`)
-      start($, config, url, from, 'android')
-
-      return
-    }
-    if (!lastTitle) {
-      // Nothing ever played: say so where it stays (a toast alone is easy to miss).
-      const why = lastError
-        ? lastError.slice(0, 300)
-        : 'the player exited before anything played; is the URL playable?'
-      $.ui.log(`stream-radio: could not play ${url}: ${why}`)
-      $.ui.toast(`stream failed: ${why.slice(0, 120)}`)
-      return
-    }
-    // It played, then ended by itself: start it again where it got to, unless a
-    // playlist with repeat off simply finished or someone ended the player.
-    if (exit?.signal && DELIBERATE.has(exit.signal)) return
-    if (exit?.code === 0 && (await read($, repeatMode)) === 'off') return
-    const now = await $.clock.now().catch(() => 0)
-    const tries = now - playedAt >= STEADY_MS ? 0 : attempt
-    const wait = RECONNECT_MS[tries]
-    const why = lastError ? `: ${lastError.slice(0, 200)}` : ''
-    if (wait === undefined) {
-      $.ui.log(`stream-radio: ${url} stopped${why}; gave up after ${RECONNECT_MS.length} tries`)
-      $.ui.toast(`stream stopped; gave up after ${RECONNECT_MS.length} tries`)
-      return
-    }
-    $.ui.log(`stream-radio: ${url} stopped${why}; trying again in ${wait / 1000} s`)
-    await update($, playing, () => `reconnecting in ${wait / 1000} s…`)
-    const token = run
-    // A reload or the session's end while it waits aborts the wait.
-    if (!(await $.clock.sleep(wait).then(() => true, () => false))) return
-    // Stopped, or something else started, while it waited.
-    if (run !== token) return
-    start($, config, url, await read($, resumeAt), client, tries + 1)
-  })().catch(error => $.ui.log(`stream-radio: player task failed: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' }))
-}
-
 // Pauses or resumes through mpv; false while it is not listening yet. The new
-// state is decided before sending and written as that value, not a flip: mpv's
-// own status line reports the change while the send runs, and a late flip would
-// undo it.
+// state is decided before sending and written as that value, not a flip: the
+// watcher reports the change while the send runs, and a late flip would undo it.
 async function togglePause($: EngineInterface): Promise<boolean> {
   if (!control) return false
   const target = !(await read($, isPaused))
@@ -607,13 +967,6 @@ function resumable(at: Resume, url: string): string {
   return `${at.title || 'where it was'}${time}`
 }
 
-async function stopPlaying($: EngineInterface) {
-  await saveLast($, true)
-  await stop()
-  await update($, playing, () => '')
-  await update($, queue, () => NO_QUEUE)
-}
-
 // Opens the panel, or closes it if it is up; the footer button and /stream panel.
 async function togglePane($: EngineInterface): Promise<'opened' | 'closed'> {
   if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
@@ -649,7 +1002,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
     $.ui.status(undefined)
-    // State outlives a reload but the player does not: start from idle.
+    // Idle until the shared player (if one plays) says otherwise.
     await update($, playing, () => '')
     await update($, isPaused, () => false)
     await update($, elapsed, () => -1)
@@ -671,12 +1024,19 @@ export const register: Register = (on, options) => {
       description: "Play a YouTube stream's audio; shows what is playing",
       argumentHint: '[url | last | pause | next | prev | vol N | shuffle | repeat | panel | stop]',
     })
+    // A player another session started (or this one, before a reload) plays on:
+    // follow it. In the background: a slow answer must not hold up the session.
+    void connect($, config).catch(() => undefined)
 
     return next(e)
   })
 
+  // The player is everyone's: it plays on after this session ends.
   on('session.end', async ($, e, next) => {
-    await stopPlaying($)
+    detach()
+    stopPoller()
+    stopScroller()
+    await releaseLock($)
 
     return next(e)
   })
@@ -687,11 +1047,14 @@ export const register: Register = (on, options) => {
       const parsed = await locate($, e.args, defaultUrl)
       if (parsed.kind === 'error') return { text: parsed.text }
       if (parsed.kind === 'stop') {
-        await stopPlaying($)
+        await stopPlaying($, config)
 
         return { text: 'Stopped.' }
       }
       if (parsed.kind === 'panel') return { text: `Radio panel ${await togglePane($)}.` }
+      // A player another session started may not be followed yet (this session
+      // just started): look before saying nothing plays.
+      if (!control && parsed.kind !== 'play' && parsed.kind !== 'last') await connect($, config).catch(() => undefined)
       if (parsed.kind === 'shuffle') {
         if (!control) return { text: 'Nothing is playing.' }
         return { text: await toggleShuffle($) }
@@ -869,7 +1232,7 @@ export const register: Register = (on, options) => {
               {q.kind !== 'none' ? (
                 <Button key="next" label="Next ⏭" onPress={() => act(() => step($, 1))} />
               ) : null}
-              <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying($), ''))} />
+              <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying($, config), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume($, config.volume, level - VOLUME_STEP), ''))} />

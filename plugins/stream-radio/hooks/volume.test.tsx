@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const PANE = {
   plugin: 'stream-radio',
   component: 'Pane',
@@ -10,26 +12,13 @@ const PANE = {
 } as const
 
 function engine(on: On, store: Record<string, unknown>) {
-  const world = { sent: [] as unknown[][], spawned: [] as string[][], release: () => undefined as void }
   on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
   on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('process.run', (_$, e) => {
-    const argv = [...e.argv]
-    if (argv[0] === 'python3') world.sent.push(JSON.parse(argv[4]!) as unknown[])
-    return { value: { exitCode: 0, stdout: 'null', stderr: '' } } as never
-  })
-  on('process.spawn', async function* (_$, e) {
-    world.spawned.push([...e.argv])
-    yield { stream: 'stdout', text: 'NP\tLofi\t\t\tno\t\t\tEND' } as never
-    await new Promise<void>(resolve => (world.release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
-  return world
+  const world = fakeMpv(on, { title: 'Lofi' })
+  return Object.assign(world, { spawned: world.launches })
 }
 
 const start = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
@@ -53,7 +42,6 @@ test('the panel turns the playing volume up and down, and remembers it', { optio
   await again.unmount()
   expect(store.volume).toEqual({ value: 65, configured: 60 })
 
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
@@ -76,7 +64,6 @@ test('a new session starts at the saved volume, unless the setting changed', asy
   await $.command.run({ command: 'stream', args: 'https://example.com/live' } as never)
   await clock.advance(10)
   expect(world.spawned[0]).toContain('--volume=35')
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

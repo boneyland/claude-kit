@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const URL = 'https://example.com/list'
 const PANE = {
   plugin: 'stream-radio',
@@ -10,23 +12,14 @@ const PANE = {
   props: { title: 'Radio', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
-// The engine with a store that outlives the session; `release` ends the player.
+// The engine with a store that outlives the session, over the shared player.
 function engine(on: On, store: Record<string, unknown>) {
-  const world = { release: () => undefined as void }
   on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
   on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('process.run', () => ({ value: { exitCode: 0, stdout: 'null', stderr: '' } }) as never)
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: 'NP\tWinter Wonderland\t\t\tno\t95\t\tEND' } as never
-    await new Promise<void>(resolve => (world.release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
-  return world
+  return fakeMpv(on, { title: 'Winter Wonderland', props: { 'time-pos': 95, duration: true } })
 }
 
 test('a new session offers to resume what an earlier one played', { options: { defaultUrl: URL } }, async ($, on) => {
@@ -49,7 +42,6 @@ test('playing saves the URL and where it got to; stopping saves at once', { opti
   await $.command.run({ command: 'stream', args: URL } as never)
   await clock.advance(10)
   expect(store.last).toMatchObject({ url: URL, resumeAt: { url: URL, seconds: 95, title: 'Winter Wonderland' } })
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
   expect(store.last).toMatchObject({ url: URL })

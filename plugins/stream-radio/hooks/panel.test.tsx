@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const PANE = {
   plugin: 'stream-radio',
   component: 'Pane',
@@ -13,32 +15,19 @@ const FOOTER = { plugin: 'stream-radio', component: 'SessionMode', surface: 'ter
 
 const SONGS = ['Santa Claus Is Comin\' To Town', 'Santa Baby', 'Winter Wonderland']
 
-// mpv beneath the plugin: a player printing one status line, and an IPC socket
-// that answers the playlist and records every command sent to it.
+// The shared player beneath the plugin, with a three-song playlist; the fake
+// records every command sent to it.
 function engine(on: On) {
-  const world = { sent: [] as unknown[][], panes: [] as string[], release: () => undefined as void }
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('process.run', (_$, e) => {
-    const argv = [...e.argv]
-    if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[4]!) as unknown[]
-    world.sent.push(command)
-    const data =
-      command[0] === 'get_property' && command[1] === 'playlist'
-        ? SONGS.map((title, i) => ({ filename: `https://example.com/${i}`, title, ...(i === 0 ? { current: true } : {}) }))
-        : null
-    return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
+  const panes = { open: [] as string[] }
+  on('ui.panes', () => ({ value: panes.open.map(id => ({ id, title: 'Radio', isShown: true, isFocused: false, isPlaced: true })) }) as never)
+  on('ui.open', (_$, e) => ((panes.open = [e.id]), { value: { isPlaced: true } }) as never)
+  on('ui.close', () => ((panes.open = []), { value: undefined }) as never)
+  const world = fakeMpv(on, {
+    title: SONGS[0],
+    props: { 'time-pos': 42, duration: true },
+    playlist: SONGS.map((title, i) => ({ filename: `https://example.com/${i}`, title, ...(i === 0 ? { current: true } : {}) })),
   })
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: `NP\t${SONGS[0]}\t\t\tno\t42\t\tEND` } as never
-    await new Promise<void>(resolve => (world.release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
-  on('ui.panes', () => ({ value: world.panes.map(id => ({ id, title: 'Radio', isShown: true, isFocused: false, isPlaced: true })) }) as never)
-  on('ui.open', (_$, e) => ((world.panes = [e.id]), { value: { isPlaced: true } }) as never)
-  on('ui.close', () => ((world.panes = []), { value: undefined }) as never)
-  return world
+  return Object.defineProperty(world, 'panes', { get: () => panes.open }) as typeof world & { readonly panes: string[] }
 }
 
 test('the footer opens the panel, which lists the playlist and picks, skips and pauses', async ($, on) => {
@@ -79,7 +68,6 @@ test('the footer opens the panel, which lists the playlist and picks, skips and 
   expect(world.panes).toEqual([])
   await again.unmount()
 
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never).catch(() => undefined)
   await clock.advance(1000)
 })
@@ -97,7 +85,6 @@ test('/stream next, prev and panel reach the player and the panel', async ($, on
   await $.command.run({ command: 'stream', args: 'panel' } as never)
   expect(world.panes).toEqual(['stream-radio'])
 
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never).catch(() => undefined)
   await clock.advance(1000)
 })

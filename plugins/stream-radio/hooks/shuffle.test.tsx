@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const PANE = {
   plugin: 'stream-radio',
   component: 'Pane',
@@ -12,36 +14,34 @@ const SONGS = ['A', 'B', 'C']
 
 // mpv with a three-song playlist that shuffle reverses and unshuffle restores.
 function engine(on: On, store: Record<string, unknown>) {
-  const world = { sent: [] as unknown[][], spawned: [] as string[][], order: [...SONGS], release: () => undefined as void }
   on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
   on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('process.run', (_$, e) => {
-    const argv = [...e.argv]
-    if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[4]!) as unknown[]
-    world.sent.push(command)
-    if (command[0] === 'playlist-shuffle') world.order = [...SONGS].reverse()
-    if (command[0] === 'playlist-unshuffle') world.order = [...SONGS]
-    const data =
-      command[1] === 'playlist'
-        ? world.order.map(title => ({ filename: `https://example.com/${title}`, title, ...(title === 'A' ? { current: true } : {}) }))
-        : command[1] === 'playlist-count'
-          ? SONGS.length
-          : null
-    return { value: { exitCode: 0, stdout: JSON.stringify(data), stderr: '' } } as never
+  let order = [...SONGS]
+  const world = fakeMpv(on, {
+    title: 'A',
+    props: { 'time-pos': 3, duration: true },
+    playlist: () => order.map(title => ({ filename: `https://example.com/${title}`, title })),
+    onCommand: command => {
+      // mpv keeps the song playing where it is: A moves, and the position with it.
+      if (command[0] === 'playlist-shuffle') order = [...SONGS].reverse()
+      if (command[0] === 'playlist-unshuffle') order = [...SONGS]
+      if (command[0] === 'playlist-shuffle' || command[0] === 'playlist-unshuffle') {
+        world.set('playlist-pos', order.indexOf('A'))
+        return { data: null }
+      }
+      return undefined
+    },
   })
-  on('process.spawn', async function* (_$, e) {
-    world.spawned.push([...e.argv])
-    yield { stream: 'stdout', text: 'NP\tA\t\t\tno\t3\t\tEND' } as never
-    await new Promise<void>(resolve => (world.release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
-  return world
+  // Another session's shuffle: the list reversed, marked on the player.
+  const shuffledElsewhere = () => {
+    order = [...SONGS].reverse()
+    world.set('playlist-pos', order.indexOf('A'))
+    world.set('user-data/stream-radio/shuffled', true)
+  }
+  return Object.assign(world, { spawned: world.launches, shuffledElsewhere })
 }
 
 const start = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
@@ -64,6 +64,8 @@ test('shuffle reorders the playlist and the panel shows the new order; again put
   await pane.press({ key: 'shuffle' })
   await pane.unmount()
   expect(world.sent).toContainEqual(['playlist-shuffle'])
+  // Marked on the player, for the other sessions to read the list again.
+  expect(world.sent).toContainEqual(['set_property', 'user-data/stream-radio/shuffled', true])
   expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on')
   expect(await labelOf($, 'item-0')).toBe('  1. C')
   expect(await labelOf($, 'item-2')).toBe('▶ 3. A')
@@ -74,7 +76,26 @@ test('shuffle reorders the playlist and the panel shows the new order; again put
   expect(world.sent).toContainEqual(['playlist-unshuffle'])
   expect(await labelOf($, 'item-0')).toBe('▶ 1. A')
 
-  world.release()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('a shuffle made in another session shows here', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on, {})
+  await $.session.start(start)
+  await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
+  await clock.advance(10)
+  const before = world.sent.filter(c => c[1] === 'playlist').length
+
+  world.shuffledElsewhere()
+  await clock.advance(10)
+  // Read whole again: its order changed.
+  expect(world.sent.filter(c => c[1] === 'playlist').length).toBe(before + 1)
+  expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on')
+  expect(await labelOf($, 'item-0')).toBe('  1. C')
+  expect(await labelOf($, 'item-2')).toBe('▶ 3. A')
+
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
@@ -100,7 +121,6 @@ test('repeat cycles all, one, off, reaches the player, and is remembered', async
   expect(store.repeat).toBe('off')
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'repeat sometimes' } as never))).toContain('Usage: /stream repeat')
 
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
@@ -112,7 +132,6 @@ test('a new session plays with the saved repeat', async ($, on) => {
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
   await clock.advance(10)
   expect(world.spawned[0]).toContain('--loop-file=inf')
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

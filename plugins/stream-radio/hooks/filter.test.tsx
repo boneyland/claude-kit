@@ -1,6 +1,8 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
+import { fakeMpv } from './fake-mpv'
+
 const PANE = {
   plugin: 'stream-radio',
   component: 'Pane',
@@ -16,23 +18,7 @@ const PLAYLIST = [
 ]
 
 function engine(on: On) {
-  const world = { sent: [] as unknown[][], release: () => undefined as void }
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
-  on('fs.exists', () => ({ value: true }) as never)
-  on('process.run', (_$, e) => {
-    const argv = [...e.argv]
-    if (argv[0] !== 'python3') return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
-    const command = JSON.parse(argv[4]!) as unknown[]
-    world.sent.push(command)
-    return { value: { exitCode: 0, stdout: JSON.stringify(command[1] === 'playlist' ? PLAYLIST : null), stderr: '' } } as never
-  })
-  on('process.spawn', async function* () {
-    yield { stream: 'stdout', text: 'NP\tIntro\t\t\tno\t3\t\tEND' } as never
-    await new Promise<void>(resolve => (world.release = resolve))
-    return { value: { code: 0, signal: null } } as never
-  })
-  return world
+  return fakeMpv(on, { title: 'Intro', props: { 'time-pos': 3, duration: true }, playlist: PLAYLIST, exists: () => true })
 }
 
 test('typing in the filter narrows the list; Enter plays the first match', async ($, on) => {
@@ -63,7 +49,6 @@ test('typing in the filter narrows the list; Enter plays the first match', async
   expect(await pane.find({ type: 'Button', key: 'folder-/m/Album/Disc 2' })).toBeTruthy()
   await pane.unmount()
 
-  world.release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
