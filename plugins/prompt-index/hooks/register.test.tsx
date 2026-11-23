@@ -1,7 +1,7 @@
 import type { SessionMessage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { inView, jumpTarget, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step } from './register'
+import { inView, isTyped, jumpTarget, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step } from './register'
 
 const PANE = {
   plugin: 'prompt-index',
@@ -37,6 +37,15 @@ const ROWS: SessionMessage[] = [
   { role: 'user', text: '<local-command-stdout>hi</local-command-stdout>', toolUses: [], uuid: 'u4' },
   { role: 'user', text: 'add a scrollbar\nplease', toolUses: [], uuid: 'u5' },
 ]
+
+test('prompts typed in the terminal, the desktop app or over Remote Control count as typed', () => {
+  expect(isTyped({ kind: 'composer' })).toBe(true)
+  expect(isTyped({ kind: 'sdk' })).toBe(true)
+  expect(isTyped({ kind: 'bridge' })).toBe(true)
+  expect(isTyped({ kind: 'unclassified' })).toBe(true)
+  expect(isTyped({ kind: 'task-notification' })).toBe(false)
+  expect(isTyped({ kind: 'peer' })).toBe(false)
+})
 
 test('promptLine keeps typed prompts and slash commands only', () => {
   expect(promptLine('  hello\n  there ')).toBe('hello there')
@@ -115,19 +124,13 @@ test('the pane lists prompts, filters them and jumps on a press', async ($, on) 
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-  {
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /fix the cache timer/ }))?.text).toContain('fix')
     expect(await ui.find({ type: 'Text', text: /^\/tui$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /add a scrollbar please/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /Done\./ })).toBe(undefined)
     expect(await ui.find({ type: 'Text', text: /hi/ })).toBe(undefined)
-    await ui.unmount()
-  }
-  // Terminal only: the other surfaces draw nothing of it.
-  for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
-    const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /fix the cache timer/ })).toBe(undefined)
     await ui.unmount()
   }
 
@@ -169,11 +172,11 @@ test('the footer button opens and closes the pane', async ($, on) => {
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-  {
+  for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
       plugin: 'prompt-index',
       component: 'SessionMode',
-      surface: 'terminal',
+      surface,
       props: { modes: ['focus'] },
     })
     // The engine's own mode labels stay, drawn as its node beside the button.
@@ -187,28 +190,6 @@ test('the footer button opens and closes the pane', async ($, on) => {
     expect((await ui.find({ type: 'Button', key: 'toggle' }))?.props.label).toBe('Prompts')
     await ui.unmount()
   }
-  // The desktop app's footer is narrow: no button there.
-  const desk = await $.ui.mount({
-    plugin: 'prompt-index',
-    component: 'SessionMode',
-    surface: 'desktop',
-    props: { modes: ['focus'] },
-  })
-  expect(await desk.find({ type: 'Button', key: 'toggle' })).toBe(undefined)
-  await desk.unmount()
-})
-
-test('a session outside the terminal registers no /prompts', async ($, on) => {
-  const registered: string[] = []
-  on('command.register', (_, e) => {
-    registered.push(e.name)
-    return { value: { command: e.name } }
-  })
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.messages', () => ({ value: ROWS }))
-
-  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
-  expect(registered).toEqual([])
 })
 
 test('a prompt is on screen only while a row of its text is', () => {
@@ -270,4 +251,25 @@ test('rows left behind by a jump are not on screen', () => {
   // Rows the order doesn't know yet are kept; with nothing known on screen, those alone.
   expect([...inView(ids, new Map([['new', r(0, 3, 4, 7)]]))]).toEqual(['new'])
   expect([...inView(ids, new Map())]).toEqual([])
+})
+
+test('a prompt typed in the desktop app stays listed once its row is drawn', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'prompts' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.messages', () => ({ value: ROWS }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  const row = (requestId: string, kind: string) =>
+    $.ui.render({ component: 'UserMessage', requestId, surface: 'desktop', props: { text: '', origin: { kind } } } as never)
+  await row('u1', 'sdk')
+  await row('u5', 'task-notification')
+  // Opening the pane re-reads the list.
+  await $.command.run({ command: 'prompts', args: '' } as never)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: /fix the cache timer/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /add a scrollbar/ })).toBe(undefined)
+  await ui.unmount()
 })

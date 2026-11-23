@@ -87,6 +87,13 @@ export const step = (
   return (next ?? (dir === 1 ? ordered[0] : ordered[ordered.length - 1]))?.h
 }
 
+// Whether a prompt row is the person's own: typed in the terminal
+// (`composer`), in the desktop app (`sdk`, the app driving the CLI), from a
+// Remote Control client (`bridge`), or stored before origins were stamped.
+// Notifications, peers' messages and other plugins' prompts are not.
+export const isTyped = (origin: { kind: string }) =>
+  origin.kind === 'composer' || origin.kind === 'sdk' || origin.kind === 'bridge' || origin.kind === 'unclassified'
+
 // Never lets a failed read hold up the prompt or the turn it rides on.
 const refresh = ($: EngineInterface) => readPrompts($).catch(() => undefined)
 
@@ -203,8 +210,6 @@ export const sectionsOn = (
 
 // The main loop's turn is running: the last command's reply may not be written yet.
 let isTurnRunning = false
-// Whether the session runs in the terminal (TUI); elsewhere the mod stays idle.
-let isActive = false
 
 const readPrompts = async ($: EngineInterface) => {
   const rows = await $.session.messages({ last: 4096 })
@@ -272,9 +277,6 @@ const cut = (text: string, width: number) =>
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    // Terminal (TUI) only: in the desktop app and other surfaces the mod stays idle.
-    isActive = e.surface === 'terminal'
-    if (!isActive) return started
     await $.command.register({
       name: 'prompts',
       description: 'Show this session’s prompts in a pane; click one to jump to it',
@@ -311,7 +313,7 @@ export const register: Register = on => {
   // A button at the right of the prompt footer, after the engine's own mode
   // labels, that opens and closes the pane. The footer takes no keyboard
   // focus, so it is pressed with the mouse; /prompts does the same by key.
-  on('ui.render', { component: 'SessionMode', surface: 'terminal' }, async ($, e, next) => {
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const { Box, Button } = $.ui.resolve(e)
     const up = await read($, isOpen)
     return (
@@ -324,13 +326,13 @@ export const register: Register = on => {
 
   on('prompt.submit', async ($, e, next) => {
     const sent = await next(e)
-    if (isActive) await refresh($)
+    await refresh($)
     return sent
   }).catch(($, e, next) => next(e))
 
   // A turn starting answers the prompt or command before it: list it now.
   on('turn.start', async ($, e, next) => {
-    if (isActive && e.agentId === undefined) {
+    if (e.agentId === undefined) {
       isTurnRunning = true
       await refresh($)
     }
@@ -339,7 +341,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (isActive && e.agentId === undefined) {
+    if (e.agentId === undefined) {
       isTurnRunning = false
       await refresh($)
     }
@@ -348,7 +350,7 @@ export const register: Register = on => {
 
   // Note which transcript rows are in the viewport, whatever their kind, and
   // redraw the pane when the set of prompt sections on screen changes.
-  on('ui.render', { surface: 'terminal' }, async ($, e, next) => {
+  on('ui.render', async ($, e, next) => {
     const props = e.props as { onScreen?: At | null }
     if ('onScreen' in props) {
       const at = props.onScreen ?? null
@@ -366,15 +368,15 @@ export const register: Register = on => {
 
   // Leave each prompt's row as the engine draws it; note only whether the
   // person typed it.
-  on('ui.render', { component: 'UserMessage', surface: 'terminal' }, async ($, e, next) => {
-    if (e.props.origin.kind !== 'composer' && e.props.origin.kind !== 'unclassified') {
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    if (!isTyped(e.props.origin)) {
       if (!notTyped.has(e.requestId)) $.ui.invalidate('ui.render')
       notTyped.add(e.requestId)
     }
     return next(e)
   })
 
-  on('ui.render', { component: 'Pane', requestId: PANE, surface: 'terminal' }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input } = $.ui.resolve(e)
     const list = await read($, prompts)
     const q = await read($, query)
