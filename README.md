@@ -10,6 +10,7 @@ My mods for [Claude Code](https://claude.com/claude-code), plus savvy-flow and s
 | [prompt-index](plugins/prompt-index) | mod | A pane listing the session's prompts: click one to jump there, filter, step through matches, see which are on screen. `/prompts` or the footer button toggles it. |
 | [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv. A footer button shows the song and its progress and opens a menu (pause, stop, play last or default, type a URL); it retries with yt-dlp's android client when YouTube refuses. |
 | [pr-watch](plugins/pr-watch) | mod | Watches the current branch's PR (or any PR). When CI fails or a merge conflict appears, it wakes this same session to fix it and push, with no cloud session. A footer button sums up the PRs and opens a side panel to watch, check and stop them; `/pr-watch` does the same. |
+| [footer-where](plugins/footer-where) | mod | Shows the current directory and git branch at the right of the prompt footer. |
 
 savvy-flow and savvy-progress work on their own and light up together: with both installed, the flow drives the bar and workers report their progress to the panel. The other mods are independent of each other.
 

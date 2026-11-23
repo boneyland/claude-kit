@@ -1,0 +1,13 @@
+{
+  "name": "footer-where",
+  "version": "0.1.0",
+  "types": "./types/index.d.ts",
+  "description": "Show the session's directory and git branch at the right of the prompt footer.",
+  "author": {
+    "name": "boneyland",
+    "url": "https://github.com/boneyland"
+  },
+  "homepage": "https://github.com/boneyland/claude-kit/tree/main/plugins/footer-where",
+  "repository": "https://github.com/boneyland/claude-kit",
+  "license": "MIT"
+}
