@@ -5,6 +5,8 @@ import { hostOf } from './host-claude'
 // A test's `$` is the kit's engine, not a plugin's: the adapter is driven with a
 // stub of the few `$` calls it forwards. The atom-backed state store is covered
 // by the mod's own tests, which run the player through it.
+// The test runtime has timers; the mod's typings don't declare them.
+const later = (globalThis as unknown as { setTimeout(f: () => void, ms: number): unknown }).setTimeout
 const quiet = { titleChanged: () => undefined, watching: () => undefined }
 type Chunk = { stream: 'stdout' | 'stderr'; text: string }
 
@@ -47,4 +49,21 @@ test('watch yields the watcher stdout and skips stderr', async () => {
   for await (const text of h.watch('/tmp/s.sock', ['pause'])) chunks.push(text)
   expect(chunks.join('')).toBe('{"event":"start-file"}\n{"event":"file-loaded"}\n')
   expect(spawned[0]).toEqual(['python3', '-I', '/plug/hooks/mpv-ipc.py', '/tmp/s.sock', '--watch', '["pause"]'])
+})
+
+test('return() ends the watch at once, while it waits on a quiet player', async () => {
+  let returned = false
+  const quietStream = {
+    next: () => new Promise<never>(() => undefined), // a paused player: no next chunk, ever
+    return: async () => ((returned = true), { done: true, value: undefined }),
+    [Symbol.asyncIterator]() {
+      return this
+    },
+  }
+  const $ = { plugin: { root: '/plug' }, process: { spawn: () => quietStream } }
+  const watch = hostOf($ as never, {} as never, quiet).watch('/tmp/s.sock', ['pause'])
+  void watch.next()
+  const done = await Promise.race([watch.return(undefined).then(() => 'returned'), new Promise(r => later(() => r('stuck'), 200))])
+  expect(done).toBe('returned')
+  expect(returned).toBe(true)
 })

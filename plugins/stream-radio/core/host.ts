@@ -15,6 +15,10 @@ export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; c
 // into it (-1 for a live stream) and the song or chapter title.
 export type Resume = { url: string; index: number; seconds: number; title: string }
 
+export type WatchStream = AsyncIterableIterator<string> & {
+  return(value?: unknown): Promise<IteratorResult<string, unknown>>
+}
+
 export type RunResult = { exitCode: number; stdout: string; stderr: string }
 
 // The player's state, by key: what the footer, the panel and the TUI draw from.
@@ -58,8 +62,9 @@ export interface Host {
   // listens or mpv refused.
   ipc(socket: string, command: readonly unknown[]): Promise<{ data: unknown } | undefined>
   // The player's changes on `socket`, as chunks of `mpv-ipc.py --watch` lines;
-  // ends when the player goes away.
-  watch(socket: string, props: readonly string[]): AsyncGenerator<string, void, unknown>
+  // ends when the player goes away. return() must end the watch at once, even
+  // while it waits for the next chunk (a paused player sends none).
+  watch(socket: string, props: readonly string[]): WatchStream
   now(): Promise<number>
   sleep(ms: number): Promise<void>
   every(ms: number, fn: () => void): { cancel(): void }

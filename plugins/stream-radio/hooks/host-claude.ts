@@ -2,7 +2,7 @@
 // mod made before the core existed, so the player behaves as it always has.
 import type { EngineInterface } from 'claude-code'
 
-import type { Host, Queue, Resume, StateStore } from '../core/host'
+import type { Host, Queue, Resume, StateStore, WatchStream } from '../core/host'
 import type { Queue as ContractQueue, Resume as ContractResume } from '../types'
 
 // The state contract must be self-contained, so it spells Queue and Resume out
@@ -30,15 +30,28 @@ export function hostOf($: EngineInterface, vars: StateStore, events: Host['event
         return { data: null }
       }
     },
-    async *watch(socket, props) {
+    // Not an async generator: a generator's return() waits until its body
+    // next yields, which leaves the watcher running on a quiet player. This
+    // hands return() straight to the process stream, which kills it at once.
+    watch(socket, props) {
       const stream = $.process.spawn({ argv: ipcArgv(socket, '--watch', JSON.stringify(props)) })
-      try {
-        for await (const { stream: from, text } of stream) {
-          if (from !== 'stderr') yield text
-        }
-      } finally {
-        await stream.return(undefined as never).catch(() => undefined)
+      const it: WatchStream = {
+        async next() {
+          for (;;) {
+            const step = await stream.next()
+            if (step.done) return { done: true, value: undefined }
+            if (step.value.stream !== 'stderr') return { done: false, value: step.value.text }
+          }
+        },
+        async return() {
+          await stream.return(undefined as never).catch(() => undefined)
+          return { done: true, value: undefined }
+        },
+        [Symbol.asyncIterator]() {
+          return it
+        },
       }
+      return it
     },
     now: () => $.clock.now(),
     sleep: ms => $.clock.sleep(ms),
