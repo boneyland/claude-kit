@@ -739,6 +739,31 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const { Box, Button } = $.ui.resolve(e)
     const title = await read($, playing)
+    // The desktop app's footer is narrow: an icon alone, doing what the
+    // terminal's button does (play last when idle; else open the panel, or
+    // pause with toggleOnly). ♪ plays, ⏸ is paused.
+    if (e.surface === 'desktop') {
+      const again = (await read($, lastUrl)) || defaultUrl
+      if (!title && !again) return next(e)
+      const paused = await read($, isPaused)
+
+      return (
+        <Box flexDirection="row" gap={1}>
+          {await next(e)}
+          <Button
+            key="stream-radio"
+            label={!title ? '▶' : paused ? '⏸' : '♪'}
+            onPress={async () =>
+              !title
+                ? resume($, config, again, await read($, resumeAt))
+                : config.toggleOnly
+                  ? void togglePause($)
+                  : void togglePane($)
+            }
+          />
+        </Box>
+      )
+    }
     if (!title) {
       // Idle: a button that plays again what played last, else the default
       // stream. It starts it directly: a plugin's own $.command.run never

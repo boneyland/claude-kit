@@ -28,6 +28,8 @@ The footer reads `3:42 <title>`, at most 40 columns: how far into the current so
 
 ## When the stream drops
 
+In the desktop app, whose footer has little room, the button is an icon alone and does the same: `▶` with nothing playing plays what played last, and while playing `♪` (or `⏸` paused) opens the panel.
+
 If the player stops by itself after it had been playing (a live stream drops, the network goes, mpv crashes), the footer shows `reconnecting in 2 s…` and the same URL starts again where it got to, after 2, then 5, then 15 seconds; after three failed tries it says it gave up. A minute of steady playing starts the tries over. It does not reconnect after you stop it or start something else while it waits, when a playlist with Repeat off has simply finished, or when mpv was ended from outside (SIGTERM, SIGINT, SIGKILL).
 
 ## Requirements

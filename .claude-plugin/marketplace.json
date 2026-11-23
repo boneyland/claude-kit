@@ -40,7 +40,7 @@
       "name": "stream-radio",
       "source": "./plugins/stream-radio",
       "description": "Mod: /stream <url> plays a YouTube stream's audio, or local music files and folders, through mpv and a footer button shows the song and progress and opens a side panel to pause, skip, stop, pick a song from the playlist or enter a URL.",
-      "version": "0.25.1",
+      "version": "0.26.0",
       "category": "mod"
     },
     {

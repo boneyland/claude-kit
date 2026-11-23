@@ -22,7 +22,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
         props: { modes: [] },
       })
       const button = await ui.find({ type: 'Button', key: 'stream-radio' })
-      expect(button?.props.label).toBe('▶ Play radio')
+      // The desktop app's footer is narrow: an icon alone there.
+      expect(button?.props.label).toBe(surface === 'desktop' ? '▶' : '▶ Play radio')
       await ui.press({ key: 'stream-radio' })
 
       // The click reached the start logic itself: it checked for the player.
@@ -83,6 +84,49 @@ test('a video with chapters shows only the chapter in the footer', async ($, on)
   await clock.advance(10)
   const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } })
   expect((await ui.find({ type: 'Button', key: 'stream-radio' }))?.props.label).toBe('1:16 Nocturne, L. 82')
+  await ui.unmount()
+  release()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('on the desktop app the footer is an icon that opens the panel', async ($, on) => {
+  const clock = mock.clock(on)
+  let panes: { id: string; title: string; isShown: boolean; isFocused: boolean; isPlaced: boolean }[] = []
+  on('ui.panes', () => ({ value: panes }) as never)
+  on('ui.open', (_$, e) => {
+    panes = [{ id: e.id, title: 'Radio', isShown: true, isFocused: false, isPlaced: true }]
+
+    return { value: { isPlaced: true } } as never
+  })
+  on('ui.close', () => {
+    panes = []
+
+    return { value: undefined } as never
+  })
+  on('process.run', () => ({ value: { exitCode: 0, stdout: 'null', stderr: '' } }) as never)
+  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
+  let release: () => void = () => undefined
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout', text: 'NP\tClaude FM\t\t\tno\t\t\tEND' } as never
+    await new Promise<void>(resolve => (release = resolve))
+    return { value: { code: 0, signal: null } } as never
+  })
+  await $.command.run({ command: 'stream', args: 'https://example.com/live' } as never)
+  await clock.advance(10)
+
+  const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'desktop', props: { modes: [] } })
+  const label = async () => (await ui.find({ type: 'Button', key: 'stream-radio' }))?.props.label
+  expect(await label()).toBe('♪')
+  await ui.press({ key: 'stream-radio' })
+  await clock.advance(10)
+  expect(panes.map(p => p.id)).toHaveLength(1)
+  await ui.press({ key: 'stream-radio' })
+  await clock.advance(10)
+  expect(panes).toEqual([])
+  await $.command.run({ command: 'stream', args: 'pause' } as never)
+  await clock.advance(10)
+  expect(await label()).toBe('⏸')
   await ui.unmount()
   release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
