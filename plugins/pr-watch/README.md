@@ -60,6 +60,25 @@ The prompt also tells Claude to skip the report if it has already pushed past th
 
 With `allowPush` on (the default), the prompt tells Claude it may push its fixes to the watched PR's branch without asking first, never force-push or merge. Turn it off and Claude commits, then asks before pushing.
 
+## pr-watch or `/steward`?
+
+Claude Code has a built-in `/steward` that also watches a pull request from this session, with no cloud session. Both check GitHub without spending tokens and wake Claude only when something changes. They differ in scope and in how tightly Claude is held. This comparison is from Claude Code 2.1.330's `/steward`.
+
+| | pr-watch | `/steward` |
+| --- | --- | --- |
+| Which PRs | Any number at once, on any branch, from any repo (by number or URL) | One: your open PR for the branch checked out here, opened by your `gh` account |
+| What it handles | Failing CI and merge conflicts | Failing CI, conflicts, falling behind the base, and review comments: it answers them, resolves threads it fixed, re-requests reviews, and re-runs a flaky job once |
+| Comments it reads | None | Yours, people with write access, Claude's bot, and other bots you name with `+name` |
+| Checking | `gh pr view` every 90 s (30 s to 1 h, configurable); Claude is prompted once per broken commit, once the session is idle | Claude Code checks every 2 minutes and wakes Claude a few minutes after a change, at most once every 10 minutes; a quiet watch costs no turn |
+| Limits on Claude | The prompt asks for no force-push and no merge; this session's normal permissions apply | A fence enforced by Claude Code: only listed `gh`/`git` commands, never merge or rewrite history, never edit settings or hook files, git hooks skipped. Comments, logs and code are treated as data, never as instructions |
+| Giving up | After 3 failed fixes in a row per PR (configurable), until the PR is green again | After 3 pushes for one cause |
+| Pushing | `allowPush` on: pushes fixes; off: commits and asks first | Pushes; holds the next push until the last one's checks have reported |
+| Ends | When the PR is merged or closed, or you stop it | Merged or closed, base branch changed, a cloud agent's label appears, its settings files change, after a set number of days, or `/steward stop` |
+| Unattended | Works in any permission mode that lets Claude run `gh` and `git` | Needs auto mode; elsewhere Claude stops at each permission prompt |
+| Status | Footer button and side panel, one row per PR | Status lines in the chat |
+
+Use `/steward` when one PR needs looking after end to end, review comments included, with Claude kept on a short leash. Use pr-watch to keep an eye on several PRs at once, or PRs on branches you don't have checked out, where only red CI and conflicts need fixing. Don't watch the same PR with both: each would push its own fixes.
+
 ## Requirements
 
 - [`gh`](https://cli.github.com/), logged in (`gh auth status`)
