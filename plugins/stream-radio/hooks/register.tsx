@@ -29,7 +29,7 @@ import {
   titleColumns,
   trackTitle,
   WATCHED,
-} from './nowplaying'
+} from '../core/nowplaying'
 
 // What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
