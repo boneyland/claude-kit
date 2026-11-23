@@ -14,10 +14,16 @@ import {
   USAGE,
 } from './watch'
 import type { PrStatus, Rules, Watched } from './watch'
+import { refusal } from './fence'
 
 const watched = atom({ plugin: 'pr-watch', key: 'watched' } as const, [] as Watched[])
 const isOpen = atom({ plugin: 'pr-watch', key: 'isOpen' } as const, false)
 const notice = atom({ plugin: 'pr-watch', key: 'notice' } as const, '')
+// Kept in state, not a module variable, so a reload mid-turn keeps the fence up.
+const fence = atom({ plugin: 'pr-watch', key: 'fence' } as const, null as { branch: string; number: number } | null)
+
+// The first line of every prompt pr-watch submits: its turn opens with it.
+const PROMPT_HEAD = /^pr-watch: PR #(\d+) in \S+ needs a fix\.\n\S+\nBranch `([^`]+)`/
 
 const PANE = 'pr-watch'
 const TITLE = 'PR watch'
@@ -55,10 +61,12 @@ async function fetchStatus($: EngineInterface, target: string): Promise<PrStatus
 // Records what a poll saw for one PR and acts on it: asks Claude for a fix, or
 // stops watching a merged or closed PR. A PR unwatched meanwhile stays unwatched.
 async function apply($: EngineInterface, config: Config, entry: Watched, status: PrStatus) {
-  const { next, problems, isGivingUp, isDone } = decide(entry, status, config)
+  const { next, problems, isGivingUp, isDone, reason } = decide(entry, status, config, await $.clock.now())
   if (isDone) {
     await update($, watched, list => list.filter(w => w.url !== entry.url))
-    $.ui.toast(`pr-watch: #${entry.number} is ${status.state.toLowerCase()}; no longer watched`)
+    const why = `pr-watch: #${entry.number} is ${reason}; no longer watched`
+    $.ui.toast(why)
+    if (status.state === 'OPEN') $.ui.log(why)
 
     return
   }
@@ -240,6 +248,30 @@ export const register: Register = (on, options) => {
     timer?.cancel()
     timer = $.clock.every(config.intervalMs, () => void poll($, config))
 
+    return next(e)
+  })
+
+  // A turn that a pr-watch prompt opens is fenced until it ends; the user's own
+  // turns are not. A subagent's turn inside it is covered by the main turn's fence.
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const head = PROMPT_HEAD.exec(e.text)
+      await update($, fence, () => (head ? { number: Number(head[1]), branch: head[2]! } : null))
+    }
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) await update($, fence, () => null)
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    const up = await read($, fence)
+    if (up !== null) {
+      const why = refusal(e as unknown as { tool: string } & Record<string, unknown>, up)
+      if (why !== null) return { deny: why }
+    }
     return next(e)
   })
 

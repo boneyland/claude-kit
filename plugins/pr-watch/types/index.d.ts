@@ -13,7 +13,13 @@ export type PrStatus = {
   sha: string
   isConflicting: boolean
   failing: Check[]
+  // checks still running; after decide(), only those not stuck
   pending: number
+  // when each pending check started (epoch ms), null where GitHub gives no time (queued)
+  pendingStarts?: (number | null)[]
+  // pending checks that have run or waited over an hour: counted as not running
+  stalled?: number
+  labels?: string[]
   total: number
 }
 
@@ -33,6 +39,10 @@ export type Watched = {
   attempts: number
   // the attempts ran out; cleared when the PR is healthy again
   hasGivenUp: boolean
+  // the base branch when watching started: a PR retargeted elsewhere is dropped
+  base?: string
+  // the head commit, and when pr-watch first saw it: the age of a queued check
+  headSince?: { sha: string; at: number }
 }
 
 declare module 'claude-code' {
@@ -44,6 +54,8 @@ declare module 'claude-code' {
       isOpen: boolean
       // The reply to the panel's last action; empty for none.
       notice: string
+      // The PR a turn that pr-watch started is fixing, while that turn runs: its tool calls are fenced.
+      fence: { branch: string; number: number } | null
     }
   }
 }

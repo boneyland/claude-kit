@@ -149,3 +149,41 @@ test('a session outside the terminal registers no /pr-watch and never polls', as
   expect(registered).toEqual([])
   expect(ran).toEqual([])
 })
+
+test('the turn a pr-watch prompt opens is fenced; the user\'s own turns are not', async ($, on) => {
+  const clock = mock.clock(on)
+  const prompts: string[] = []
+  const ran: string[] = []
+  on('process.run', () => ({ value: { exitCode: 0, stdout: pr(), stderr: '' } }) as never)
+  on('prompt.submit', (_$, e) => (prompts.push(e.text), { text: e.text }) as never)
+  on('command.register', () => ({ value: { command: 'pr-watch' } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }) as never)
+  on('tool.call', (_$, e) => (ran.push(String((e as { command?: string }).command ?? e.tool)), { result: {} }) as never)
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'pr-watch', args: '' } as never)
+  await clock.settle()
+  expect(prompts.length).toBe(1)
+
+  const bash = (command: string) => $.tool.call({ tool: 'Bash', command } as never)
+  const end = (turnId: string) => $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, reason: 'answer' } as never)
+
+  await $.turn.start({ text: prompts[0]!, turnId: 'fix' })
+  const forced = await bash('git push --force')
+  expect(String((forced as { deny?: string }).deny)).toContain('pr-watch refused this while it is fixing PR #12')
+  expect(String(((await $.tool.call({ tool: 'Edit', file_path: '/r/.mcp.json', old_string: 'a', new_string: 'b' } as never)) as { deny?: string }).deny)).toContain('.mcp.json')
+  // A subagent in that turn is fenced too.
+  expect(((await $.tool.call({ tool: 'Bash', command: 'gh pr merge 12', agentId: 'a1' } as never)) as { deny?: string }).deny).toBeDefined()
+  await bash('git push origin feat')
+  expect(ran).toEqual(['git push origin feat'])
+  await end('fix')
+
+  // The user's own turn: no fence.
+  await $.turn.start({ text: 'push it with force please', turnId: 'mine' })
+  await bash('git push --force')
+  expect(ran).toEqual(['git push origin feat', 'git push --force'])
+  await end('mine')
+})

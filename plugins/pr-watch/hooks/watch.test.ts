@@ -77,50 +77,50 @@ test('CI is reported once all checks finished, once per head commit', () => {
   const failed = { name: 'CI / lint', url: '' }
 
   // still running: wait
-  const early = decide(w, status({ failing: [failed], pending: 1 }), RULES)
+  const early = decide(w, status({ failing: [failed], pending: 1 }), RULES, 0)
   expect(early.problems).toEqual([])
 
-  const done = decide(early.next, status({ failing: [failed] }), RULES)
+  const done = decide(early.next, status({ failing: [failed] }), RULES, 0)
   expect(done.problems).toEqual(['ci'])
   expect(done.next.attempts).toBe(1)
 
   // the same commit again: already asked
-  expect(decide(done.next, status({ failing: [failed] }), RULES).problems).toEqual([])
+  expect(decide(done.next, status({ failing: [failed] }), RULES, 0).problems).toEqual([])
 
   // a new commit that fails too: asked again
-  const again = decide(done.next, status({ failing: [failed], sha: 'bbbbbbb' }), RULES)
+  const again = decide(done.next, status({ failing: [failed], sha: 'bbbbbbb' }), RULES, 0)
   expect(again.problems).toEqual(['ci'])
 })
 
 test('a conflict is reported at once, with CI when both are due', () => {
   const w = newWatched(status())
-  const both = decide(w, status({ isConflicting: true, failing: [{ name: 'x', url: '' }] }), RULES)
+  const both = decide(w, status({ isConflicting: true, failing: [{ name: 'x', url: '' }] }), RULES, 0)
   expect(both.problems).toEqual(['conflict', 'ci'])
   expect(both.next.attempts).toBe(1)
 
-  const off = decide(w, status({ isConflicting: true }), { ...RULES, fixConflicts: false })
+  const off = decide(w, status({ isConflicting: true }), { ...RULES, fixConflicts: false }, 0)
   expect(off.problems).toEqual([])
 })
 
 test('gives up after maxAttempts, says so once, and starts over when healthy', () => {
   let w = newWatched(status())
   const failed = [{ name: 'x', url: '' }]
-  w = decide(w, status({ failing: failed, sha: 'c1' }), RULES).next
-  w = decide(w, status({ failing: failed, sha: 'c2' }), RULES).next
+  w = decide(w, status({ failing: failed, sha: 'c1' }), RULES, 0).next
+  w = decide(w, status({ failing: failed, sha: 'c2' }), RULES, 0).next
   expect(w.attempts).toBe(2)
 
-  const third = decide(w, status({ failing: failed, sha: 'c3' }), RULES)
+  const third = decide(w, status({ failing: failed, sha: 'c3' }), RULES, 0)
   expect(third.problems).toEqual([])
   expect(third.isGivingUp).toBe(true)
-  expect(decide(third.next, status({ failing: failed, sha: 'c4' }), RULES).isGivingUp).toBe(false)
+  expect(decide(third.next, status({ failing: failed, sha: 'c4' }), RULES, 0).isGivingUp).toBe(false)
 
-  const healthy = decide(third.next, status({ sha: 'c5' }), RULES)
+  const healthy = decide(third.next, status({ sha: 'c5' }), RULES, 0)
   expect(healthy.next.attempts).toBe(0)
   expect(healthy.next.hasGivenUp).toBe(false)
 })
 
 test('a merged or closed PR is done', () => {
-  expect(decide(newWatched(status()), status({ state: 'MERGED' }), RULES).isDone).toBe(true)
+  expect(decide(newWatched(status()), status({ state: 'MERGED' }), RULES, 0).isDone).toBe(true)
 })
 
 test('the prompt names the PR, the failures and the push rule', () => {
@@ -197,4 +197,66 @@ test('targets match by number or URL', () => {
   expect(matches(w, '13')).toBe(false)
   expect(matches(w, `${URL}/files`)).toBe(true)
   expect(matches(w, 'https://github.com/acme/other/pull/12')).toBe(false)
+})
+
+const HOUR = 60 * 60 * 1000
+const T0 = Date.parse('2026-01-01T00:00:00Z')
+
+test('a check pending over an hour stops holding back the red ones', () => {
+  const s = readStatus(
+    gh({
+      statusCheckRollup: [
+        run('lint', 'COMPLETED', 'FAILURE'),
+        run('deploy', 'IN_PROGRESS', '', '2026-01-01T00:00:00Z'),
+        // queued: GitHub's zero time
+        run('e2e', 'QUEUED', '', '0001-01-01T00:00:00Z'),
+      ],
+    }),
+  )
+  expect(s.pendingStarts).toEqual([T0, null])
+  const w = newWatched(s)
+  // Under an hour: both still running, nothing reported.
+  const early = decide(w, s, RULES, T0 + HOUR - 1)
+  expect(early.problems).toEqual([])
+  expect(early.next.status?.pending).toBe(2)
+  // The running one passes an hour; the queued one has waited only since its head was first seen.
+  const later = decide(early.next, s, RULES, T0 + HOUR)
+  expect(later.next.status?.stalled).toBe(1)
+  expect(later.problems).toEqual([])
+  const stuck = decide(later.next, s, RULES, T0 + 2 * HOUR)
+  expect(stuck.next.status?.stalled).toBe(2)
+  expect(stuck.problems).toEqual(['ci'])
+  expect(buildPrompt(stuck.next.status!, stuck.problems, true)).toContain('2 other checks have been pending for over an hour')
+})
+
+test('a stuck check alone is not healthy, and shows as stuck', () => {
+  const s = readStatus(gh({ statusCheckRollup: [run('deploy', 'IN_PROGRESS', '', '2026-01-01T00:00:00Z')] }))
+  const d = decide({ ...newWatched(s), attempts: 1 }, s, RULES, T0 + 2 * HOUR)
+  expect(d.next.attempts).toBe(1)
+  expect(label(d.next)).toEqual({ text: '#12 ⏳ 1 stuck over 1 h', tone: 'warning' })
+  expect(summary([d.next])).toBe('PRs ⏳1')
+})
+
+test('a PR aimed at another base, or taken over by a cloud session, is dropped', () => {
+  const w = newWatched(status())
+  const moved = decide(w, status({ base: 'release' }), RULES, 0)
+  expect(moved.isDone).toBe(true)
+  expect(moved.reason).toBe('now aimed at `release`, not `main`')
+  const cloud = decide(w, status({ labels: ['bug', 'claude-pr-steward-watching'] }), RULES, 0)
+  expect(cloud.isDone).toBe(true)
+  expect(cloud.reason).toContain('`claude-pr-steward-watching`')
+  expect(decide(w, status({ labels: ['claude-code'] }), RULES, 0).isDone).toBe(false)
+  // A row stored before the base was kept adopts the one it sees.
+  const { base: _, ...old } = w
+  expect(decide(old, status({ base: 'release' }), RULES, 0).next.base).toBe('release')
+  expect(readStatus(gh({ labels: [{ name: 'x' }] })).labels).toEqual(['x'])
+})
+
+test('the prompt rules out failures that are not the PR\'s and guards the checkout', () => {
+  const text = buildPrompt(status({ failing: [{ name: 'test', url: '' }] }), ['ci'], true)
+  expect(text).toContain('gh run rerun <run-id> --failed')
+  expect(text).toContain('gh run list --branch main --limit 5')
+  expect(text).toContain('never commit, stash, discard or overwrite it')
+  expect(text).toContain('git pull --ff-only')
+  expect(text).toContain("project's own fast checks")
 })
