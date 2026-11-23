@@ -128,11 +128,29 @@ const unitPrices = (s: SpendInputs, prompt: number) => {
   return { input: r.input * k, read: r.read * k, output: r.output * k, write1h: 2 * r.input * k }
 }
 
+// Starting over: a new session caches its baseline, then re-reads part of what this
+// one carries (the warm-up, measured or guessed) and caches that too, and goes on
+// carrying both. Its one-off cost, what it carries, and how the row names the re-read.
+const restartOf = (s: SpendInputs & { baseline: number; context: number }) => {
+  const old = s.context - s.baseline
+  const isGuess = s.warmup === null || s.warmup === undefined
+  const warmup = isGuess ? Math.min(WARMUP_GUESS, WARMUP_GUESS_SHARE * old) : s.warmup!
+  const carried = s.baseline + warmup
+  const b = unitPrices(s, s.baseline)!
+  const w = unitPrices(s, carried)!
+  return {
+    cost: s.baseline * b.write1h + warmup * w.write1h,
+    carried,
+    read: w.read,
+    label: `new session + ${isGuess ? `~${tokens(warmup)} re-read (guess)` : `${tokens(warmup)} re-read`}`,
+  }
+}
+
 export type SpendWarning = { kind: 'expired' | 'overhead' | 'cache-miss' | 'output'; text: string }
 
 // After the cache lapsed the next message writes the whole context back at the
-// 1-hour rate; a fresh session writes only its baseline. (A /compact then costs
-// more than either: it reads the uncached context too.)
+// 1-hour rate; a fresh session writes its baseline and, over its first turns, its
+// warm-up. (A /compact then costs more than either: it reads the uncached context too.)
 export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
   if (s.context === null || s.baseline === null) return null
   const p = unitPrices(s, s.context)
@@ -141,11 +159,11 @@ export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
   if (s.context - s.baseline < MIN_OLD_TOKENS) return null
 
   const resume = s.context * p.write1h
-  const fresh = s.baseline * b.write1h
-  if (resume - fresh < EXPIRED_MIN_SAVING) return null
+  const fresh = restartOf({ ...s, baseline: s.baseline, context: s.context })
+  if (resume - fresh.cost < EXPIRED_MIN_SAVING) return null
   return {
     kind: 'expired',
-    text: `Cache expired: next turn rewrites ${tokens(s.context)} ≈ ${usd(resume)} · new session ≈ ${usd(fresh)}`,
+    text: `Cache expired: next turn rewrites ${tokens(s.context)} ≈ ${usd(resume)} · ${fresh.label} ≈ ${usd(fresh.cost)}`,
   }
 }
 
@@ -172,18 +190,10 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   }
   const parts = [`Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`]
 
-  // A new session caches its baseline, then re-reads part of what this one carries
-  // (the warm-up) and caches that too; it goes on carrying both, so it saves only the rest.
-  const isGuess = s.warmup === null || s.warmup === undefined
-  const warmup = isGuess ? Math.min(WARMUP_GUESS, WARMUP_GUESS_SHARE * old) : s.warmup!
-  const restart = s.baseline + warmup
-  const w = unitPrices(s, restart)!
-  const fresh = s.baseline * b.write1h + warmup * w.write1h
-  const freshSaving = (s.context * p.read - restart * w.read) * steps
-  if (freshSaving > 0) {
-    const reread = isGuess ? `~${tokens(warmup)} re-read (guess)` : `${tokens(warmup)} re-read`
-    parts.push(`new session + ${reread} ≈ ${usd(fresh)} once → pays back in ${payback(fresh, freshSaving)}`)
-  }
+  // The new session goes on carrying its baseline and warm-up, so it saves only the rest.
+  const fresh = restartOf({ ...s, baseline: s.baseline, context: s.context })
+  const freshSaving = (s.context * p.read - fresh.carried * fresh.read) * steps
+  if (freshSaving > 0) parts.push(`${fresh.label} ≈ ${usd(fresh.cost)} once → pays back in ${payback(fresh.cost, freshSaving)}`)
 
   // A compaction reads the context once, writes the summary, then re-caches
   // baseline and summary; it saves what the summary does not carry.

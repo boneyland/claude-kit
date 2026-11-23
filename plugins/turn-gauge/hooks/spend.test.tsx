@@ -38,7 +38,7 @@ test('Haiku 5.5 prices a prompt over 100k at its long-prompt rates, on all of it
 test('on Haiku 5.5 the long context pays long-prompt rates, a fresh session short ones', async () => {
   const haiku = { ...OPUS, model: 'claude-haiku-5-5' }
   // 150k × $1/M against 20k × $0.20/M.
-  expect(expiredWarning(haiku)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $0.15 · new session ≈ $0.004')
+  expect(expiredWarning(haiku)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $0.15 · new session + ~25k re-read (guess) ≈ $0.009')
   // A request: 150k × $0.05/M − 20k × $0.01/M = $0.0073; under $0.05 a turn stays quiet,
   // however large its share.
   const cheap = { ...haiku, recentCosts: [0.06, 0.06, 0.06] }
@@ -49,7 +49,11 @@ test('on Haiku 5.5 the long context pays long-prompt rates, a fresh session shor
 })
 
 test('an expired cache prices re-caching the context against a fresh session', async () => {
-  expect(expiredWarning(OPUS)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $1.20 · new session ≈ $0.16')
+  // A new session caches 20k, then re-reads and caches its warm-up: guessed, else measured.
+  expect(expiredWarning(OPUS)?.text).toBe('Cache expired: next turn rewrites 150k ≈ $1.20 · new session + ~25k re-read (guess) ≈ $0.36')
+  expect(expiredWarning({ ...OPUS, warmup: 28_000 })?.text).toBe('Cache expired: next turn rewrites 150k ≈ $1.20 · new session + 28k re-read ≈ $0.38')
+  // Starting over must save $0.10: a 140k warm-up costs $1.28 against $1.20.
+  expect(expiredWarning({ ...OPUS, warmup: 140_000 })).toBe(null)
   // Little carried: nothing to say.
   expect(expiredWarning({ ...OPUS, context: 30_000 })).toBe(null)
   // 50k above the baseline is still early in a session.
@@ -148,7 +152,7 @@ test('no agents part when the turn ran no subagents', async ($, on) => {
 
 test('an unknown model waits for calibration; the scale follows the engine', async () => {
   expect(expiredWarning({ ...OPUS, model: 'mystery' })).toBe(null)
-  expect(expiredWarning({ ...OPUS, scale: 2 })?.text).toBe('Cache expired: next turn rewrites 150k ≈ $2.40 · new session ≈ $0.32')
+  expect(expiredWarning({ ...OPUS, scale: 2 })?.text).toBe('Cache expired: next turn rewrites 150k ≈ $2.40 · new session + ~25k re-read (guess) ≈ $0.72')
 })
 
 test('B from the breakdown is everything in use but the conversation, else nothing', async () => {
@@ -213,7 +217,7 @@ test('the band shows the expired-cache warning once the cache lapsed', async ($,
   seedBand(on, { cache: { expiresAt: NOW - 1000, secondsLeft: 0 } })
   const ui = await $.ui.mount(BAND())
   expect((await ui.find({ type: 'Text', text: /^Cache expired/ }))?.text).toBe(
-    'Cache expired: next turn rewrites 150k ≈ $1.20 · new session ≈ $0.16',
+    'Cache expired: next turn rewrites 150k ≈ $1.20 · new session + ~25k re-read (guess) ≈ $0.36',
   )
   await ui.unmount()
 })

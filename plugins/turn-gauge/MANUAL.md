@@ -67,9 +67,9 @@ Cache expired and overhead are about carrying a long context, and both compare a
 
 ### Cache expired
 
-> `Cache expired: next turn rewrites 180k ≈ $1.44 · new session ≈ $0.16`
+> `Cache expired: next turn rewrites 180k ≈ $1.44 · new session + 28k re-read ≈ $0.38`
 
-Shown once the cache has lapsed, when starting over would save at least $0.10. It compares writing the whole context back against writing only a new session's baseline. A `/compact` at this point costs more than either, because it also reads the uncached context.
+Shown once the cache has lapsed, when starting over would save at least $0.10. It compares writing the whole context back against what a new session writes: its baseline, plus the warm-up it re-reads in its first turns (see [Payback](#payback); guessed until measured). A `/compact` at this point costs more than either, because it also reads the uncached context.
 
 ### Running out before the reset
 
