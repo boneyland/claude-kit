@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, Flow, Panel, Phase, PlannedTask } from '../types'
+import { SPRITE_COLS, SPRITE_FRAMES, SPRITE_ROWS, spritePixels, spritePng } from './sprite'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -602,10 +603,13 @@ export const termCrab = (frame: number, shift = SWAY_PX / 2): CrabCell[][] => {
 
 // Where a running agent's crab is at time `t`. Each agent starts at its own
 // point of the cycle, so a crowd doesn't march in step.
-export const crabPose = (t: number, id: string): [frame: number, shift: number] => {
+export const crabTick = (t: number, id: string): number => {
   let phase = 0
   for (const ch of id) phase = (phase * 31 + ch.charCodeAt(0)) % SWAY.length
-  const tick = Math.floor(t / CRAB_FRAME_MS) + phase
+  return Math.floor(t / CRAB_FRAME_MS) + phase
+}
+export const crabPose = (t: number, id: string): [frame: number, shift: number] => {
+  const tick = crabTick(t, id)
   return [Math.floor(tick / 2), SWAY[tick % SWAY.length]!]
 }
 
@@ -704,6 +708,39 @@ const COSTUMES: Record<string, (f: Fill, t: string) => void> = {
 }
 
 const costumeOf = (type: string): string => (type === 'Explore' ? 'explore' : tierOf(type))
+
+// The terminal's pixel crabs: the desktop's costumes as PNG frames, made once
+// each (`still` for a crab at rest) and kept, so a blit only names one again.
+const spriteCache = new Map<string, string>()
+export const crabSprite = (costume: string, frame: number | null): string => {
+  const k = `${costume}:${frame === null ? 'still' : frame % SPRITE_FRAMES}`
+  let png = spriteCache.get(k)
+  if (png === undefined) {
+    const draw = COSTUMES[costume] ?? COSTUMES.other!
+    const bytes = spritePng(spritePixels(costume, f => draw(f, colorOf(costume)), frame))
+    png = (bytes as Uint8Array & { toBase64(): string }).toBase64()
+    spriteCache.set(k, png)
+  }
+  return png
+}
+
+// How the terminal draws crabs: `pixels` (sprites, where the terminal shows
+// images) or `cells` (Clawd in quadrant blocks). `auto` picks pixels in kitty
+// and Ghostty, or where Claude Code is told to send images, and falls back to
+// cells for the session if the terminal turns a sprite away.
+type CrabStyle = 'auto' | 'pixels' | 'cells'
+let crabStyle: CrabStyle = 'auto'
+let canDrawPixels = false
+let isPixelsRefused = false
+const usesPixels = (): boolean => crabStyle === 'pixels' || (crabStyle === 'auto' && canDrawPixels && !isPixelsRefused)
+
+const detectPixels = async ($: EngineInterface): Promise<boolean> => {
+  if ((await $.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES')) === '1') return true
+  if (await $.env.get('KITTY_WINDOW_ID')) return true
+  const term = (await $.env.get('TERM')) ?? ''
+  const program = ((await $.env.get('TERM_PROGRAM')) ?? '').toLowerCase()
+  return /kitty|ghostty/.test(term) || program === 'ghostty'
+}
 
 const CRAB_SCALE = 1.1
 
@@ -939,6 +976,9 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     lang = await detectLang($, options.language)
+    const style = String(options.terminalCrabs ?? 'auto')
+    crabStyle = style === 'pixels' || style === 'cells' ? style : 'auto'
+    canDrawPixels = await detectPixels($)
     await $.tool.register({
       name: 'progress',
       description:
@@ -1020,8 +1060,23 @@ export const register: Register = (on, options) => {
         const running = (await read($, agents)).filter(a => a.status === 'running')
         if (running.length === 0) return
         const t = await $.clock.now()
+        const isPixels = usesPixels()
         for (const a of running) {
-          void $.ui.blit({ requestId: PANE, key: crabKey(a.id), cells: rasterCells(termCrab(...crabPose(t, a.id))) }).catch(() => {})
+          const key = crabKey(a.id)
+          if (!isPixels) {
+            void $.ui.blit({ requestId: PANE, key, cells: rasterCells(termCrab(...crabPose(t, a.id))) }).catch(() => {})
+            continue
+          }
+          void $.ui
+            .blit({ requestId: PANE, key, source: { png: crabSprite(costumeOf(a.type), crabTick(t, a.id)) } })
+            .then(r => {
+              // The terminal draws the alt instead: switch this session to cells.
+              if (crabStyle === 'auto' && r.deny && /alt/i.test(r.deny) && !isPixelsRefused) {
+                isPixelsRefused = true
+                $.ui.invalidate('ui.render')
+              }
+            })
+            .catch(() => {})
         }
       })()
     })
@@ -1343,15 +1398,27 @@ export const register: Register = (on, options) => {
     // the crab clock's blits, between the one-second redraws of the timers.
     // Only the terminal's table has Raster; other text surfaces keep the plain mark.
     const Raster = 'Raster' in ui ? ui.Raster : null
+    const Image = 'Image' in ui ? ui.Image : null
+    const isPixels = usesPixels() && Image !== null
     const cols = Math.max(24, e.props.bodyColumns || 40)
-    const hasCrab = Raster !== null && cols >= 40
+    const hasCrab = (isPixels || Raster !== null) && cols >= 40
     // Two columns of agents when each still fits a crab and a full stats line.
     const COLUMN_GAP = 2
     const isTwoColumns = cols >= 98
     const colW = isTwoColumns ? Math.floor((cols - COLUMN_GAP) / 2) : undefined
     // The crab's pose now, so a redraw lands where the blits had it.
     const clockAt = await $.clock.now().catch(() => at)
-    const crab = (a: AgentRun) => Raster && (
+    const crab = (a: AgentRun) => isPixels && Image ? (
+      <Box key="crab" flexShrink={0}>
+        <Image
+          key={crabKey(a.id)}
+          source={{ png: crabSprite(costumeOf(a.type), a.status === 'running' ? crabTick(clockAt, a.id) : null) }}
+          columns={SPRITE_COLS}
+          rows={SPRITE_ROWS}
+          alt="▣"
+        />
+      </Box>
+    ) : Raster && (
       <Box key="crab" flexShrink={0}>
         <Raster
           key={crabKey(a.id)}
@@ -1394,7 +1461,7 @@ export const register: Register = (on, options) => {
         </Box>
       )
       return (
-        <Box key={a.id} flexDirection="row" gap={1} marginBottom={1} {...(colW !== undefined ? { width: colW, flexShrink: 0 } : {})}>
+        <Box key={a.id} flexDirection="row" gap={1} marginBottom={hasCrab && isPixels ? 0 : 1} {...(colW !== undefined ? { width: colW, flexShrink: 0 } : {})}>
           {hasCrab ? crab(a) : null}
           {lines}
         </Box>

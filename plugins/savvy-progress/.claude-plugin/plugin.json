@@ -1,6 +1,6 @@
 {
   "name": "savvy-progress",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Progress bar above the prompt for /savvy-flow, plus an agents panel (/agents-info): running, finished and planned subagents with model, task progress, context, cost and time.",
   "author": {
     "name": "johnnyvizz",
@@ -28,6 +28,17 @@
       "options": [
         "savvy",
         "any"
+      ]
+    },
+    "terminalCrabs": {
+      "type": "string",
+      "title": "Terminal crabs",
+      "description": "auto: pixel sprites in terminals that show images (kitty, Ghostty), quadrant-block Clawd elsewhere; pixels or cells to choose one",
+      "default": "auto",
+      "options": [
+        "auto",
+        "pixels",
+        "cells"
       ]
     }
   },
