@@ -26,7 +26,8 @@ function pr(fields: Record<string, unknown> = {}): string {
   })
 }
 
-for (const surface of ['terminal', 'desktop'] as const) {
+// Terminal only: the desktop app draws none of it (see below).
+for (const surface of ['terminal'] as const) {
   test(`${surface}: a failing PR wakes the session once; merged, it is dropped`, async ($, on) => {
     const clock = mock.clock(on)
     let reply = pr()
@@ -125,4 +126,26 @@ test('a gh failure is reported, not thrown', async ($, on) => {
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: 'no pull requests found for branch "main"' } }) as never)
   const result = await $.command.run({ command: 'pr-watch', args: '' } as never)
   expect(JSON.stringify(result)).toContain('no pull requests found for branch')
+})
+
+test('a session outside the terminal registers no /pr-watch and never polls', async ($, on) => {
+  const clock = mock.clock(on)
+  const ran: string[][] = []
+  const registered: string[] = []
+  on('process.run', (_$, e) => {
+    ran.push([...e.argv])
+
+    return { value: { exitCode: 0, stdout: pr(), stderr: '' } } as never
+  })
+  on('command.register', (_$, e) => {
+    registered.push(e.name)
+
+    return { value: { command: e.name } } as never
+  })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await clock.advance(300_000)
+  expect(registered).toEqual([])
+  expect(ran).toEqual([])
 })

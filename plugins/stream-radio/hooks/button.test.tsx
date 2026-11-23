@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-for (const surface of ['terminal', 'desktop'] as const) {
+// Terminal only: the desktop app draws none of it (see below).
+for (const surface of ['terminal'] as const) {
   test(
     `${surface}: pressing Play radio starts the player without /stream`,
     { options: { defaultUrl: 'https://example.com/live' } },
@@ -87,4 +88,22 @@ test('a video with chapters shows only the chapter in the footer', async ($, on)
   release()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
+})
+
+test('the desktop app draws no radio button', { options: { defaultUrl: 'https://example.com/live' } }, async $ => {
+  const ui = await $.ui.mount({ plugin: 'stream-radio', component: 'SessionMode', surface: 'desktop', props: { modes: [] } })
+  expect(await ui.find({ type: 'Button', key: 'stream-radio' })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('a session outside the terminal registers no /stream', async ($, on) => {
+  const registered: string[] = []
+  on('command.register', (_$, e) => {
+    registered.push(e.name)
+
+    return { value: { command: e.name } } as never
+  })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(registered).toEqual([])
 })

@@ -647,6 +647,8 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
+    // Terminal (TUI) only: in the desktop app and other surfaces the mod stays idle.
+    if (e.surface !== 'terminal') return next(e)
     // 0.1.0 pinned the title as a status line; a reload leaves that line up.
     $.ui.status(undefined)
     // State outlives a reload but the player does not: start from idle.
@@ -736,7 +738,7 @@ export const register: Register = (on, options) => {
 
   // The track at the right of the prompt footer after the engine's own labels;
   // pressing it pauses and resumes.
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+  on('ui.render', { component: 'SessionMode', surface: 'terminal' }, async ($, e, next) => {
     const { Box, Button } = $.ui.resolve(e)
     const title = await read($, playing)
     if (!title) {
@@ -776,7 +778,7 @@ export const register: Register = (on, options) => {
 
   // The panel: what plays, its controls, the playlist or chapters to pick from,
   // and a URL field. Each action's reply shows in it: a button has no reply line.
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE, surface: 'terminal' }, async ($, e) => {
     const { Box, Text, Button, Input } = $.ui.resolve(e)
     const width = Math.max(20, e.props.bodyColumns)
     // Every value read here redraws the whole panel when it changes, so it reads

@@ -208,6 +208,8 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
+    // Terminal (TUI) only: in the desktop app and other surfaces the mod stays idle.
+    if (e.surface !== 'terminal') return next(e)
     await $.command.register({
       name: 'pr-watch',
       description: 'Watch a PR: fix failing CI and merge conflicts in this session',
@@ -266,7 +268,7 @@ export const register: Register = (on, options) => {
 
   // A button at the right of the prompt footer, after the engine's own labels:
   // what needs a look while the panel is closed; pressing it opens or closes it.
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+  on('ui.render', { component: 'SessionMode', surface: 'terminal' }, async ($, e, next) => {
     const { Box, Button } = $.ui.resolve(e)
     const open = await read($, isOpen)
     const list = await read($, watched)
@@ -280,7 +282,7 @@ export const register: Register = (on, options) => {
   })
 
   // The panel: every pr-watch action, and each watched PR with its failing checks.
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE, surface: 'terminal' }, async ($, e) => {
     const { Box, Text, Button, Input, Link } = $.ui.resolve(e)
     const list = await read($, watched)
     const said = await read($, notice)

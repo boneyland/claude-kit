@@ -79,7 +79,8 @@ function engine(on: On, answer?: (argv: string[]) => Reply | Promise<Reply>) {
   return world
 }
 
-for (const surface of ['terminal', 'desktop'] as const) {
+// Terminal only: the desktop app draws none of it (see below).
+for (const surface of ['terminal'] as const) {
   test(`${surface}: the footer button summarises and toggles the panel`, async ($, on) => {
     const clock = mock.clock(on)
     const world = engine(on)
@@ -211,3 +212,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+test('the desktop app draws neither the footer button nor the panel', async ($, on) => {
+  engine(on)
+  const footer = await $.ui.mount({ plugin: 'pr-watch', component: 'SessionMode', surface: 'desktop', props: { modes: [] } })
+  expect(await footer.find({ type: 'Button', key: 'pr-watch-toggle' })).toBe(undefined)
+  await footer.unmount()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ type: 'Button' })).toBe(undefined)
+  await pane.unmount()
+})
