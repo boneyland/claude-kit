@@ -188,6 +188,22 @@ async function toggle($: EngineInterface): Promise<'opened' | 'closed'> {
   return 'opened'
 }
 
+// The panel's interval choices, in seconds (the option takes 30 to 3600).
+const INTERVALS = [30, 60, 90, 300, 900] as const
+const every = (seconds: number) => (seconds % 60 ? `${seconds} s` : `${seconds / 60} min`)
+
+// Writes one of this plugin's options as /config would, which reloads the plugin
+// with it. Resolves '' once saved, else why not (the change then holds for this session).
+async function saveOption($: EngineInterface, field: keyof Options, value: number | boolean): Promise<string> {
+  try {
+    const { deny } = await $.config.set({ key: `${$.plugin.name}.${field}`, value })
+
+    return deny ?? ''
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 const cut = (text: string, width: number) =>
   text.length <= width ? text : `${text.slice(0, Math.max(1, width - 1))}…`
 
@@ -200,7 +216,7 @@ export const register: Register = (on, options) => {
     maxAttempts = 3,
   } = options as Options
   const config: Config = {
-    intervalMs: Math.max(30, intervalSeconds) * 1000,
+    intervalMs: Math.min(3600, Math.max(30, intervalSeconds)) * 1000,
     allowPush,
     fixCi,
     fixConflicts,
@@ -297,6 +313,24 @@ export const register: Register = (on, options) => {
       }
       await update($, notice, () => reply)
     }
+    // Applied at once, then saved: saving reloads the plugin with the new value.
+    const setEvery = (seconds: number) =>
+      act(async () => {
+        config.intervalMs = seconds * 1000
+        timer?.cancel()
+        timer = $.clock.every(config.intervalMs, () => void poll($, config))
+        const why = await saveOption($, 'intervalSeconds', seconds)
+
+        return `Checks every ${every(seconds)}${why ? ` for this session (not saved: ${why})` : ''}.`
+      })
+    const togglePush = () =>
+      act(async () => {
+        config.allowPush = !config.allowPush
+        const why = await saveOption($, 'allowPush', config.allowPush)
+
+        return `Push fixes: ${config.allowPush ? 'on' : 'off'}${why ? ` for this session (not saved: ${why})` : ''}.`
+      })
+    const seconds = Math.round(config.intervalMs / 1000)
     const submit = (value: string) =>
       act(async () => {
         const parsed = parseArgs(value)
@@ -351,10 +385,21 @@ export const register: Register = (on, options) => {
             </Box>
           )
         })}
-        <Text dimColor>
-          Checks every {Math.round(config.intervalMs / 1000)} s · push fixes: {config.allowPush ? 'on' : 'off'}
-        </Text>
-        <Text dimColor>Change these in /config or /plugin.</Text>
+        <Box flexDirection="row" gap={1} flexWrap="wrap">
+          <Text dimColor>Check every</Text>
+          {INTERVALS.map(n => (
+            <Button
+              key={`every-${n}`}
+              label={n === seconds ? `[${every(n)}]` : every(n)}
+              onPress={() => (n === seconds ? undefined : setEvery(n))}
+            />
+          ))}
+          {!(INTERVALS as readonly number[]).includes(seconds) && <Text>[{every(seconds)}]</Text>}
+        </Box>
+        <Box flexDirection="row" gap={1}>
+          <Text dimColor>Push fixes</Text>
+          <Button key="push" label={config.allowPush ? 'on' : 'off'} onPress={togglePush} />
+        </Box>
       </Box>
     )
   })

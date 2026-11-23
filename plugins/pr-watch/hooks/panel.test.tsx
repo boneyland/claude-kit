@@ -116,8 +116,9 @@ for (const surface of ['terminal'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
 
     expect(await ui.find({ type: 'Text', text: /No PRs watched/ })).toBeDefined()
-    // settings are shown, not set, here: say where they change
-    expect(await ui.find({ type: 'Text', text: /Change these in \/config or \/plugin/ })).toBeDefined()
+    // the settings rows: the current interval marked, push fixes on by default
+    expect((await ui.find({ type: 'Button', key: 'every-90' }))?.props.label).toBe('[90 s]')
+    expect((await ui.find({ type: 'Button', key: 'push' }))?.props.label).toBe('on')
     await ui.press({ key: 'watch-branch' })
     await clock.settle()
     expect(world.ran[0]).toEqual(['gh', 'pr', 'view', '--json', expect.any(String)])
@@ -199,6 +200,47 @@ for (const surface of ['terminal'] as const) {
     await ui.press({ key: (await stops())[1]?.key ?? '' })
     expect(await hrefs()).not.toContain(ghe)
     expect((await stops()).length).toBe(1)
+    await ui.unmount()
+  })
+
+  test(`${surface}: the panel changes the interval and push fixes, and saves them`, async ($, on) => {
+    const clock = mock.clock(on)
+    const world = engine(on)
+    const saved: [string, unknown][] = []
+    on('config.set', (_$, e) => {
+      saved.push([e.key, e.value])
+
+      return { value: e.value } as never
+    })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'watch-branch' })
+    await clock.settle()
+    const polls = world.ran.length
+
+    await ui.press({ key: 'every-300' })
+    expect(saved).toEqual([['pr-watch.intervalSeconds', 300]])
+    expect((await ui.find({ type: 'Button', key: 'every-300' }))?.props.label).toBe('[5 min]')
+    expect(await ui.find({ type: 'Text', text: /Checks every 5 min\./ })).toBeDefined()
+    // the new period applies at once: nothing at 90 s, a poll at 300 s
+    await clock.advance(90_000)
+    expect(world.ran.length).toBe(polls)
+    await clock.advance(210_000)
+    expect(world.ran.length).toBe(polls + 1)
+
+    await ui.press({ key: 'push' })
+    expect(saved.at(-1)).toEqual(['pr-watch.allowPush', false])
+    expect((await ui.find({ type: 'Button', key: 'push' }))?.props.label).toBe('off')
+    await ui.unmount()
+  })
+
+  test(`${surface}: a refused save still changes the setting for the session`, async ($, on) => {
+    mock.clock(on)
+    engine(on)
+    on('config.set', () => ({ deny: 'managed by policy' }) as never)
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'push' })
+    expect((await ui.find({ type: 'Button', key: 'push' }))?.props.label).toBe('off')
+    expect(await ui.find({ type: 'Text', text: /for this session \(not saved: managed by policy\)/ })).toBeDefined()
     await ui.unmount()
   })
 
