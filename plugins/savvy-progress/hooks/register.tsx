@@ -849,6 +849,71 @@ const compactSvg = (W: number, list: AgentRun[], planned: Planned[], t: ReturnTy
 const STATUS_GLYPH: Record<string, string> = { running: '●', done: '✓', failed: '✗', planned: '◷' }
 
 // Opens the agents pane, or closes it when it is up; true when it ends up open.
+// `/agents-info demo`: made-up agents in every state and tier, and a flow with
+// planned tasks when none runs, to see the panel and band without real work.
+// Their ids start with `demo-`, and no engine agent backs them, so no Open button.
+const DEMO = 'demo-'
+const DEMO_FLOW = 'Demo: ship the search page'
+
+const demoRuns = (at: number): AgentRun[] => {
+  const run = (n: number, type: string, description: string, model: string, status: AgentRun['status'], agoS: number, tookS: number, ctx: number, cost: number, step?: [number, number, string]): AgentRun => ({
+    id: DEMO + n,
+    type,
+    description,
+    model,
+    effort: 'medium',
+    status,
+    startedAt: at - agoS * 1000,
+    ...(status === 'running' ? {} : { endedAt: at - (agoS - tookS) * 1000 }),
+    contextTokens: ctx,
+    contextMax: 200_000,
+    tokens: ctx * 3,
+    costUsd: cost,
+    steps: 12,
+    round: n === 4 ? 2 : 1,
+    ...(step ? { stepDone: step[0], stepTotal: step[1], stepNote: step[2] } : {}),
+  })
+  return [
+    run(1, 'savvy-fable', 'Design the ranking model', 'claude-fable-5-2', 'running', 340, 0, 92_000, 1.84, [3, 6, 'scoring recency']),
+    run(2, 'savvy-medium', 'Build the search endpoint', 'claude-sonnet-5-5', 'running', 190, 0, 48_000, 0.41, [2, 5, 'writing tests']),
+    run(3, 'Explore', 'Find the old query parser', 'claude-haiku-5-5', 'running', 45, 0, 21_000, 0.04),
+    run(4, 'savvy-heavy', 'Migrate the index schema', 'claude-opus-5-5', 'done', 900, 610, 131_000, 2.37, [4, 4, 'done']),
+    run(5, 'savvy-light', 'Rename the search flags', 'claude-haiku-5-5', 'done', 700, 95, 15_000, 0.03, [2, 2, 'done']),
+    run(6, 'savvy-careful', 'Audit the query escaping', 'claude-opus-5-5', 'failed', 500, 260, 64_000, 0.88, [1, 3, 'stopped']),
+  ]
+}
+
+const demoFlow = (): Flow => ({
+  title: DEMO_FLOW,
+  total: 8,
+  done: 3,
+  running: 3,
+  phase: 'delegate',
+  isFinished: false,
+  tasks: [
+    { title: 'Design the ranking model', tier: 'fable', after: [] },
+    { title: 'Build the search endpoint', tier: 'medium', after: [1] },
+    { title: 'Migrate the index schema', tier: 'heavy', after: [] },
+    { title: 'Rename the search flags', tier: 'light', after: [] },
+    { title: 'Audit the query escaping', tier: 'careful', after: [2] },
+    { title: 'Wire the search box', tier: 'medium', after: [2] },
+    { title: 'Write the release notes', tier: 'light', after: [6] },
+  ],
+})
+
+async function demo($: EngineInterface, isOn: boolean): Promise<string> {
+  const at = await $.clock.now()
+  await update($, agents, list => [...list.filter(a => !a.id.startsWith(DEMO)), ...(isOn ? demoRuns(at) : [])])
+  const f = await read($, flow)
+  if (isOn && f === null) await update($, flow, () => demoFlow())
+  if (!isOn && f?.title === DEMO_FLOW) await update($, flow, () => null)
+  if (!isOn) return 'Demo agents removed.'
+  await update($, now, () => at)
+  await $.ui.open({ id: PANE, title: tr().pane })
+  await update($, paneOpen, () => true)
+  return 'Demo agents added. `/agents-info demo off` removes them.'
+}
+
 async function togglePane($: EngineInterface): Promise<boolean> {
   const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
   if (isOpen) {
@@ -927,6 +992,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'agents-info',
       description: 'Show or hide the panel of subagents: running, finished and planned, with model, context, cost and time',
+      argumentHint: '[open | demo | demo off]',
     })
     // A pane kept up across a reload is still the engine's; match the button's label to it.
     const isUp = await $.ui
@@ -992,7 +1058,9 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'agents-info' }, async ($, e) => {
     // `/agents-info open` opens the panel, or brings it forward from behind another tab, without toggling it.
-    if ((e.args ?? '').trim() === 'open') {
+    const args = (e.args ?? '').trim().split(/\s+/)
+    if (args[0] === 'demo') return { text: await demo($, args[1] !== 'off') }
+    if (args[0] === 'open') {
       const at = await $.clock.now()
       await update($, now, () => at)
       await $.ui.open({ id: PANE, title: tr().pane })
