@@ -1,6 +1,6 @@
 {
   "name": "turn-gauge",
-  "version": "0.20.2",
+  "version": "0.21.0",
   "icon": "./.claude-plugin/icon.png",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort, context fill, cache hit rate and token counts, plan-limit pace projection; warns on running out before a reset, cache misses and output-heavy turns; notifies before the cache expires.",
   "author": {
@@ -22,6 +22,14 @@
       "default": 3,
       "min": 1,
       "max": 20
+    },
+    "warmupTurns": {
+      "type": "number",
+      "title": "Warm-up turns",
+      "description": "How many turns at the start of a fresh session count as re-reading what a new session needs. What the context grows by over them is measured per project, and the overhead row adds it to a new session's cost.",
+      "default": 2,
+      "min": 1,
+      "max": 3
     },
     "background": {
       "type": "string",

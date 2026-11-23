@@ -45,6 +45,12 @@ export type Spend = {
   recentSteps: number[]
   // Median measured compaction summary, in tokens.
   summary: number | null
+  // Median tokens a fresh session in this project grew by over its first warm-up turns.
+  warmup?: number | null
+  // A fresh session's first request, while its warm-up is measured; null otherwise.
+  warmupFrom?: number | null
+  // Main turns finished since that first request.
+  warmupTurns?: number
   // The running main turn: its requests, list price of every loop's responses, cost at its start.
   steps: number
   predicted: number

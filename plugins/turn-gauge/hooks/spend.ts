@@ -82,6 +82,9 @@ export type SpendInputs = {
   recentCosts: readonly number[]
   // Median tokens a compaction summary came to, measured; null until one ran.
   summary: number | null
+  // Median tokens a fresh session in this project re-reads in its first turns, measured;
+  // null (or absent) until one did, when WARMUP_GUESS stands in.
+  warmup?: number | null
 }
 
 // Below this much carried context, nothing is worth saying.
@@ -97,6 +100,10 @@ export const OVERHEAD_MIN_USD = 0.05
 export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
 export const RECENT_TURNS = 10
+// Before a fresh session has measured its warm-up: this many tokens re-read, or this
+// share of the old context when that is less, since a new session rebuilds part of it.
+export const WARMUP_GUESS = 25_000
+export const WARMUP_GUESS_SHARE = 0.25
 
 // 240, 2.4k, 84k, 1.2M: exact under a thousand, so a short answer never shows as 0k.
 const tokens = (n: number) =>
@@ -163,11 +170,20 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
     const turns = Math.max(1, Math.ceil(cost / saving))
     return `${turns} turn${turns === 1 ? '' : 's'}`
   }
-  const fresh = s.baseline * b.write1h
-  const parts = [
-    `Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`,
-    `new session ≈ ${usd(fresh)} once → pays back in ${payback(fresh, perTurn)}`,
-  ]
+  const parts = [`Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`]
+
+  // A new session caches its baseline, then re-reads part of what this one carries
+  // (the warm-up) and caches that too; it goes on carrying both, so it saves only the rest.
+  const isGuess = s.warmup === null || s.warmup === undefined
+  const warmup = isGuess ? Math.min(WARMUP_GUESS, WARMUP_GUESS_SHARE * old) : s.warmup!
+  const restart = s.baseline + warmup
+  const w = unitPrices(s, restart)!
+  const fresh = s.baseline * b.write1h + warmup * w.write1h
+  const freshSaving = (s.context * p.read - restart * w.read) * steps
+  if (freshSaving > 0) {
+    const reread = isGuess ? `~${tokens(warmup)} re-read (guess)` : `${tokens(warmup)} re-read`
+    parts.push(`new session + ${reread} ≈ ${usd(fresh)} once → pays back in ${payback(fresh, freshSaving)}`)
+  }
 
   // A compaction reads the context once, writes the summary, then re-caches
   // baseline and summary; it saves what the summary does not carry.

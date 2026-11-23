@@ -44,7 +44,7 @@ test('on Haiku 5.5 the long context pays long-prompt rates, a fresh session shor
   const cheap = { ...haiku, recentCosts: [0.06, 0.06, 0.06] }
   expect(overheadWarning({ ...cheap, recentSteps: [6, 6, 6] })).toBe(null)
   expect(overheadWarning({ ...cheap, recentSteps: [7, 7, 7] })?.text).toBe(
-    'Carry cost ≈ $0.05/turn (130k × 7 req) · new session ≈ $0.004 once → pays back in 1 turn',
+    'Carry cost ≈ $0.05/turn (130k × 7 req) · new session + ~25k re-read (guess) ≈ $0.009 once → pays back in 1 turn',
   )
 })
 
@@ -57,11 +57,28 @@ test('an expired cache prices re-caching the context against a fresh session', a
 })
 
 test('the overhead names its cost a turn and when starting over pays back', async () => {
-  expect(overheadWarning(OPUS)?.text).toBe('Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn')
+  // 20k cached, plus 25k guessed re-read and cached, for $0.36; it then carries 45k, saving 105k × 16 reads a turn.
+  expect(overheadWarning(OPUS)?.text).toBe('Carry cost ≈ $0.42/turn (130k × 16 req) · new session + ~25k re-read (guess) ≈ $0.36 once → pays back in 2 turns')
   expect(overheadWarning({ ...OPUS, summary: 10_000 })?.text).toBe(
-    'Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn · /compact ≈ $0.47 once → pays back in 2 turns',
+    'Carry cost ≈ $0.42/turn (130k × 16 req) · new session + ~25k re-read (guess) ≈ $0.36 once → pays back in 2 turns · /compact ≈ $0.47 once → pays back in 2 turns',
   )
   expect(overheadWarning({ ...OPUS, recentSteps: [2, 2, 2] })).toBe(null)
+})
+
+test('a new session re-reads its warm-up: measured, else guessed, and pays back only on what it does not carry', async () => {
+  // Measured: 28k re-read, for $0.38 once; it carries 48k, saving 102k × 16 reads a turn.
+  expect(overheadWarning({ ...OPUS, warmup: 28_000 })?.text).toBe(
+    'Carry cost ≈ $0.42/turn (130k × 16 req) · new session + 28k re-read ≈ $0.38 once → pays back in 2 turns',
+  )
+  // The guess is a quarter of the old context when that is under 25k.
+  expect(overheadWarning({ ...OPUS, context: 100_000, recentCosts: [0.4, 0.4, 0.4] })?.text).toBe(
+    'Carry cost ≈ $0.26/turn (80k × 16 req) · new session + ~20k re-read (guess) ≈ $0.32 once → pays back in 2 turns',
+  )
+  // A warm-up as large as the old context saves nothing: no new-session part.
+  expect(overheadWarning({ ...OPUS, warmup: 130_000 })?.text).toBe('Carry cost ≈ $0.42/turn (130k × 16 req)')
+  expect(overheadWarning({ ...OPUS, warmup: 200_000, summary: 10_000 })?.text).toBe(
+    'Carry cost ≈ $0.42/turn (130k × 16 req) · /compact ≈ $0.47 once → pays back in 2 turns',
+  )
 })
 
 test('the overhead shows once carrying the old context is 60% of a typical turn', async () => {
@@ -81,7 +98,7 @@ test('the overhead waits for three turns and prices one at their median', async 
   expect(overheadWarning({ ...OPUS, recentCosts: [0.6, 0.6] })).toBe(null)
   // One long run does not set the price.
   expect(overheadWarning({ ...OPUS, recentSteps: [77, 16, 20] })?.text).toBe(
-    'Carry cost ≈ $0.52/turn (130k × 20 req) · new session ≈ $0.16 once → pays back in 1 turn',
+    'Carry cost ≈ $0.52/turn (130k × 20 req) · new session + ~25k re-read (guess) ≈ $0.36 once → pays back in 1 turn',
   )
 })
 
@@ -201,15 +218,16 @@ test('the band shows the expired-cache warning once the cache lapsed', async ($,
   await ui.unmount()
 })
 
-test('a fresh session measures B, the price scale and a compaction summary from real responses', async ($, on) => {
+type Test$ = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[0]
+
+// A live session against a faked engine: the real hooks, scripted responses and costs.
+const liveSession = ($: Test$, on: On) => {
   const store: Record<string, unknown> = {}
-  let usd = 0
+  const live = { usd: 0, agents: [] as { id: string; usd: number }[], spend: {} as Record<string, any>, stats: {} as Record<string, any> }
   const steps: TurnUsage[][] = []
-  let spendNow: Record<string, any> = {}
-  let statsNow: Record<string, any> = {}
-  on('state.set', (_, e, next) => {
-    if (e.key === 'spend') spendNow = e.value as unknown as Record<string, any>
-    if (e.key === 'stats') statsNow = e.value as unknown as Record<string, any>
+      on('state.set', (_, e, next) => {
+    if (e.key === 'spend') live.spend = e.value as unknown as Record<string, any>
+    if (e.key === 'stats') live.stats = e.value as unknown as Record<string, any>
     return next(e)
   })
   on('store.get', (_, e) => ({ value: store[e.key] }))
@@ -223,9 +241,8 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   on('clock.now', () => ({ value: NOW }))
   on('command.register', () => ({ value: { command: 'turn-gauge' } }))
   on('process.run', () => ({ value: { exitCode: 128, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
-  on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: [], cost: { usd } } }))
-  let agents: { id: string; usd: number }[] = []
-  on('agent.list', () => ({ value: agents.map(a => ({ id: a.id, cost: { usd: a.usd } })) as never }))
+  on('session.usage', () => ({ value: { startedAt: NOW, context: { window: 1_000_000 }, rateLimits: [], cost: { usd: live.usd } } }))
+  on('agent.list', () => ({ value: live.agents.map(a => ({ id: a.id, cost: { usd: a.usd } })) as never }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.compact', (_, e) => ({ messages: e.messages }))
   on('clock.every', () => ({ value: undefined }))
@@ -253,10 +270,14 @@ test('a fresh session measures B, the price scale and a compaction summary from 
       steps.push([response])
       for await (const _ of $.turn.step({ turnId: id, index: 0, model: 'claude-opus-5-5', messageCount: 1 })) void _
     }
-    usd = costAfter
+    live.usd = costAfter
     await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: id, reason: 'answer' })
   }
+  return { live, store, steps, usage, turn }
+}
 
+test('a fresh session measures B, the price scale and a compaction summary from real responses', async ($, on) => {
+  const { live, store, steps, usage, turn } = liveSession($, on)
   await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
 
   // List price: 18003 written for an hour, 500 out = $0.154; then a read and a write = $0.0256.
@@ -271,60 +292,95 @@ test('a fresh session measures B, the price scale and a compaction summary from 
   // The first request of a fresh session is B.
   expect(store['baseline:/proj']).toEqual([18_003])
 
-  const after1 = spendNow
+  const after1 = live.spend
   expect(Math.round(after1.scale! * 1000) / 1000).toBe(2)
   expect(after1.recentSteps).toEqual([2])
   expect(after1.context).toBe(20_006)
-  expect(statsNow.turn).toBe(1)
-  expect(statsNow.recentCosts).toEqual([0.3592])
+  expect(live.stats.turn).toBe(1)
+  expect(live.stats.recentCosts).toEqual([0.3592])
 
   // No subagents yet: nothing spent by agents.
-  expect(statsNow.agentsCost).toBe(0)
+  expect(live.stats.agentsCost).toBe(0)
 
   // A subagent's run is not a turn of the band's.
   await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' })
-  expect(statsNow.turn).toBe(1)
+  expect(live.stats.turn).toBe(1)
 
   // A compaction, then the next request carries B plus the summary.
   await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
   // The carried context is gone with it: no warning on the old figure.
-  expect(spendNow.context).toBe(null)
+  expect(live.spend.context).toBe(null)
   await turn('t2', [usage({ cache_creation_input_tokens: 29_997, ephemeral_1h_input_tokens: 29_997 })], 0.6)
   expect(store.summaries).toEqual([12_000 - 3])
-  expect(statsNow.recentCosts?.length).toBe(2)
+  expect(live.stats.recentCosts?.length).toBe(2)
 
   // An agent that ran before this turn counts only what it spends during it; one
   // the engine drops before the turn ends keeps its last reading.
-  agents = [{ id: 'old', usd: 0.5 }]
+  live.agents = [{ id: 'old', usd: 0.5 }]
   await $.turn.start({ text: 'go', turnId: 't3' })
-  agents = [{ id: 'old', usd: 0.6 }, { id: 'new', usd: 0.05 }]
+  live.agents = [{ id: 'old', usd: 0.6 }, { id: 'new', usd: 0.05 }]
   steps.push([usage({ cache_read_input_tokens: 30_000 })])
   for await (const _ of $.turn.step({ turnId: 't3', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) void _
-  agents = [{ id: 'old', usd: 0.62 }]
-  usd = 1.2
+  live.agents = [{ id: 'old', usd: 0.62 }]
+  live.usd = 1.2
   await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't3', reason: 'answer' })
-  expect(Math.round(statsNow.agentsCost * 1000) / 1000).toBe(0.17)
-  expect(statsNow.recentCosts?.length).toBe(3)
-  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.6)
+  expect(Math.round(live.stats.agentsCost * 1000) / 1000).toBe(0.17)
+  expect(live.stats.recentCosts?.length).toBe(3)
+  expect(Math.round(live.stats.recentCosts.at(-1) * 1000) / 1000).toBe(0.6)
 
   // A background agent that goes on after the turn ended: its spend is still that turn's,
   // in the band and in the turn's place among the recent costs.
-  agents = [{ id: 'bg', usd: 0.03 }]
-  usd = 1.23
+  live.agents = [{ id: 'bg', usd: 0.03 }]
+  live.usd = 1.23
   steps.push([usage({ cache_read_input_tokens: 1_000 })])
   for await (const _ of $.turn.step({ turnId: 'b1', index: 0, model: 'claude-haiku-5-5', messageCount: 1, agentId: 'bg' })) void _
-  expect(Math.round(statsNow.turnCost * 1000) / 1000).toBe(0.63)
-  expect(Math.round(statsNow.agentsCost * 1000) / 1000).toBe(0.2)
-  expect(statsNow.recentCosts?.length).toBe(3)
-  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.63)
-  agents = [{ id: 'bg', usd: 0.04 }]
-  usd = 1.24
+  expect(Math.round(live.stats.turnCost * 1000) / 1000).toBe(0.63)
+  expect(Math.round(live.stats.agentsCost * 1000) / 1000).toBe(0.2)
+  expect(live.stats.recentCosts?.length).toBe(3)
+  expect(Math.round(live.stats.recentCosts.at(-1) * 1000) / 1000).toBe(0.63)
+  live.agents = [{ id: 'bg', usd: 0.04 }]
+  live.usd = 1.24
   await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 'b1', reason: 'answer', agentId: 'bg' })
-  expect(Math.round(statsNow.recentCosts.at(-1) * 1000) / 1000).toBe(0.64)
-  expect(statsNow.recentCosts?.length).toBe(3)
+  expect(Math.round(live.stats.recentCosts.at(-1) * 1000) / 1000).toBe(0.64)
+  expect(live.stats.recentCosts?.length).toBe(3)
 
   // The next turn starts from there and counts none of it.
   await $.turn.start({ text: 'go', turnId: 't4' })
-  expect(statsNow.agentsCost).toBe(0)
-  expect(statsNow.recentCosts?.length).toBe(3)
+  expect(live.stats.agentsCost).toBe(0)
+  expect(live.stats.recentCosts?.length).toBe(3)
+})
+
+test('a fresh session measures its warm-up over its first turns, and a compaction cancels it', async ($, on) => {
+  const { live, store, usage, turn } = liveSession($, on)
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+  await turn('t1', [usage({ cache_creation_input_tokens: 18_000 }), usage({ cache_read_input_tokens: 18_003, cache_creation_input_tokens: 10_000 })], 0.2)
+  // One turn of the default two: not yet.
+  expect(store['warmup:/proj']).toBe(undefined)
+  expect(live.spend.warmupFrom).toBe(18_003)
+  await turn('t2', [usage({ cache_read_input_tokens: 28_003, cache_creation_input_tokens: 12_000 })], 0.4)
+  // 40,006 carried after turn 2, over the first request's 18,003.
+  expect(store['warmup:/proj']).toEqual([22_003])
+  expect(live.spend.warmup).toBe(22_003)
+  expect(live.spend.warmupFrom).toBe(null)
+  // Later turns add nothing.
+  await turn('t3', [usage({ cache_read_input_tokens: 40_006, cache_creation_input_tokens: 5_000 })], 0.5)
+  expect(store['warmup:/proj']).toEqual([22_003])
+})
+
+test('the warm-up counts as many turns as the option says, and a compaction during it measures nothing', async ($, on) => {
+  const { live, store, usage, turn } = liveSession($, on)
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+  await turn('t1', [usage({ cache_creation_input_tokens: 18_000 })], 0.2)
+  await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'summary', toolUses: [] }] })
+  expect(live.spend.warmupFrom).toBe(null)
+  await turn('t2', [usage({ cache_creation_input_tokens: 25_000 })], 0.4)
+  expect(store['warmup:/proj']).toBe(undefined)
+})
+
+test('one warm-up turn, by option', { options: { warmupTurns: 1 } }, async ($, on) => {
+  const { store, usage, turn } = liveSession($, on)
+  store['warmup:/proj'] = [30_000, 10_000]
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+  await turn('t1', [usage({ cache_creation_input_tokens: 18_000 }), usage({ cache_read_input_tokens: 18_003, cache_creation_input_tokens: 6_000 })], 0.2)
+  expect(store['warmup:/proj']).toEqual([30_000, 10_000, 6_003])
 })

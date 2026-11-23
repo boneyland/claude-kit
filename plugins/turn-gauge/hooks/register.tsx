@@ -99,6 +99,9 @@ const spend = atom({ plugin: 'turn-gauge', key: 'spend' } as const, {
   scale: null,
   recentSteps: [],
   summary: null,
+  warmup: null,
+  warmupFrom: null,
+  warmupTurns: 0,
   steps: 0,
   predicted: 0,
   usdAtTurnStart: 0,
@@ -174,6 +177,8 @@ const startAgentSpend = async ($: EngineInterface) => {
 // Kept across sessions: a fresh session's first request per project, and compaction summaries.
 const BASELINE_KEY = (cwd: string) => `baseline:${cwd}`
 const SUMMARIES_KEY = 'summaries'
+// What a fresh session's context grew by over its first warm-up turns, per project.
+const WARMUP_KEY = (cwd: string) => `warmup:${cwd}`
 const SAMPLES_KEPT = 5
 // The overhead warning, dismissed, returns once the context grew this much more.
 const DISMISS_GROWTH = 50_000
@@ -187,6 +192,7 @@ const spendInputs = (s: Spend, recentCosts: readonly number[] = []): SpendInputs
   recentSteps: s.recentSteps ?? [],
   recentCosts,
   summary: s.summary,
+  warmup: s.warmup ?? null,
 })
 
 const pushSample = async ($: EngineInterface, key: string, value: number) => {
@@ -602,7 +608,8 @@ const recordUsage = async ($: EngineInterface, usage: TurnUsage, isMain: boolean
 
   let baseline = before.baseline
   let isBaselineMeasured = before.isBaselineMeasured
-  if (before.isFresh && before.steps === 0) {
+  const isFirst = before.isFresh && before.steps === 0
+  if (isFirst) {
     const samples = await pushSample($, BASELINE_KEY(await $.session.cwd()), context)
     baseline = Math.min(...samples)
     isBaselineMeasured = true
@@ -626,13 +633,16 @@ const recordUsage = async ($: EngineInterface, usage: TurnUsage, isMain: boolean
     predicted: sp.predicted + price,
     isFresh: false,
     isCompactPending: false,
+    // The warm-up is measured from here, over the next main turns.
+    ...(isFirst ? { warmupFrom: context, warmupTurns: 0 } : {}),
     ...(isNewModel ? { scale: null, calibPredicted: 0, calibObserved: 0 } : {}),
   }))
 }
 
 // At a main turn's end: the engine's cost against list price, the requests a turn
-// makes, and B from /context's breakdown while no fresh session has measured it.
-const settleSpend = async ($: EngineInterface) => {
+// makes, B from /context's breakdown while no fresh session has measured it, and
+// once a fresh session's first `warmupTurns` turns are done, what its context grew by.
+const settleSpend = async ($: EngineInterface, warmupTurns: number) => {
   const usage = await $.session.usage()
   const usd = usage.cost?.usd ?? 0
   const sp = await read($, spend)
@@ -646,7 +656,28 @@ const settleSpend = async ($: EngineInterface) => {
     const { context } = await $.session.usage({ breakdown: 'summary' })
     baseline = context.breakdown ? baselineFromBreakdown(context.breakdown.categories) : null
   }
-  await update($, spend, s => ({ ...s, calibPredicted, calibObserved, scale, recentSteps, baseline }))
+  let warmup = sp.warmup ?? null
+  let warmupFrom = sp.warmupFrom ?? null
+  let turnsSince = sp.warmupTurns ?? 0
+  if (warmupFrom !== null && sp.steps > 0) {
+    turnsSince += 1
+    if (turnsSince >= warmupTurns && sp.context !== null) {
+      const grown = Math.max(0, sp.context - warmupFrom)
+      warmup = median(await pushSample($, WARMUP_KEY(await $.session.cwd()), grown))
+      warmupFrom = null
+    }
+  }
+  await update($, spend, s => ({
+    ...s,
+    calibPredicted,
+    calibObserved,
+    scale,
+    recentSteps,
+    baseline,
+    warmup,
+    warmupFrom,
+    warmupTurns: turnsSince,
+  }))
 }
 
 // Where the last `turns` turns begin: the index of the user message that opens the
@@ -741,6 +772,7 @@ const restoreWarnings = async ($: EngineInterface) => {
 
 export const register: Register = (on, options) => {
   const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
+  const warmupTurns = Math.min(3, Math.max(1, Math.round(Number(options.warmupTurns ?? 2)) || 2))
   const background = bandBackground(options.background)
   const glyphs = TERMINAL_ICONS[options.terminalIcons === 'glyphs' ? 'glyphs' : 'emoji']
 
@@ -753,7 +785,8 @@ export const register: Register = (on, options) => {
     // A plain compaction's summary is measured on the next request, for the /compact estimate.
     // The context the last request carried is gone: no warning until the next one says what is left.
     if (result.messages !== undefined && isMain && e.trigger !== 'precompute') {
-      await update($, spend, sp => ({ ...sp, context: null, isCompactPending: turns === null, dismissedAt: null }))
+      // A compaction during the warm-up leaves no growth to measure.
+      await update($, spend, sp => ({ ...sp, context: null, isCompactPending: turns === null, dismissedAt: null, warmupFrom: null }))
       await update($, tokens, tk => ({ ...tk, prevContext: null, cause: tk.cause ?? 'compacted' }))
     }
     return result
@@ -770,6 +803,7 @@ export const register: Register = (on, options) => {
     const cwd = await $.session.cwd()
     const baselines = (await $.store.get(BASELINE_KEY(cwd))) as number[] | undefined
     const summaries = (await $.store.get(SUMMARIES_KEY)) as number[] | undefined
+    const warmups = (await $.store.get(WARMUP_KEY(cwd))) as number[] | undefined
     const measured = Array.isArray(baselines) && baselines.length > 0 ? Math.min(...baselines) : null
     await update($, spend, sp => ({
       ...sp,
@@ -777,6 +811,9 @@ export const register: Register = (on, options) => {
       baseline: measured ?? sp.baseline,
       isBaselineMeasured: measured !== null || sp.isBaselineMeasured,
       summary: Array.isArray(summaries) ? median(summaries) : sp.summary,
+      warmup: Array.isArray(warmups) && warmups.length > 0 ? median(warmups) : (sp.warmup ?? null),
+      // A session that did not start fresh measures no warm-up.
+      warmupFrom: wasRunning ? (sp.warmupFrom ?? null) : null,
     }))
 
     // A load (a reload too) starts with every warning showing again.
@@ -941,7 +978,7 @@ export const register: Register = (on, options) => {
       await update($, stats, st =>
         st.turnCost === null ? st : { ...st, recentCosts: [...(st.recentCosts ?? []), st.turnCost].slice(-RECENT_TURNS) },
       )
-      await settleSpend($)
+      await settleSpend($, warmupTurns)
       await saveSnapshot($)
     }
 

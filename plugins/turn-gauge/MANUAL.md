@@ -100,7 +100,7 @@ Shown when the last main turn wrote 30k output tokens or more **and** that outpu
 
 ### Overhead
 
-> `Carry cost ≈ $0.42/turn (130k × 16 req) · new session ≈ $0.16 once → pays back in 1 turn · /compact ≈ $0.47 once → pays back in 2 turns`
+> `Carry cost ≈ $0.42/turn (130k × 16 req) · new session + 28k re-read ≈ $0.38 once → pays back in 2 turns · /compact ≈ $0.47 once → pays back in 2 turns`
 
 The `/compact` part appears only once a compaction's summary size has been measured; until then the row ends after the new-session payback. See [Payback](#payback) below.
 
@@ -128,7 +128,9 @@ So the trigger is a share, not a price line: the row says most of what you pay e
 
 The row gives each alternative's one-off cost and how many turns of carry cost it takes to pay for itself:
 
-- **New session:** the cost of caching a fresh baseline, divided by the carry cost per turn.
+- **New session:** caching a fresh baseline plus the **warm-up**, divided by what the new session saves each turn. A new session doesn't start where this one is: in its first turns it re-reads files and rebuilds what it needs, and goes on carrying that. So its one-off cost includes caching the warm-up, and its saving per turn is only the old context the warm-up doesn't cover. Left out when the warm-up is as large as the old context.
+
+The warm-up is measured: in a fresh session, what the context grew by from the first request to the end of the first 2 turns (the *Warm-up turns* setting, 1–3), per project, the median of the last 5. Turns 1 and 2 also do the real task, so it overstates re-reading somewhat, which errs toward showing the row less. A session that compacts during those turns measures nothing. Until a project has a measurement, the row guesses 25k tokens, or a quarter of the old context when that is less, and says so: `new session + ~25k re-read (guess)`.
 - **`/compact`:** reading the context once, writing the summary, and re-caching baseline plus summary, divided by what the summary saves each turn. Left out when the summary wouldn't be smaller than the old context.
 
 The `/compact` estimate needs a measured summary size, so it is missing until a compaction has been seen. Only a plain compaction in the main session counts: Claude Code's `/compact` or auto-compaction. The mod's own [`compact, keep N`](#the-compact-button) button and `/turn-gauge compact` don't, because what they leave includes the kept turns. Neither do ahead-of-time compactions or a subagent's. One plain `/compact` in any session is enough; the size is kept across sessions (the median of the last 5).
@@ -190,6 +192,7 @@ The overhead row carries a **`compact, keep N`** button. It compacts the convers
 **Settings** (under the plugin's options in `/plugin`):
 
 - *Turns kept when compacting* (`keepTurns`): 1–20, default 3.
+- *Warm-up turns* (`warmupTurns`): 1–3, default 2. How many turns at the start of a fresh session are measured as re-reading; see [Payback](#payback).
 - *Terminal icons* (`terminalIcons`): `emoji`, the default, or `glyphs`. Emoji draw in their own colors, so the cache icon doesn't turn amber or red (its countdown still does), and each takes two columns. Glyphs follow the band's colors but need a font that has them.
 - *Band background* (`background`): a color behind the band to set it apart from the terminal. Takes hex (`#1e2430` or `#abc`), a color name (`blue`), or a theme key (see [Band background colors](#band-background-colors)). Empty, the default, keeps the terminal's background; anything else is ignored. If the band doesn't change right away, run `/reload-plugins`.
 
