@@ -1,6 +1,6 @@
 {
   "name": "stream-radio",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "icon": "./.claude-plugin/icon.png",
   "types": "./types/index.d.ts",
   "description": "Play any YouTube (or other mpv-supported) stream's audio, or local music files and folders, from Claude Code with /stream <url | path>, and show what is playing in the prompt footer, with a side panel to pick songs from a playlist.",
@@ -41,8 +41,8 @@
     },
     "androidClient": {
       "type": "boolean",
-      "title": "Always use the android client",
-      "description": "Play with yt-dlp's android client from the start, instead of only after the default one fails. Skips the failed first try for content YouTube refuses (403); AAC, more bandwidth.",
+      "title": "Try the android client first",
+      "description": "Try yt-dlp's android client first, instead of only after the default one fails. Skips the failed first try for content YouTube refuses (403); AAC, more bandwidth. yt-dlp skips this client when it has cookies, so leave it off if your yt-dlp config passes them.",
       "default": false
     },
     "toggleOnly": {

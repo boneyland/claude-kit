@@ -540,6 +540,7 @@ async function onLoaded($: EngineInterface) {
     const now = await $.clock.now().catch(() => 0)
     await writeIntent($, { ...intent, playedAt: now || 1 })
     if (launch.client) needsAndroid.add(launch.url)
+    else needsAndroid.delete(launch.url)
     await saveLast($, true)
     await releaseLock($)
   }
@@ -592,25 +593,38 @@ async function onGone($: EngineInterface, config: Config, id: string) {
   await reconnect($, config, intent, was.error)
 }
 
-// What this session started never played: once more with the android client
-// for a URL, else say why where it stays (a toast alone is easy to miss).
-type Launch = { id: string; url: string; client?: string; from?: Resume }
+// What this session started never played: once more with the other client
+// for a URL (android after the default, the default after android), else say
+// why where it stays (a toast alone is easy to miss).
+// isRetry: this start is already that second try.
+type Launch = { id: string; url: string; client?: string; from?: Resume; isRetry?: boolean }
 async function failed($: EngineInterface, config: Config, what: Launch, error: string) {
   launch = undefined
   await releaseLock($)
   const log = await $.fs
     .read((await paths($)).log)
-    .then(text => text.trim().split('\n').pop() ?? '')
+    .then(reason)
     .catch(() => '')
   const lastError = log || error
-  if (!what.client && /^https?:/.test(what.url)) {
-    $.ui.log(`stream-radio: ${what.url} would not play; retrying with the android client`)
-    start($, config, what.url, what.from, 'android')
+  if (!what.isRetry && /^https?:/.test(what.url)) {
+    const other = what.client ? 'default' : 'android'
+    $.ui.log(`stream-radio: ${what.url} would not play; retrying with the ${other} client`)
+    start($, config, what.url, what.from, what.client ? '' : 'android', 0, true)
     return
   }
   const why = lastError ? lastError.slice(0, 300) : 'the player exited before anything played; is the URL playable?'
   $.ui.log(`stream-radio: could not play ${what.url}: ${why}`)
   $.ui.toast(`stream failed: ${why.slice(0, 120)}`)
+}
+
+// Why mpv would not play, from what it printed: yt-dlp's error when there is
+// one (mpv's own last line is then only "Failed to recognize file format."),
+// else mpv's last line.
+export function reason(log: string): string {
+  const lines = log.trim().split('\n').map(line => line.trim()).filter(Boolean)
+  const ytdl = lines.findLast(line => /^\[ytdl_hook\] ERROR: /.test(line))
+  if (ytdl) return ytdl.replace(/^\[ytdl_hook\] ERROR: /, '').replace(/;\s*please report this issue.*$/, '')
+  return lines.at(-1) ?? ''
 }
 
 // After a player that was playing ends by itself (a dropped stream, a crash),
@@ -670,7 +684,7 @@ async function reconnect($: EngineInterface, config: Config, intent: Intent, err
     return
   }
   const at = await read($, resumeAt)
-  start($, config, intent.url, at.url === intent.url ? at : undefined, intent.client || undefined, tries + 1)
+  start($, config, intent.url, at.url === intent.url ? at : undefined, intent.client, tries + 1)
 }
 
 // Ends the live player, if one answers: asked to quit, killed if it will not.
@@ -694,7 +708,9 @@ const needsAndroid = new Set<string>()
 // background.
 // `from`: a place to resume at once it plays, for the URL played last.
 // `attempt`: how many reconnect tries came before this start.
-function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string, attempt = 0) {
+// `retryClient`: the client to use whatever the settings say ('' the default).
+// `isRetry`: the second try after a start that never played.
+function start($: EngineInterface, config: Config, url: string, from?: Resume, retryClient?: string, attempt = 0, isRetry = false) {
   const { player, androidClient } = config
   // YouTube refuses the default client's stream URLs for some content (403);
   // the android client gets through, with muxed AAC and no audio-only Opus.
@@ -729,7 +745,7 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
       const p = await paths($)
       const now = await $.clock.now().catch(() => 0)
       const id = `${now}-${Math.random().toString(36).slice(2, 10)}`
-      const what: Launch = { id, url, client, from }
+      const what: Launch = { id, url, client, from, isRetry }
       launch = what
       // Written first: the old player's watchers read it when it goes, and
       // know it was replaced rather than dropped.
@@ -761,8 +777,9 @@ function start($: EngineInterface, config: Config, url: string, from?: Resume, r
         url,
       ]
       // Detached: in its own session, no terminal, its errors to mpv.log, so it
-      // outlives this session and every other.
-      await $.process.run(['sh', '-c', 'log=$1; shift; exec setsid -f "$@" </dev/null >/dev/null 2>"$log"', 'sh', p.log, ...argv], {
+      // outlives this session and every other. mpv prints its messages to
+      // stdout, so both go there; --msg-level keeps it to errors.
+      await $.process.run(['sh', '-c', 'log=$1; shift; exec setsid -f "$@" </dev/null >"$log" 2>&1', 'sh', p.log, ...argv], {
         timeoutMs: 10_000,
       })
       // mpv makes its socket before it opens anything.

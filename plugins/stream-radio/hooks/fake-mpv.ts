@@ -9,6 +9,7 @@ export const DATA = '/tmp/stream-radio-test'
 export const SOCK = `${DATA}/mpv.sock`
 export const INTENT = `${DATA}/player.json`
 export const LOCK = `${DATA}/reconnect.lock`
+export const LOG = `${DATA}/mpv.log`
 
 export type Entry = { filename?: string; title?: string; current?: boolean }
 type Event = Record<string, unknown>
@@ -34,6 +35,9 @@ export type FakeOptions = {
   // A started player has loaded its file before any watcher connects, as a
   // local file does: the watcher sees a position, and no file-loaded.
   loadsBeforeWatch?: boolean
+  // A start this returns text for never plays: mpv prints the text (its
+  // output, stdout and stderr, goes to the log) and exits before its socket.
+  refuses?: (argv: string[]) => string | undefined
 }
 
 export function fakeMpv(on: On, options: FakeOptions = {}) {
@@ -155,6 +159,13 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       return reply ? ok(JSON.stringify(reply.data)) : fail()
     }
     if (argv[0] === 'sh' && argv[2]?.includes('setsid')) {
+      if (!argv[2].includes('>"$log" 2>&1')) throw new Error('mpv prints its errors to stdout: send both to the log')
+      const refusal = options.refuses?.(argv.slice(5))
+      if (refusal !== undefined) {
+        world.launches.push(argv.slice(5))
+        world.files[argv[4]!] = refusal
+        return ok()
+      }
       launch(argv.slice(5))
       return ok()
     }
