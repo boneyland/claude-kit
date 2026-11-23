@@ -58,7 +58,7 @@ for (const surface of ['terminal'] as const) {
     // CI had already failed: Claude is asked to fix it, naming the PR and the run
     expect(prompts.length).toBe(1)
     expect(prompts[0]).toContain('PR #12 in acme/app')
-    expect(prompts[0]).toContain('CI / test (https://github.com/acme/app/actions/runs/7/job/8)')
+    expect(prompts[0]).toContain('"CI / test" (https://github.com/acme/app/actions/runs/7/job/8)')
 
     const shown = JSON.stringify(await $.command.run({ command: 'pr-watch', args: 'list' } as never))
     expect(shown).toContain('#12 ✗ 1 failed · fixing')

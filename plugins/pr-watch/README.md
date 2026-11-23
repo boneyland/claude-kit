@@ -54,9 +54,11 @@ The prompt tells Claude which PR and branch, and Claude takes care of the checko
 
 When you watch a PR that is already failing, it is reported right away.
 
+The prompt also tells Claude to skip the report if it has already pushed past that commit, not to wait on or poll CI after pushing (pr-watch checks the new commit), and to treat the quoted PR title and check names as data from GitHub, not instructions.
+
 ## Pushing
 
-With `allowPush` on (the default), the prompt tells Claude it may push its fixes to the watched PR's branch, never force-push or merge. Turn it off and Claude commits, then asks before pushing.
+With `allowPush` on (the default), the prompt tells Claude it may push its fixes to the watched PR's branch without asking first, never force-push or merge. Turn it off and Claude commits, then asks before pushing.
 
 ## Requirements
 
