@@ -20,27 +20,29 @@ const refresh = async ($: EngineInterface): Promise<void> => {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await refresh($)
+    // Terminal (TUI) only: the desktop app shows the directory and branch itself.
+    if (e.surface === 'terminal') await refresh($)
     return result
   })
 
+  // Only once session.start has read them, so other surfaces stay idle.
   // A tool call can switch branches (`git checkout`) or move the session
   // (a worktree); a finished turn catches anything else, such as `/cd`.
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if (!e.agentId) await refresh($).catch(() => undefined)
+    if (!e.agentId && (await read($, where))) await refresh($).catch(() => undefined)
     return result
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) await refresh($).catch(() => undefined)
+    if (!e.agentId && (await read($, where))) await refresh($).catch(() => undefined)
     return next(e)
   })
 
   // The directory and branch after the engine's mode labels and anything other
   // mods put there. SessionMode is already the slot at the right of the footer:
   // nothing here may grow, or the slot takes a row of its own.
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+  on('ui.render', { component: 'SessionMode', surface: 'terminal' }, async ($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
     const w = await read($, where)
     const drawn = await next(e)

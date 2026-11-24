@@ -54,7 +54,7 @@
       "name": "footer-where",
       "source": "./plugins/footer-where",
       "description": "Mod: shows the session's directory and git branch at the right of the prompt footer.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "mod"
     }
   ]
