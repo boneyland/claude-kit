@@ -3,7 +3,7 @@
 # ${PREFIX:-$HOME/.local/bin}. Run it again to update.
 set -eu
 
-URL="${STREAM_RADIO_TUI_URL:-https://github.com/boneyland/claude-kit/releases/download/stream-radio-tui-latest/stream-radio-tui.mjs}"
+URL="${STREAM_RADIO_TUI_URL:-https://github.com/boneyland/claude-kit/releases/download/stream-radio-tui-rolling/stream-radio-tui.mjs}"
 DEST="${PREFIX:-$HOME/.local/bin}"
 
 missing=""

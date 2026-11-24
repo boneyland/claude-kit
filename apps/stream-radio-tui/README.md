@@ -97,4 +97,4 @@ npm test
 node dist/stream-radio-tui.mjs --help
 ```
 
-Only source is committed. A GitHub Actions workflow tests, builds and publishes `stream-radio-tui.mjs` to the rolling `stream-radio-tui-latest` prerelease on each push to `main` that touches the TUI or the mod's core.
+Only source is committed. A GitHub Actions workflow tests, builds and publishes `stream-radio-tui.mjs` to the `stream-radio-tui-rolling` prerelease, whose tag moves to each new build, on each push to `main` that touches the TUI or the mod's core.
