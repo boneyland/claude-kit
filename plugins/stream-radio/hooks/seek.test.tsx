@@ -26,7 +26,7 @@ function engine(on: On, props: Record<string, unknown> = { 'time-pos': 42, durat
   })
 }
 
-const say = async ($: Parameters<Parameters<typeof test>[1]>[0], args: string) =>
+const say = async ($: { command: { run: (e: never) => Promise<unknown> } }, args: string) =>
   JSON.stringify(await $.command.run({ command: 'stream', args } as never))
 
 test('/stream seek jumps to a time, or back and ahead from where it is', async ($, on) => {
