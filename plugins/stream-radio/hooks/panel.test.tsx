@@ -89,6 +89,31 @@ test('/stream next, prev and panel reach the player and the panel', async ($, on
   await clock.advance(1000)
 })
 
+test('every control button has a key, shown in its label, for when the panel has the keyboard', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on)
+  await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never).catch(() => undefined)
+  await clock.advance(10)
+  const pane = await $.ui.mount(PANE)
+  const keys: [string, string, string][] = [
+    ['prev', 'p', '⏮ Prev (p)'],
+    ['pause', 'k', '⏸ Pause (k)'],
+    ['next', 'n', '(n) Next ⏭'],
+    ['stop', 'x', '⏹ Stop (x)'],
+    ['vol-down', '9', '🔉 − (9)'],
+    ['vol-up', '0', '(0) 🔊 +'],
+    ['shuffle', 's', '🔀 Shuffle: off (s)'],
+    ['repeat', 'r', '🔁 Repeat: all (r)'],
+  ]
+  for (const [key, hotkey, label] of keys) {
+    const button = await pane.find({ type: 'Button', key })
+    expect([key, button?.props.hotkey, button?.props.label]).toEqual([key, hotkey, label])
+  }
+  await pane.unmount()
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
 test('with nothing playing the panel offers what to play', async ($, on) => {
   mock.clock(on)
   engine(on)

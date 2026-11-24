@@ -445,34 +445,36 @@ export const register: Register = (on, options) => {
             {state.length > 0 ? <Text dimColor>{state.join(' · ')}</Text> : null}
             <Box flexDirection="row" gap={1}>
               {q.kind !== 'none' ? (
-                <Button key="prev" label="⏮ Prev" onPress={() => act(() => step(hostFor($, config), -1))} />
+                <Button key="prev" label="⏮ Prev (p)" hotkey="p" onPress={() => act(() => step(hostFor($, config), -1))} />
               ) : null}
               <Button
                 key="pause"
-                label={paused ? '▶ Resume' : '⏸ Pause'}
+                label={paused ? '▶ Resume (k)' : '⏸ Pause (k)'}
+                hotkey="k"
                 onPress={() => act(async () => ((await togglePause(hostFor($, config))) ? '' : 'The player is not ready yet.'))}
               />
               {q.kind !== 'none' ? (
-                <Button key="next" label="Next ⏭" onPress={() => act(() => step(hostFor($, config), 1))} />
+                <Button key="next" label="(n) Next ⏭" hotkey="n" onPress={() => act(() => step(hostFor($, config), 1))} />
               ) : null}
-              <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying(hostFor($, config), config), ''))} />
+              <Button key="stop" label="⏹ Stop (x)" hotkey="x" onPress={() => act(async () => (await stopPlaying(hostFor($, config), config), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               <Button key="seek-back" label="⏪ 10s (b)" hotkey="b" onPress={() => act(() => seekBy($, config, -SEEK_SECONDS, true))} />
               <Button key="seek-ahead" label="(f) 10s ⏩" hotkey="f" onPress={() => act(() => seekBy($, config, SEEK_SECONDS, true))} />
             </Box>
             <Box flexDirection="row" gap={1}>
-              <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, -1)), ''))} />
+              <Button key="vol-down" label="🔉 − (9)" hotkey="9" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, -1)), ''))} />
               <Text>{`Volume ${level}%`}</Text>
-              <Button key="vol-up" label="🔊 +" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, 1)), ''))} />
+              <Button key="vol-up" label="(0) 🔊 +" hotkey="0" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, 1)), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               {q.kind === 'playlist' ? (
-                <Button key="shuffle" label={shuffled ? '🔀 Shuffle: on' : '🔀 Shuffle: off'} onPress={() => act(() => toggleShuffle(hostFor($, config)))} />
+                <Button key="shuffle" label={shuffled ? '🔀 Shuffle: on (s)' : '🔀 Shuffle: off (s)'} hotkey="s" onPress={() => act(() => toggleShuffle(hostFor($, config)))} />
               ) : null}
               <Button
                 key="repeat"
-                label={repeat === 'all' ? '🔁 Repeat: all' : repeat === 'one' ? '🔂 Repeat: one' : '🔁 Repeat: off'}
+                label={`${repeat === 'all' ? '🔁 Repeat: all' : repeat === 'one' ? '🔂 Repeat: one' : '🔁 Repeat: off'} (r)`}
+                hotkey="r"
                 onPress={() => act(() => setRepeat(hostFor($, config), nextRepeat(repeat)))}
               />
             </Box>
@@ -486,7 +488,8 @@ export const register: Register = (on, options) => {
             {last && !title ? (
               <Button
                 key="play-last"
-                label={resumeLabel ? cut(`▶ Resume ${resumeLabel}`, width) : 'Play last'}
+                label={resumeLabel ? `${cut(`▶ Resume ${resumeLabel}`, width - 4)} (l)` : 'Play last (l)'}
+                hotkey="l"
                 onPress={() =>
                   act(async () => {
                     resume(hostFor($, config), config, last, at)
@@ -496,7 +499,7 @@ export const register: Register = (on, options) => {
               />
             ) : null}
             {defaultUrl && defaultUrl !== last ? (
-              <Button key="play-default" label="Play default" onPress={() => play(defaultUrl)} />
+              <Button key="play-default" label="Play default (d)" hotkey="d" onPress={() => play(defaultUrl)} />
             ) : null}
           </Box>
         ) : null}

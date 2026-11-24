@@ -55,7 +55,7 @@ test('playing the last URL again resumes at its song and time', async ($, on) =>
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
   const pane = await $.ui.mount(PANE)
-  expect((await pane.find({ type: 'Button', key: 'play-last' }))?.props.label).toBe(`▶ Resume ${SONGS[2]} at 1:20`)
+  expect((await pane.find({ type: 'Button', key: 'play-last' }))?.props.label).toBe(`▶ Resume ${SONGS[2]} at 1:20 (l)`)
   await pane.unmount()
 
   world.sent = []

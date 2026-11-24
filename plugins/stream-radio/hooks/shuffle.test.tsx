@@ -65,7 +65,7 @@ test('shuffle reorders the playlist and the panel shows the new order; again put
   expect(world.sent).toContainEqual(['playlist-shuffle'])
   // Marked on the player, for the other sessions to read the list again.
   expect(world.sent).toContainEqual(['set_property', 'user-data/stream-radio/shuffled', true])
-  expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on')
+  expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on (s)')
   expect(await labelOf($, 'item-0')).toBe('  1. C')
   expect(await labelOf($, 'item-2')).toBe('▶ 3. A')
 
@@ -91,7 +91,7 @@ test('a shuffle made in another session shows here', async ($, on) => {
   await clock.advance(10)
   // Read whole again: its order changed.
   expect(world.sent.filter(c => c[1] === 'playlist').length).toBe(before + 1)
-  expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on')
+  expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on (s)')
   expect(await labelOf($, 'item-0')).toBe('  1. C')
   expect(await labelOf($, 'item-2')).toBe('▶ 3. A')
 
@@ -106,12 +106,12 @@ test('repeat cycles all, one, off, reaches the player, and is remembered', async
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
   await clock.advance(10)
   expect(world.spawned[0]).toContain('--loop-playlist=inf')
-  expect(await labelOf($, 'repeat')).toBe('🔁 Repeat: all')
+  expect(await labelOf($, 'repeat')).toBe('🔁 Repeat: all (r)')
 
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'repeat' })
   await pane.unmount()
-  expect(await labelOf($, 'repeat')).toBe('🔂 Repeat: one')
+  expect(await labelOf($, 'repeat')).toBe('🔂 Repeat: one (r)')
   expect(world.sent).toContainEqual(['set_property', 'loop-file', 'inf'])
 
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'repeat off' } as never))).toContain('Repeat off')

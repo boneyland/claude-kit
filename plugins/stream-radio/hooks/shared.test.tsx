@@ -210,7 +210,7 @@ test('volume and repeat set elsewhere show here', async ($, on) => {
   await clock.advance(10)
   const pane = await $.ui.mount(PANE)
   expect(await pane.find({ type: 'Text', text: 'Volume 30%' })).toBeTruthy()
-  expect((await pane.find({ type: 'Button', key: 'repeat' }))?.props.label).toBe('🔂 Repeat: one')
+  expect((await pane.find({ type: 'Button', key: 'repeat' }))?.props.label).toBe('🔂 Repeat: one (r)')
   await pane.unmount()
 
   world.end('quit')

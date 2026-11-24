@@ -25,7 +25,18 @@ test('a new session offers to resume what an earlier one played', { options: { d
   engine(on, { last: { url: URL, resumeAt: { url: URL, index: 2, seconds: 80, title: 'Winter Wonderland' } }, knownDefault: { mod: URL } })
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
   const pane = await $.ui.mount(PANE)
-  expect((await pane.find({ type: 'Button', key: 'play-last' }))?.props.label).toBe('▶ Resume Winter Wonderland at 1:20')
+  const last = await pane.find({ type: 'Button', key: 'play-last' })
+  expect([last?.props.label, last?.props.hotkey]).toEqual(['▶ Resume Winter Wonderland at 1:20 (l)', 'l'])
+  await pane.unmount()
+})
+
+test('a default stream other than the last gets its button, d', { options: { defaultUrl: 'https://example.com/default' } }, async ($, on) => {
+  mock.clock(on)
+  engine(on, { last: { url: URL, resumeAt: { url: URL, index: 2, seconds: 80, title: 'Winter Wonderland' } } })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  const pane = await $.ui.mount(PANE)
+  const play = await pane.find({ type: 'Button', key: 'play-default' })
+  expect([play?.props.label, play?.props.hotkey]).toEqual(['Play default (d)', 'd'])
   await pane.unmount()
 })
 
@@ -62,7 +73,7 @@ test('the first start without state.json brings over what the store held', { opt
   const world = engine(on)
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
   const pane = await $.ui.mount(PANE)
-  expect((await pane.find({ type: 'Button', key: 'play-last' }))?.props.label).toBe('▶ Resume Winter Wonderland at 1:20')
+  expect((await pane.find({ type: 'Button', key: 'play-last' }))?.props.label).toBe('▶ Resume Winter Wonderland at 1:20 (l)')
   await pane.unmount()
   expect(world.saved()).toEqual({
     version: 1,
