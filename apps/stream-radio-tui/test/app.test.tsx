@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
 import { App } from '../src/ui/App'
+import { tilde } from '../src/ui/hooks'
 
 // The actions that would talk to mpv are spies; everything else in the core
 // (the rows, the times) is the real thing.
@@ -51,12 +52,12 @@ const ENTER = '\r'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '') {
+async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '') {
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
-  const host = { program: 'tui', vars } as unknown as Host
+  const host = { program: 'tui', vars, home: async () => home } as unknown as Host
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -123,6 +124,14 @@ describe('drawing', () => {
     expect(lineOf(all, /space pause/)).toBeGreaterThan(heading)
     expect(lineOf(all, /q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => l.length <= 60)).toBe(true)
+  })
+
+  test('a playlist under the home folder is headed with ~', async () => {
+    const { lines } = await show(100, PLAYING, '', '/m')
+    expect(lines().join('\n')).toContain('Playlist · ~/Album')
+    expect(tilde('/m', '/m')).toBe('~')
+    expect(tilde('/music/Album', '/m')).toBe('/music/Album')
+    expect(tilde('/m/Album', '')).toBe('/m/Album')
   })
 
   test('a live stream shows ♪ live instead of a bar', async () => {

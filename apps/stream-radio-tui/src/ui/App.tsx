@@ -5,7 +5,7 @@ import { locate, pick, resume, setRepeat, setVolume, start, step, stopPlaying, t
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Hints } from './Hints'
-import { useDuration, usePlayer, useRefState, useSize, type View } from './hooks'
+import { tilde, useDuration, useHome, usePlayer, useRefState, useSize, type View } from './hooks'
 import { isCurrent, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
@@ -27,6 +27,7 @@ function Player({ session, view }: { session: Session; view: View }) {
   const { exit } = useApp()
   const { columns, rows: lines } = useSize()
   const duration = useDuration(h, view.playing, view.elapsed)
+  const home = useHome(h)
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
   const [typedRef, setTyped] = useRefState('')
@@ -153,7 +154,7 @@ function Player({ session, view }: { session: Session; view: View }) {
   const heading = filter
     ? `${rows.length} of ${q.items.length} ${q.kind === 'chapters' ? 'chapters' : 'songs'} match`
     : q.kind === 'playlist'
-      ? `Playlist${q.root ? ` · ${q.root}` : ''}`
+      ? `Playlist${q.root ? ` · ${tilde(q.root, home)}` : ''}`
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No playlist or chapters.'

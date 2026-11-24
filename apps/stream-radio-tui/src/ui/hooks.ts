@@ -60,6 +60,26 @@ export function useSize(): { columns: number; rows: number } {
   return size
 }
 
+// A path under the home folder as `~/…`; any other path as it is.
+export const tilde = (path: string, home: string): string =>
+  home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
+
+// The person's home folder, from the host; '' until known or when unknown.
+export function useHome(h: Host): string {
+  const [home, setHome] = useState('')
+  useEffect(() => {
+    let isLive = true
+    Promise.resolve()
+      .then(() => h.home())
+      .then(found => isLive && setHome(found))
+      .catch(() => undefined)
+    return () => {
+      isLive = false
+    }
+  }, [h])
+  return home
+}
+
 // The playing file's length in seconds, asked of mpv (the core keeps only
 // whether there is one); 0 when unknown or live. A playlist's next title
 // arrives while mpv is still opening the file and has no length yet, so it is

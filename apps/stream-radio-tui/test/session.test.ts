@@ -136,12 +136,21 @@ describe('openSession', () => {
         return run(argv)
       },
     })
-    await until(() => true)
     session.close()
     const spy = vi.spyOn(globalThis, 'setInterval')
     release()
     await new Promise(r => setTimeout(r, 300))
     expect(spy).not.toHaveBeenCalled()
     expect(session.status()).toBe('')
+  })
+
+  test('after close a watch on a live player ends at once and never reaches it', async () => {
+    session = await openSession([], { env, run: recorder() })
+    session.close()
+    // A player that answers: an open watch would get its events.
+    fake = await fakeMpv(dir)
+    const watch = session.host.watch(sock, ['pause'])
+    expect(await watch.next()).toEqual({ done: true, value: undefined })
+    expect(fake.received).toEqual([])
   })
 })
