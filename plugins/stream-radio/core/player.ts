@@ -182,6 +182,8 @@ let isStarting = false
 let launch: Launch | undefined
 // Where to jump once what this session started has loaded (its resume point).
 let pending: Resume | undefined
+// Whether this session is reordering the playlist: its moves are not read one by one.
+let isReordering = false
 // Whether this session holds reconnect.lock.
 let holdsLock = false
 // Looks for a player another session started, while this one follows none.
@@ -369,7 +371,8 @@ export async function onEvent(h: Host, event: PlayerEvent) {
     case 'playlist-count':
       if (name === 'playlist-pos') seen.pos = typeof data === 'number' ? data : -1
       else seen.count = typeof data === 'number' ? data : 0
-      if (seen.isLoaded) await refreshQueue(h)
+      // this session's reorder reads the list once it is done
+      if (seen.isLoaded && !isReordering) await refreshQueue(h)
       return
     case 'volume':
       // The player's own volume wins over what this session last knew.
@@ -781,9 +784,10 @@ export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Q
   const hasChapters = Array.isArray(chapterList) && chapterList.length > 1
   if (seen.count > 1 || (seen.count === 1 && !hasChapters)) {
     if (!how.isReordered && before.kind === 'playlist' && before.items.length === seen.count) return { ...before, current: seen.pos }
-    const list = (await mpv(h, ['get_property', 'playlist']))?.data
-    if (!Array.isArray(list) || list.length < 1) return NO_QUEUE
-    const entries = list as { filename?: string; title?: string; current?: boolean }[]
+    const entries = await playlistOf(h)
+    // mpv slow to answer (it was busy) is not an empty playlist: keep the last one read
+    if (!entries) return before.kind === 'playlist' ? { ...before, current: seen.pos } : NO_QUEUE
+    if (entries.length < 1) return NO_QUEUE
     const paths = entries.map(e => e.filename ?? '')
     // A local folder played whole: its entries are grouped under it.
     const url = await h.vars.read('lastUrl')
@@ -917,12 +921,22 @@ async function expand(h: Host, entries: readonly QueueEntry[]): Promise<QueueEnt
 const m3u = (entries: readonly QueueEntry[]) =>
   `#EXTM3U\n${entries.map(e => `${e.title ? `#EXTINF:-1,${e.title.replace(/\n/g, ' ')}\n` : ''}${e.path}\n`).join('')}`
 
-// Writes the player's queue as it is now to the queue file; its path.
-export async function writeQueueFile(h: Host): Promise<string> {
-  const file = (await paths(h)).queue
+type Entry = { filename?: string; title?: string; current?: boolean }
+// The player's playlist; undefined when mpv did not answer.
+async function playlistOf(h: Host): Promise<Entry[] | undefined> {
   const list = (await mpv(h, ['get_property', 'playlist']))?.data
-  const entries = Array.isArray(list) ? (list as { filename?: string; title?: string }[]).filter(e => e.filename).map(e => ({ path: e.filename!, title: e.title })) : []
-  await h.fs.write(file, m3u(entries))
+  return Array.isArray(list) ? (list as Entry[]) : undefined
+}
+const entriesOf = (list: readonly Entry[]): QueueEntry[] => list.filter(e => e.filename).map(e => ({ path: e.filename!, title: e.title }))
+
+// Writes the player's queue as it is now to the queue file; its path. Undefined,
+// the file untouched, when mpv did not answer: an empty file would be a queue
+// with nothing in it, and resuming or reconnecting would play that.
+export async function writeQueueFile(h: Host): Promise<string | undefined> {
+  const file = (await paths(h)).queue
+  const list = await playlistOf(h)
+  if (!list?.length) return undefined
+  await h.fs.write(file, m3u(entriesOf(list)))
   return file
 }
 
@@ -930,10 +944,12 @@ export async function writeQueueFile(h: Host): Promise<string> {
 // every session reads the queue again.
 async function afterEdit(h: Host) {
   const file = await writeQueueFile(h)
-  await mpv(h, ['set_property', 'user-data/stream-radio/url', file])
-  await h.vars.change('lastUrl', () => file)
-  const intent = await readIntent(h)
-  if (intent) await writeIntent(h, { ...intent, url: file })
+  if (file) {
+    await mpv(h, ['set_property', 'user-data/stream-radio/url', file])
+    await h.vars.change('lastUrl', () => file)
+    const intent = await readIntent(h)
+    if (intent) await writeIntent(h, { ...intent, url: file })
+  }
   await markEdited(h)
   await refreshQueue(h, { isReordered: true })
 }
@@ -961,10 +977,52 @@ export async function addToQueue(h: Host, config: PlayerConfig, entries: readonl
   return ''
 }
 
+// Up to this many moves go one by one; more (a sort) rebuild the list.
+const FEW_MOVES = 8
+
+async function moveEach(h: Host, steps: readonly [number, number][]): Promise<string> {
+  for (const [j, i] of steps) if (!(await mpv(h, ['playlist-move', j, i]))) return 'The player is not ready yet.'
+  return ''
+}
+
+// The playlist rebuilt in `order` in a few commands, not a move per entry: a
+// sort of hundreds of songs moved the playing one at each step, and every
+// session following the player showed (and fetched art and a waveform for) a
+// different song each time. Everything but the playing song is cleared, the
+// songs before it loaded and it moved after them, then the songs after it.
+async function rebuild(h: Host, order: readonly number[]): Promise<string> {
+  const list = await playlistOf(h)
+  if (!list) return 'The player is not ready yet.'
+  if (list.length !== order.length) return 'The queue changed meanwhile; try again.'
+  const playing = list.findIndex(e => e.current)
+  // nothing playing: playlist-clear would empty it, so move one by one
+  if (playing < 0) return moveEach(h, moveSteps(order))
+  const at = order.indexOf(playing)
+  const before = entriesOf(order.slice(0, at).map(i => list[i]!))
+  const after = entriesOf(order.slice(at + 1).map(i => list[i]!))
+  const file = `${(await paths(h)).queue}.part`
+  const load = async (entries: readonly QueueEntry[]) => {
+    await h.fs.write(file, m3u(entries))
+    return mpv(h, ['loadlist', file, 'append'])
+  }
+  if (!(await mpv(h, ['playlist-clear']))) return 'The player is not ready yet.'
+  if (before.length && (!(await load(before)) || !(await mpv(h, ['playlist-move', 0, before.length + 1])))) return 'The player stopped answering mid-sort.'
+  if (after.length && !(await load(after))) return 'The player stopped answering mid-sort.'
+  return ''
+}
+
 // Puts the queue in `order` (order[i]: the entry now at i), the playing song
 // playing on. Shuffle goes off: un-shuffling would undo this.
 export async function reorderQueue(h: Host, order: readonly number[]): Promise<string> {
-  for (const [j, i] of moveSteps(order)) if (!(await mpv(h, ['playlist-move', j, i]))) return 'The player is not ready yet.'
+  const steps = moveSteps(order)
+  if (!steps.length) return ''
+  isReordering = true
+  try {
+    const reply = steps.length <= FEW_MOVES ? await moveEach(h, steps) : await rebuild(h, order)
+    if (reply) return reply
+  } finally {
+    isReordering = false
+  }
   await h.vars.change('isShuffled', () => false)
   await mpv(h, ['set_property', 'user-data/stream-radio/shuffled', false])
   await afterEdit(h)

@@ -1083,6 +1083,19 @@ describe('playlist editing', () => {
     expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [4, 3, 2, 1, 0])
   })
 
+  test('S pressed again while a sort runs: only the last one asked runs after it', async () => {
+    const { press, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
+    let release = () => {}
+    vi.mocked(player.reorderQueue).mockImplementationOnce(() => new Promise<string>(res => (release = () => res(''))))
+    await press('S', 'S', 'S', 'S')
+    expect(player.reorderQueue).toHaveBeenCalledTimes(1)
+    release()
+    await vi.waitFor(() => expect(player.reorderQueue).toHaveBeenCalledTimes(2))
+    await press('j')
+    expect(player.reorderQueue).toHaveBeenCalledTimes(2)
+    expect(lines().join('\n')).toContain('sort: album ')
+  })
+
   test('a song in the queue twice: only the picked copy moves', async () => {
     const twice = { ...FIVE, queue: { ...FIVE.queue!, items: ['a', 'b', 'a', 'c', 'd'], paths: ['/m/a', '/m/b', '/m/a', '/m/c', '/m/d'] } }
     const { press, host } = await show(100, twice)
