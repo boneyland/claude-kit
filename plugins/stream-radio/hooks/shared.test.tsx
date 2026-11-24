@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv, INTENT, LOCK, SOCK } from './fake-mpv'
+import { fakeMpv, INTENT, LOCK, SOCK, type FakeOptions } from './fake-mpv'
 
 // One mpv shared by every session: these tests play one session against a
 // player that others start, pause, stop or reconnect, through the same socket
@@ -128,10 +128,13 @@ test('the session ending leaves the player playing; the next session follows it'
   await $.command.run({ command: 'stream', args: URL } as never)
   await clock.advance(10)
 
+  expect(world.watching()).toBe(1)
   await $.session.end({ reason: 'other' } as never)
   await clock.advance(10)
   expect(world.isRunning).toBe(true)
   expect(world.sent).not.toContainEqual(['quit'])
+  // Its watcher is gone, though the quiet player sent it nothing to end on.
+  expect(world.watching()).toBe(0)
 
   // A new session (or this one reloaded) attaches instead of starting another.
   await $.session.start(start)
@@ -252,6 +255,29 @@ test('a session whose watcher ends while the player plays on does not reconnect'
   await clock.advance(3000)
   expect(await footer($)).toBe('♪ Lofi radio')
   expect(world.launches).toHaveLength(1)
+
+  world.end('quit')
+  await clock.advance(10)
+})
+
+test('a start that cannot find the player goes back to following the one still playing', async ($, on) => {
+  const clock = mock.clock(on)
+  session(on)
+  const options: FakeOptions = {}
+  const world = fakeMpv(on, options)
+  world.play(URL, { title: 'Lofi radio' })
+  await $.session.start(start)
+  await clock.advance(10)
+  expect(await footer($)).toBe('♪ Lofi radio')
+
+  const launched = world.launches.length
+  options.noPlayer = true
+  await $.command.run({ command: 'stream', args: 'https://example.com/other' } as never)
+  await clock.advance(10)
+  expect(world.isRunning).toBe(true)
+  await clock.advance(3000)
+  expect(await footer($)).toBe('♪ Lofi radio')
+  expect(world.launches).toHaveLength(launched)
 
   world.end('quit')
   await clock.advance(10)
