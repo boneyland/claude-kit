@@ -388,6 +388,9 @@ export async function onEvent(h: Host, event: PlayerEvent) {
       seen.url = typeof data === 'string' ? data : ''
       if (seen.isLoaded) await markLoaded(h)
       return
+    case 'user-data/stream-radio/edited':
+      if (seen.isLoaded) await refreshQueue(h, { isReordered: true })
+      return
     case 'user-data/stream-radio/shuffled': {
       const on = data === true
       if (on !== (await h.vars.read('isShuffled'))) {
@@ -768,10 +771,13 @@ export async function refreshQueue(h: Host, how: Refresh = {}) {
 // position: a playlist of the length last read is the same playlist, and needs
 // no asking; only a new one (or a shuffled one) is read whole.
 export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Queue> {
-  if (seen.count > 1) {
+  // One file with chapters lists them; one without is a playlist of one.
+  const chapterList = seen.count === 1 ? (await mpv(h, ['get_property', 'chapter-list']))?.data : undefined
+  const hasChapters = Array.isArray(chapterList) && chapterList.length > 1
+  if (seen.count > 1 || (seen.count === 1 && !hasChapters)) {
     if (!how.isReordered && before.kind === 'playlist' && before.items.length === seen.count) return { ...before, current: seen.pos }
     const list = (await mpv(h, ['get_property', 'playlist']))?.data
-    if (!Array.isArray(list) || list.length <= 1) return NO_QUEUE
+    if (!Array.isArray(list) || list.length < 1) return NO_QUEUE
     const entries = list as { filename?: string; title?: string; current?: boolean }[]
     const paths = entries.map(e => e.filename ?? '')
     // A local folder played whole: its entries are grouped under it.
@@ -881,3 +887,9 @@ export function resumable(at: Resume, url: string): string {
   return `${at.title || 'where it was'}${time}`
 }
 
+
+// Tells every session following the player that its queue was edited.
+export async function markEdited(h: Host) {
+  const was = (await mpv(h, ['get_property', 'user-data/stream-radio/edited']))?.data
+  await mpv(h, ['set_property', 'user-data/stream-radio/edited', (typeof was === 'number' ? was : 0) + 1])
+}
