@@ -76,6 +76,10 @@ It works the other way too: when a start with the android client never plays, th
 
 Playlists play through and repeat by default; Repeat in the panel or `/stream repeat` makes it one song or off, and that choice is kept across sessions. Shuffle applies to the playing playlist and is off again when something new starts. The plugin sets `loop-file`, `loop-playlist` and `keep-open` for its own player from Repeat, whatever your `mpv.conf` says. Web addresses must be `http(s)`; anything else is read as a local path. Playback goes on until it is stopped, whatever happens to the sessions.
 
+## Standalone player
+
+The same player has a full-screen terminal front end, [stream-radio-tui](../../apps/stream-radio-tui/README.md), that works with or without Claude Code and shares the one mpv with your sessions.
+
 ## Install
 
 ```

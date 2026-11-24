@@ -1,0 +1,62 @@
+name: stream-radio-tui
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/stream-radio-tui/**'
+      - 'plugins/stream-radio/core/**'
+      - '.github/workflows/stream-radio-tui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two pushes in a row must not race over the tag.
+concurrency:
+  group: stream-radio-tui-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/stream-radio-tui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/stream-radio-tui/package-lock.json
+
+      - run: npm ci
+
+      # The core's own tests run under `claude plugin test`, which needs Claude
+      # Code and is not available here. The TUI's suite drives the real core,
+      # and tsc type-checks the core files the TUI imports.
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+
+      # build.mjs shortens GITHUB_SHA to 7 characters for `--version`.
+      - run: npm run build
+
+      - name: Smoke check
+        run: node dist/stream-radio-tui.mjs --version
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          notes="version $version, commit $SHA"
+          gh release view stream-radio-tui-latest >/dev/null 2>&1 \
+            || gh release create stream-radio-tui-latest --prerelease \
+              --title "stream-radio TUI (latest build)" --notes "$notes"
+          git tag -f stream-radio-tui-latest "$SHA"
+          git push -f origin refs/tags/stream-radio-tui-latest
+          gh release upload stream-radio-tui-latest dist/stream-radio-tui.mjs --clobber
+          gh release edit stream-radio-tui-latest --notes "$notes"

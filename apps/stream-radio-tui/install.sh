@@ -1,0 +1,44 @@
+#!/bin/sh
+# Installs stream-radio-tui: downloads the built file and puts it in
+# ${PREFIX:-$HOME/.local/bin}. Run it again to update.
+set -eu
+
+URL="${STREAM_RADIO_TUI_URL:-https://github.com/boneyland/claude-kit/releases/download/stream-radio-tui-latest/stream-radio-tui.mjs}"
+DEST="${PREFIX:-$HOME/.local/bin}"
+
+missing=""
+if command -v node >/dev/null 2>&1; then
+  major=$(node -p 'process.versions.node.split(".")[0]')
+  if [ "$major" -lt 20 ]; then
+    missing="$missing
+  node 20 or newer (found node $major)"
+  fi
+else
+  missing="$missing
+  node 20 or newer"
+fi
+command -v mpv >/dev/null 2>&1 || missing="$missing
+  mpv"
+command -v curl >/dev/null 2>&1 || missing="$missing
+  curl"
+if [ -n "$missing" ]; then
+  echo "stream-radio-tui needs, and did not find:$missing" >&2
+  exit 1
+fi
+
+command -v yt-dlp >/dev/null 2>&1 || echo "warning: yt-dlp not found; YouTube URLs will not play without it." >&2
+command -v python3 >/dev/null 2>&1 || echo "warning: python3 not found; yt-dlp needs it." >&2
+
+mkdir -p "$DEST"
+tmp=$(mktemp "$DEST/.stream-radio-tui.XXXXXX")
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+curl -fsSL "$URL" -o "$tmp"
+chmod +x "$tmp"
+mv -f "$tmp" "$DEST/stream-radio-tui"
+trap - EXIT HUP INT TERM
+
+echo "Installed $DEST/stream-radio-tui"
+case ":${PATH:-}:" in
+  *":$DEST:"*) ;;
+  *) echo "$DEST is not on your PATH; add it, or run $DEST/stream-radio-tui directly." ;;
+esac
