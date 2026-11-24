@@ -13,7 +13,8 @@ export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; c
 // Kept identical to types/index.d.ts (checked in hooks/host-claude.ts).
 // Where a URL got to: its playlist entry (-1 without a playlist), the seconds
 // into it (-1 for a live stream) and the song or chapter title.
-export type Resume = { url: string; index: number; seconds: number; title: string }
+// path: the entry's file or URL, so a reordered queue resumes the same song
+export type Resume = { url: string; index: number; seconds: number; title: string; path?: string }
 
 export type WatchStream = AsyncIterableIterator<string> & {
   return(value?: unknown): Promise<IteratorResult<string, unknown>>

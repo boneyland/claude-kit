@@ -18,7 +18,8 @@ export async function stateDir(env: (name: string) => Promise<string | undefined
 // - reconnect.lock, held by the one session that reconnects after a drop;
 // - mpv.log, the player's errors, for saying why something would not play;
 // - state.json, what is kept across sessions and shared with the TUI (saved.ts).
-export type Paths = { sock: string; intent: string; lock: string; log: string; state: string }
+// queue: the queue once edited, as a playlist file the player plays.
+export type Paths = { sock: string; intent: string; lock: string; log: string; state: string; queue: string }
 let dataDir: string | undefined
 
 export async function paths(h: Host): Promise<Paths> {
@@ -29,7 +30,7 @@ export async function paths(h: Host): Promise<Paths> {
     // The first time the folder is known, make sure it exists.
     if (dataDir) await h.run(['mkdir', '-p', dataDir], { timeoutMs: 3000 }).catch(() => undefined)
   }
-  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log`, state: `${dataDir}/state.json` }
+  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log`, state: `${dataDir}/state.json`, queue: `${dataDir}/queue.m3u` }
 }
 
 // What mpv's directory filter plays: its sound, video and playlist kinds.

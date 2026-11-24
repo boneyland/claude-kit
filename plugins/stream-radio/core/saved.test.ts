@@ -195,3 +195,9 @@ test("a changed default stream clears the last URL only for its own program", as
   expect(mod.vars.lastUrl).toBe('')
   expect(mod.vars.resumeAt).toEqual(NO_RESUME)
 })
+
+test("the song's path in a resume point is kept, so a reordered queue resumes the same song", async () => {
+  const at = { ...AT, path: '/m/b.flac' }
+  const text = JSON.stringify({ version: 1, last: { url: '/m', resumeAt: at } })
+  expect((await readSaved(hostOf('mod', { [STATE]: text }).h)).last?.resumeAt).toEqual(at)
+})

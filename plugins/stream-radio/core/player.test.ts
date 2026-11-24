@@ -17,6 +17,7 @@ test('a data folder not known yet is asked for again, not kept as the root', asy
     lock: '/data/reconnect.lock',
     log: '/data/mpv.log',
     state: '/data/state.json',
+    queue: '/data/queue.m3u',
   })
   // Once known it is kept, and made once.
   expect((await paths(hostIn('/elsewhere'))).sock).toBe('/data/mpv.sock')

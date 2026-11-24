@@ -17,7 +17,7 @@ import {
   trackTitle,
   WATCHED,
 } from './nowplaying'
-import { paths, type Paths } from './paths'
+import { listSongs, paths, type Paths } from './paths'
 import { readSaved, updateSaved } from './saved'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
@@ -424,9 +424,12 @@ export async function onLoaded(h: Host) {
   }
   if (!pending) return
   const q = await h.vars.read('queue')
-  if (q.kind === 'playlist' && pending.index >= 0 && pending.index < q.items.length && q.current !== pending.index) {
+  // The song by its path first: an edited queue may have moved it.
+  const byPath = pending.path ? q.paths.indexOf(pending.path) : -1
+  const target = byPath >= 0 ? byPath : pending.index
+  if (q.kind === 'playlist' && target >= 0 && target < q.items.length && q.current !== target) {
     // The jump loads another file; its file-loaded comes back through here.
-    if (!(await mpv(h, ['playlist-play-index', pending.index]))) pending = undefined
+    if (!(await mpv(h, ['playlist-play-index', target]))) pending = undefined
   } else {
     if (pending.seconds >= RESUME_MIN_SECONDS) await mpv(h, ['seek', pending.seconds, 'absolute'])
     pending = undefined
@@ -441,9 +444,10 @@ export async function recordPosition(h: Host, pos: number) {
   if (pending || !url || !title || title === 'connecting…') return
   const q = await h.vars.read('queue')
   const index = q.kind === 'playlist' ? q.current : -1
+  const path = q.kind === 'playlist' ? q.paths[index] : undefined
   const was = await h.vars.read('resumeAt')
-  if (was.url === url && was.index === index && was.seconds === pos && was.title === title) return
-  await h.vars.change('resumeAt', () => ({ url, index, seconds: pos, title }))
+  if (was.url === url && was.index === index && was.seconds === pos && was.title === title && was.path === path) return
+  await h.vars.change('resumeAt', () => ({ url, index, seconds: pos, title, ...(path ? { path } : {}) }))
   await saveLast(h, was.url !== url || was.index !== index || was.title !== title)
 }
 
@@ -892,4 +896,66 @@ export function resumable(at: Resume, url: string): string {
 export async function markEdited(h: Host) {
   const was = (await mpv(h, ['get_property', 'user-data/stream-radio/edited']))?.data
   await mpv(h, ['set_property', 'user-data/stream-radio/edited', (typeof was === 'number' ? was : 0) + 1])
+}
+
+// One thing to add to the queue: a file, a folder (its songs are added), or an
+// http(s) URL; title names a URL's entry.
+export type QueueEntry = { path: string; title?: string }
+
+// A folder becomes its songs; a file or URL stays as it is.
+async function expand(h: Host, entries: readonly QueueEntry[]): Promise<QueueEntry[]> {
+  const out: QueueEntry[] = []
+  for (const e of entries) {
+    const isDir = !/^https?:/.test(e.path) && (await h.fs.stat(e.path).catch(() => undefined))?.kind === 'dir'
+    if (isDir) out.push(...(await listSongs(h, e.path)).map(path => ({ path })))
+    else out.push(e)
+  }
+  return out
+}
+
+const m3u = (entries: readonly QueueEntry[]) =>
+  `#EXTM3U\n${entries.map(e => `${e.title ? `#EXTINF:-1,${e.title.replace(/\n/g, ' ')}\n` : ''}${e.path}\n`).join('')}`
+
+// Writes the player's queue as it is now to the queue file; its path.
+export async function writeQueueFile(h: Host): Promise<string> {
+  const file = (await paths(h)).queue
+  const list = (await mpv(h, ['get_property', 'playlist']))?.data
+  const entries = Array.isArray(list) ? (list as { filename?: string; title?: string }[]).filter(e => e.filename).map(e => ({ path: e.filename!, title: e.title })) : []
+  await h.fs.write(file, m3u(entries))
+  return file
+}
+
+// After an edit: the queue file is what plays now, resumes and reconnects;
+// every session reads the queue again.
+async function afterEdit(h: Host) {
+  const file = await writeQueueFile(h)
+  await mpv(h, ['set_property', 'user-data/stream-radio/url', file])
+  await h.vars.change('lastUrl', () => file)
+  const intent = await readIntent(h)
+  if (intent) await writeIntent(h, { ...intent, url: file })
+  await markEdited(h)
+  await refreshQueue(h, { isReordered: true })
+}
+
+// Adds to the end of the queue, or to play next (after the playing song, in
+// the order given). With nothing playing, the queue is what was added, and it
+// starts. '' when done, else what to show.
+export async function addToQueue(h: Host, config: PlayerConfig, entries: readonly QueueEntry[], where: 'end' | 'next'): Promise<string> {
+  const songs = await expand(h, entries)
+  if (!songs.length) return 'Nothing to add.'
+  if (!isFollowing()) {
+    const file = (await paths(h)).queue
+    await h.fs.write(file, m3u(songs))
+    start(h, config, file)
+    return ''
+  }
+  const before = (await mpv(h, ['get_property', 'playlist-count']))?.data
+  const count = typeof before === 'number' ? before : seen.count
+  for (const s of songs) if (!(await mpv(h, ['loadfile', s.path, 'append']))) return 'The player is not ready yet.'
+  if (where === 'next') {
+    const at = seen.pos >= 0 ? seen.pos : 0
+    for (let i = 0; i < songs.length; i++) await mpv(h, ['playlist-move', count + i, at + 1 + i])
+  }
+  await afterEdit(h)
+  return ''
 }
