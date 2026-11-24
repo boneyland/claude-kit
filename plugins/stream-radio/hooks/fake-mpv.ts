@@ -192,7 +192,7 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     }
     return ok()
   })
-  on('process.spawn', async function* (_$, e) {
+  on('process.spawn', async function* (_$, e, next) {
     const argv = [...e.argv]
     if (argv[4] !== '--watch' || !world.isRunning) return { value: { code: 1, signal: null } } as never
     const names = JSON.parse(argv[5]!) as string[]
@@ -206,6 +206,12 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       if ('time-pos' in world.props) w.events.push(initial('time-pos'))
     }
     watchers.add(w)
+    // The engine aborts this when the stream is returned, as it kills a real
+    // child: the watcher ends even while it waits on a quiet player.
+    next.signal.addEventListener('abort', () => {
+      w.isClosed = true
+      w.wake()
+    })
     try {
       for (;;) {
         if (w.events.length > 0) {

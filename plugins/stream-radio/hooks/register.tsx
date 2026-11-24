@@ -18,20 +18,16 @@ import {
   titleColumns,
 } from '../core/nowplaying'
 
-// What the footer shows; empty when nothing plays.
 import {
   NO_QUEUE,
   NO_RESUME,
   connect,
   isFollowing,
   detach,
-  failed,
   loadLast,
   loadRepeat,
   loadVolume,
   locate,
-  mpv,
-  paths,
   pick,
   releaseLock,
   resumable,
@@ -55,6 +51,7 @@ const OPEN_FOLDERS = { plugin: 'stream-radio', key: 'openFolders' } as const
 
 // The player's state (core/host.ts PlayerKeys), one atom per key: the drawing
 // reads them, the core changes them through the Host's store below.
+// What the footer shows; empty when nothing plays.
 const playing = atom({ plugin: 'stream-radio', key: 'playing' } as const, '')
 const isPaused = atom({ plugin: 'stream-radio', key: 'isPaused' } as const, false)
 const elapsed = atom({ plugin: 'stream-radio', key: 'elapsed' } as const, -1)
@@ -66,7 +63,10 @@ const openFolders = atom(OPEN_FOLDERS, [] as string[])
 const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_RESUME)
 const volumeLevel = atom({ plugin: 'stream-radio', key: 'volume' } as const, 60)
 const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
+// The playing playlist's shuffle, off again when something new starts.
 const isShuffled = atom({ plugin: 'stream-radio', key: 'isShuffled' } as const, false)
+// What the panel's list is narrowed to, as typed; empty again when something
+// new starts.
 const listFilter = atom({ plugin: 'stream-radio', key: 'filter' } as const, '')
 
 // The core's store on those atoms. Spelled out key by key: Claude Code's scan

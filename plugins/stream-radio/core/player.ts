@@ -47,10 +47,7 @@ export async function setVolume(h: Host, configured: number, level: number): Pro
   return `Volume ${to}%.`
 }
 
-// Repeat: kept in saved state as a preference. Shuffle: the playing playlist's,
-// off again when something new starts.
-// What the panel's list is narrowed to, as typed; empty again when something
-// new starts.
+// Repeat: kept in saved state as a preference.
 export const REPEAT_KEY = 'repeat'
 
 export async function loadRepeat(h: Host) {
@@ -131,7 +128,9 @@ export type Paths = { sock: string; intent: string; lock: string; log: string }
 let dataDir: string | undefined
 
 export async function paths(h: Host): Promise<Paths> {
-  dataDir ??= await h.dataDir()
+  // Not kept while empty: a hook without CLAUDE_PLUGIN_DATA must not pin the
+  // files to the filesystem root for the rest of the session.
+  dataDir ||= await h.dataDir()
   return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log` }
 }
 
@@ -626,6 +625,8 @@ export function start(h: Host, config: PlayerConfig, url: string, from?: Resume,
         h.events.watching(false)
         await h.vars.change('playing', () => '')
         h.toast(`Can't start "${player}". Install mpv (and yt-dlp for YouTube).`)
+        // detach() above let go of any player still playing; find it again.
+        startPoller(h, config)
         return
       }
       if (mine !== run) return
