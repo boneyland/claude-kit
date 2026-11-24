@@ -113,6 +113,8 @@ export type Command =
   | { kind: 'repeat'; mode?: Repeat }
   // to: a level from 0 to 100; step: one step up or down from where it is
   | { kind: 'volume'; to?: number; step?: 1 | -1 }
+  // seconds: where to go, or with isRelative how far from where it is (- back)
+  | { kind: 'seek'; seconds: number; isRelative?: true }
   // url: an http(s) URL, or an absolute path when isLocal
   | { kind: 'play'; url: string; isLocal?: true }
   | { kind: 'error'; text: string }
@@ -121,7 +123,7 @@ export type Command =
 // for a relative path.
 export type Where = { home: string; cwd: string }
 
-const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | shuffle | repeat [all | one | off] | panel | stop'
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | seek [+|-]<m:ss> | shuffle | repeat [all | one | off] | panel | stop'
 
 // A URL, or a local file, folder or playlist as an absolute path: `~/…`,
 // `/…`, `file://…` or relative to the session's folder. Quotes around it go.
@@ -177,6 +179,15 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
     const n = Number(arg.replace(/%$/, ''))
     if (arg !== '' && Number.isFinite(n)) return { kind: 'volume', to: clampVolume(n) }
     return { kind: 'error', text: 'Usage: /stream vol <0-100 | up | down>' }
+  }
+  const go = /^seek(?:\s+(.*))?$/.exec(word)
+  if (go) {
+    const time = /^([+-]?)((?:\d+:){0,2}\d+)$/.exec((go[1] ?? '').trim())
+    const parts = time?.[2]?.split(':').map(Number) ?? []
+    // seconds and, with hours, minutes are under 60 when a larger part comes first
+    if (!time || parts.slice(1).some(n => n >= 60)) return { kind: 'error', text: 'Usage: /stream seek <m:ss | seconds | +seconds | -seconds>' }
+    const seconds = parts.reduce((total, n) => total * 60 + n, 0)
+    return time[1] ? { kind: 'seek', seconds: time[1] === '-' ? -seconds : seconds, isRelative: true } : { kind: 'seek', seconds }
   }
   const target = word || fallback
   if (!target) return { kind: 'error', text: USAGE }

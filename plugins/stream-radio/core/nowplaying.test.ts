@@ -44,6 +44,17 @@ test('arguments', () => {
   expect(parseArgs('', '').kind).toBe('error')
 })
 
+test('seek takes a time, or + or - a time from where it is', () => {
+  expect(parseArgs('seek 1:30', '')).toEqual({ kind: 'seek', seconds: 90 })
+  expect(parseArgs('seek 90', '')).toEqual({ kind: 'seek', seconds: 90 })
+  expect(parseArgs('seek 1:02:03', '')).toEqual({ kind: 'seek', seconds: 3723 })
+  expect(parseArgs('seek +10', '')).toEqual({ kind: 'seek', seconds: 10, isRelative: true })
+  expect(parseArgs('seek -1:00', '')).toEqual({ kind: 'seek', seconds: -60, isRelative: true })
+  for (const bad of ['seek', 'seek soon', 'seek 1:75', 'seek 1::2', 'seek +', 'seek 1:2:3:4']) {
+    expect(parseArgs(bad, '')).toEqual({ kind: 'error', text: 'Usage: /stream seek <m:ss | seconds | +seconds | -seconds>' })
+  }
+})
+
 test('a title that fits is shown as is and never scrolls', () => {
   expect(marquee('Lofi radio', 20, 0)).toBe('Lofi radio')
   expect(marquee('Lofi radio', 20, 57)).toBe('Lofi radio')
