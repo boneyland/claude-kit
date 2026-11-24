@@ -222,7 +222,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           const m = menuRef.current
           return setMenu({ ...m, choice: (m.choice + (a.kind === 'up' ? -1 : 1) + m.items.length) % m.items.length })
         }
-        if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight))
+        if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight, tabRef.current))
         setCurTop(undefined)
         {
           // the arrows move the cursor and keep the pick, so Space can add to it
@@ -506,7 +506,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       <Box flexDirection="column" width={columns}>
         <Text bold>stream-radio</Text>
         {mode === 'help' ? (
-          <Help top={helpTopRef.current} height={bodyHeight} width={columns} />
+          <Help top={helpTopRef.current} height={bodyHeight} width={columns} tab={tab} />
         ) : isWide ? (
           <Box flexDirection="row" height={listHeight + 2}>
             {list}
@@ -525,7 +525,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         <Text wrap="truncate-end">{textLine}</Text>
         <Text dimColor>{'─'.repeat(columns)}</Text>
         <Text wrap="truncate-end">{statusLine || ' '}</Text>
-        <Hints mode={mode} isWide={isWide} />
+        <Hints mode={mode} isWide={isWide} tab={tab} />
       </Box>
     </Settling.Provider>
   )

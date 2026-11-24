@@ -24,23 +24,62 @@ stream-radio-tui ~/Music/Album       # a folder, file or .m3u plays as a playlis
 
 With no argument it attaches to the player that is already running, or shows the last URL, ready to play with `l`.
 
+The list has two tabs: **Files**, a folder browser to pick songs from, and **Playlist**, the queue that plays. It opens on the Playlist when something is queued, else on Files. `Tab` or a click on a tab's name switches; each tab keeps its own cursor, picked rows and scroll.
+
+### Both tabs
+
 | Key | |
 | --- | --- |
+| `Tab`, `Shift-Tab` | switch tabs |
 | `↑` `↓` or `k` `j` | move |
-| `Enter` | play the song, or open or shut a folder |
-| `←` `→` | shut or open a folder |
-| `space` | pause or resume |
+| `Shift-↑` `Shift-↓` | pick rows from the cursor (`Shift-↓` then `Shift-↑` leaves one row picked, as in a file manager) |
+| `space` | pause or resume; while any row is picked, pick or unpick the cursor's row instead |
+| `Esc` | clear the pick |
+| `m` | the row's menu (also a right-click, or the `⋯` at the end of the cursor's row) |
+| `S` | sort by the next field (also the `sort:` control on the tab row) |
 | `n` `p` | next or previous song |
 | `b` `f` | jump 10 seconds back or ahead (not in a live stream) |
 | `+` / `=`, `-` | volume up or down a step: about 3 dB, the same change at any level |
 | `s` | shuffle |
 | `r` | repeat: all, one, off |
-| `/` | filter the list; `Enter` plays the first match, `Esc` clears |
-| `o` | type a URL or path to play |
+| `o` | go to a folder, or a YouTube playlist URL, in Files |
 | `l` | resume the last URL from where it got to (after `x`, or on a fresh start); while it plays, does nothing |
 | `x` | stop the player |
-| `?` | every key and what the mouse does; `?`, `Esc` or `q` closes it |
+| `?` | every key of the tab showing, and what the mouse does; `?`, `Esc` or `q` closes it |
 | `q`, or `Ctrl-C` twice | quit the TUI; the music keeps playing. A single `Ctrl-C` only says to press it again, so a copy habit does not quit (kitty copies with `Ctrl-Shift-C`) |
+
+Actions take the picked rows, or the cursor's row when none is picked. Adding or removing clears the pick; moving keeps it, so the same songs can be moved again.
+
+### Files
+
+Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. The heading shows where you are; `../` is always the first row.
+
+| Key | |
+| --- | --- |
+| `Enter` | open or shut a folder; on `../`, go up; on a file, add it to the queue |
+| `←` `→` | shut or open a folder |
+| `a` | add to the queue |
+| `A` | play next: add after the song playing |
+| `S` | sort files by name, date modified, artist or album artist (folders stay first, by name) |
+
+Files never starts, stops or skips music while something plays. Adding while nothing plays starts the queue. A folder adds every song in it, through its subfolders.
+
+A YouTube playlist URL typed after `o` lists its videos as one folder (read with `yt-dlp`, up to 1000); adding the folder adds every video. If yt-dlp can't list it, its error shows on the status line and the tree stays as it was.
+
+### Playlist
+
+One row per song: its title (from its tags, else its file name), then, dimmed, its artist and its folder or site. A video with chapters lists its chapters here until something is added.
+
+| Key | |
+| --- | --- |
+| `Enter` | play the song |
+| `Alt-↑` `Alt-↓`, or `u` `d` | move the picked songs one place |
+| `Delete` (or Backspace) | remove the picked songs |
+| `S` | sort by title, artist, album artist, album, or folder then file name |
+| `R` | the same sort the other way round |
+| `/` | filter the list; `Enter` plays the first match, `Esc` clears |
+
+A sort reorders the queue for good: it plays in that order afterwards, and songs added later go where they are added. Sorting or moving turns shuffle off. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does. The edited queue is kept, so `l` after a stop resumes the same song, found by its path.
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 
@@ -48,13 +87,17 @@ With no argument it attaches to the player that is already running, or shows the
 
 Everything the keys do, the mouse can do too:
 
-- **Rows:** a click selects a song or folder, a double-click plays the song or opens or shuts the folder, and a click on a folder's `▸`/`▾` opens or shuts it at once.
+- **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Playlist, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
+- **Drag:** in the Playlist, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
+- **Tabs:** a click on `Files` or `Playlist` switches; a click on `sort: …` sorts by the next field.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused), 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
 
 While the mouse is on, the terminal leaves clicks to the TUI: hold Shift to select text (in kitty, Shift-drag). Set `mouse` to `off` to keep the terminal's own selection.
+
+kitty keeps Shift-click for its own selection, so Shift-click never reaches the TUI there; Alt-click picks a range too. To have Shift-click reach it, add `terminal_select_modifiers ctrl+shift` to `kitty.conf`; text selection then takes Ctrl+Shift-drag.
 
 ## Pictures
 

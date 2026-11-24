@@ -186,7 +186,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
-    expect(lineOf(all, /\? all keys.*o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
+    expect(lineOf(all, /\? all keys.*o go to.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => [...l].length <= 100)).toBe(true)
   })
 
@@ -1142,12 +1142,13 @@ describe('the key list', () => {
     for (const close of [ESC, '?', 'q']) {
       await press('?')
       const all = lines().join('\n')
-      expect(all).not.toContain('Playlist')
+      // the list and pane give way to it
+      expect(all).not.toContain('2. Song two')
       for (const text of ['Keys', 'stop the player', 'resume the last URL', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
         expect(all).toContain(text)
       }
       await press(close)
-      expect(lines().join('\n')).toContain('Playlist')
+      expect(lines().join('\n')).toContain('2. Song two')
     }
     // q closed the list; it did not quit
     expect(player.stopPlaying).not.toHaveBeenCalled()
@@ -1161,6 +1162,25 @@ describe('the key list', () => {
       return columnOf(line, line.indexOf(text))
     })
     expect(new Set(starts).size).toBe(1)
+  })
+
+  test("? lists the keys of the tab showing, and both tabs' shared keys", async () => {
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    await press('?')
+    let all = lines().join('\n')
+    for (const text of ['Playlist tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
+    expect(all).not.toContain('Files tab')
+    await press(ESC, '\t', '?')
+    all = lines().join('\n')
+    for (const text of ['Files tab', 'add to queue', 'play next', 'go up', 'switch tabs']) expect(all).toContain(text)
+    expect(all).not.toContain('remove the picked songs')
+  })
+
+  test('the hints follow the tab', async () => {
+    const { press, lines } = await show(100)
+    expect(lines().join('\n')).toMatch(/u\/d move.*Del remove/)
+    await press('\t')
+    expect(lines().join('\n')).toMatch(/a add.*A play next/)
   })
 
   test('keys that act in the list do nothing while it shows', async () => {
