@@ -107,6 +107,7 @@ describe('openSession', () => {
   test('a path that does not exist shows in status', async () => {
     session = await openSession([path.join(state, 'nope')], { env, run: recorder() })
     expect(session.status()).toContain('No such file or folder')
+    expect(session.statusSeq()).toBe(1)
     expect(ran.some(a => a.join(' ').includes('setsid'))).toBe(false)
   })
 

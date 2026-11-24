@@ -17,6 +17,8 @@ export type Session = {
   close(): void
   // The last message the player gave (a failed start, a missing file); '' for none.
   status(): string
+  // Counts what the player has said: the same text said again is new news.
+  statusSeq(): number
 }
 
 // Opens the terminal player's session: loads config and saved state, follows
@@ -26,10 +28,12 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
   const env = opts.env ?? process.env
   const onChange = opts.onChange ?? (() => undefined)
   let status = ''
+  let statusSeq = 0
   let isClosed = false
   const say = (text: string) => {
     if (isClosed) return
     status = text
+    statusSeq += 1
     onChange()
   }
   const base = nodeHost({ titleChanged: onChange, watching: onChange }, memoryStore(onChange), {
@@ -80,5 +84,6 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
       stopPoller()
     },
     status: () => status,
+    statusSeq: () => statusSeq,
   }
 }

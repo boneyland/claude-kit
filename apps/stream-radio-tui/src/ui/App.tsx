@@ -5,7 +5,7 @@ import { locate, pick, resume, setRepeat, setVolume, start, step, stopPlaying, t
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Hints } from './Hints'
-import { useDuration, usePlayer, useSize, type View } from './hooks'
+import { useDuration, usePlayer, useRefState, useSize, type View } from './hooks'
 import { isCurrent, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
@@ -27,12 +27,14 @@ function Player({ session, view }: { session: Session; view: View }) {
   const { exit } = useApp()
   const { columns, rows: lines } = useSize()
   const duration = useDuration(h, view.playing, view.elapsed >= 0)
-  const [mode, setMode] = useState<Mode>('list')
-  const [typed, setTyped] = useState('')
+  // Read by the key handler through .current: see useRefState.
+  const [modeRef, setMode] = useRefState<Mode>('list')
+  const [typedRef, setTyped] = useRefState('')
   // the row picked with the arrows; undefined follows the playing one
-  const [cursor, setCursor] = useState<number>()
+  const [cursorRef, setCursor] = useRefState<number | undefined>(undefined)
+  const mode = modeRef.current
   const [notice, setNotice] = useState('')
-  useEffect(() => void (view.status && setNotice(view.status)), [view.status])
+  useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
 
   const q = view.queue
   const filter = view.filter.trim()
@@ -41,8 +43,8 @@ function Player({ session, view }: { session: Session; view: View }) {
     [q, view.openFolders, filter],
   )
   const playingRow = rows.findIndex(r => isCurrent(r, q.current))
-  const selected = Math.max(0, Math.min(cursor ?? playingRow, rows.length - 1))
-  const row = rows[selected]
+  const selectedNow = () => Math.max(0, Math.min(cursorRef.current ?? playingRow, rows.length - 1))
+  const selected = selectedNow()
 
   const act = (work: () => Promise<string | void>) => {
     work().then(
@@ -50,20 +52,26 @@ function Player({ session, view }: { session: Session; view: View }) {
       error => setNotice(`stream-radio failed: ${error instanceof Error ? error.message : String(error)}`),
     )
   }
-  const setOpen = (path: string, isOpen: boolean) =>
-    void h.vars.change('openFolders', list => (isOpen ? [...new Set([...list, path])] : list.filter(p => p !== path)))
+  // isOpen: undefined flips it, as the store has it now
+  const setOpen = (path: string, isOpen?: boolean) =>
+    void h.vars.change('openFolders', list =>
+      (isOpen ?? !list.includes(path)) ? [...new Set([...list, path])] : list.filter(p => p !== path),
+    )
   const setFilter = (fn: (text: string) => string) => {
     setCursor(undefined)
     void h.vars.change('filter', fn)
   }
 
   const handle = (a: Action) => {
+    const at = selectedNow()
+    const row = rows[at]
+    const mode = modeRef.current
     switch (a.kind) {
       case 'up':
       case 'down':
-        return setCursor(Math.max(0, Math.min(selected + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
+        return setCursor(Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
       case 'enter':
-        if (row?.kind === 'folder') return setOpen(row.path, !row.isOpen)
+        if (row?.kind === 'folder') return setOpen(row.path)
         if (row?.kind === 'item') act(() => pick(h, row.index))
         return
       case 'shutFolder':
@@ -102,16 +110,21 @@ function Player({ session, view }: { session: Session; view: View }) {
       case 'type':
       case 'erase': {
         const edit = (t: string) => (a.kind === 'type' ? t + a.text : t.slice(0, -1))
-        return mode === 'filter' ? setFilter(edit) : setTyped(edit)
+        return mode === 'filter' ? setFilter(edit) : setTyped(edit(typedRef.current))
       }
       case 'submit':
         setMode('list')
         if (mode === 'filter') {
-          const first = rows.find(r => r.kind === 'item')
-          return act(async () => (first?.kind === 'item' ? pick(h, first.index) : 'Nothing matches.'))
+          // The store, not the last render: typing may not have redrawn yet.
+          return act(async () => {
+            const [queue, text] = await Promise.all([h.vars.read('queue'), h.vars.read('filter')])
+            const first = filterRows(queue.items, queue.paths, queue.root, text.trim()).find(r => r.kind === 'item')
+            return first?.kind === 'item' ? pick(h, first.index) : 'Nothing matches.'
+          })
         }
+        const text = typedRef.current
         return act(async () => {
-          const parsed = await locate(h, typed.trim(), session.config.defaultUrl)
+          const parsed = await locate(h, text.trim(), session.config.defaultUrl)
           if (parsed.kind === 'play') return start(h, session.config, parsed.url)
           return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
         })
@@ -121,7 +134,7 @@ function Player({ session, view }: { session: Session; view: View }) {
     }
   }
   useInput((input, key) => {
-    const a = keyAction(input, key, mode)
+    const a = keyAction(input, key, modeRef.current)
     if (a) handle(a)
   })
 
@@ -136,7 +149,7 @@ function Player({ session, view }: { session: Session; view: View }) {
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No playlist or chapters.'
-  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typed}_` : filter ? `/ filter: ${filter}` : ' '
+  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
   const list = <List heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} />
 
   return (

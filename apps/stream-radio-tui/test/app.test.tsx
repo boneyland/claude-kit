@@ -52,10 +52,17 @@ const ENTER = '\r'
 // (mocked) core actions with its host.
 async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '') {
   const listeners = new Set<() => void>()
+  let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
   const host = { program: 'tui', vars } as unknown as Host
-  const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status }
+  const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
+  // the session says something (again), as its say() does
+  const say = (text: string) => {
+    status = text
+    seq += 1
+    listeners.forEach(fn => fn())
+  }
   const subscribe = (fn: () => void) => {
     listeners.add(fn)
     return () => void listeners.delete(fn)
@@ -73,7 +80,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
       await tick()
     }
   }
-  return { ui, session, host, vars, lines, press }
+  return { ui, session, host, vars, lines, press, say }
 }
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
@@ -131,7 +138,39 @@ describe('drawing', () => {
   })
 })
 
+test('the same status said again shows again, after a reply replaced it', async () => {
+  const { press, lines, say } = await show(100, PLAYING, 'mpv: not found')
+  await press('+')
+  expect(lines().join('\n')).not.toContain('mpv: not found')
+  say('mpv: not found')
+  await tick()
+  const all = lines()
+  expect(all[lineOf(all, /space pause/) - 1]).toContain('mpv: not found')
+})
+
 describe('keys', () => {
+  test('keys written back to back, before a redraw, each see the mode the one before set', async () => {
+    const { ui, lines } = await show(100)
+    for (const k of ['/', 'a', 'b', 'c']) ui.stdin.write(k)
+    await tick()
+    expect(lines().join('\n')).toContain('/ filter: abc_')
+  })
+
+  test('a fast Enter after typing in open mode submits all of it', async () => {
+    const { ui, host } = await show(100)
+    for (const k of ['o', '/', 'm', ENTER]) ui.stdin.write(k)
+    await tick()
+    expect(player.locate).toHaveBeenCalledWith(host, '/m', '')
+  })
+
+  test("o with a path that won't play puts the reason on the status line", async () => {
+    vi.mocked(player.locate).mockResolvedValueOnce({ kind: 'error', text: 'No such file or folder: /nope' })
+    const { press, lines } = await show(100)
+    await press('o', '/nope', ENTER)
+    const all = lines()
+    expect(all[lineOf(all, /space pause/) - 1]).toContain('No such file or folder: /nope')
+  })
+
   test('space pauses through the core', async () => {
     const { press, host } = await show(100)
     await press(' ')
