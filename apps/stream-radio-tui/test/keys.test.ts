@@ -33,6 +33,8 @@ const listCases: Case[] = [
   ['space', ' ', key(), { kind: 'pause' }],
   ['n', 'n', key(), { kind: 'next' }],
   ['p', 'p', key(), { kind: 'prev' }],
+  ['b', 'b', key(), { kind: 'seek', by: -10 }],
+  ['f', 'f', key(), { kind: 'seek', by: 10 }],
   ['+', '+', key(), { kind: 'volume', dir: 1 }],
   ['=', '=', key(), { kind: 'volume', dir: 1 }],
   ['-', '-', key(), { kind: 'volume', dir: -1 }],

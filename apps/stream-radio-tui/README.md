@@ -31,6 +31,7 @@ With no argument it attaches to the player that is already running, or shows the
 | `←` `→` | shut or open a folder |
 | `space` | pause or resume |
 | `n` `p` | next or previous song |
+| `b` `f` | jump 10 seconds back or ahead (not in a live stream) |
 | `+` / `=`, `-` | volume up or down a step: about 3 dB, the same change at any level |
 | `s` | shuffle |
 | `r` | repeat: all, one, off |

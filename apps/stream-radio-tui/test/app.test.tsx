@@ -727,6 +727,14 @@ describe('mouse seek', () => {
     expect(player.seek).toHaveBeenCalledTimes(1)
   })
 
+  test('b and f jump 10 seconds back and ahead from where it is', async () => {
+    const { press, host } = await show(100)
+    await press('f')
+    expect(player.seek).toHaveBeenLastCalledWith(host, 171)
+    await press('b')
+    expect(player.seek).toHaveBeenLastCalledWith(host, 151)
+  })
+
   test('a live stream has no bar, and nothing seeks', async () => {
     const { click, where } = await show(60, { ...PLAYING, elapsed: -1 })
     const at = where('♪ live')

@@ -14,6 +14,8 @@ export type Action =
   | { kind: 'pause' }
   | { kind: 'next' }
   | { kind: 'prev' }
+  // seconds back (-) or ahead from where it is
+  | { kind: 'seek'; by: number }
   // one step louder (1) or quieter (-1): the same change in loudness at any level
   | { kind: 'volume'; dir: 1 | -1 }
   | { kind: 'shuffle' }
@@ -33,12 +35,17 @@ export type Action =
   | { kind: 'submit' }
   | { kind: 'cancel' }
 
+// How far b and f jump, as the mod's panel does.
+export const SEEK_SECONDS = 10
+
 const LETTERS: Record<string, Action> = {
   k: { kind: 'up' },
   j: { kind: 'down' },
   ' ': { kind: 'pause' },
   n: { kind: 'next' },
   p: { kind: 'prev' },
+  b: { kind: 'seek', by: -SEEK_SECONDS },
+  f: { kind: 'seek', by: SEEK_SECONDS },
   '+': { kind: 'volume', dir: 1 },
   '=': { kind: 'volume', dir: 1 },
   '-': { kind: 'volume', dir: -1 },

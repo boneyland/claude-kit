@@ -10,6 +10,7 @@ export const KEY_HELP: [string, string][] = [
   ['← →', 'shut or open a folder'],
   ['space', 'pause or resume'],
   ['n  p', 'next or previous song'],
+  ['b  f', 'jump 10 seconds back or ahead'],
   ['+ =  -', 'volume up or down a step (3 dB)'],
   ['s', 'shuffle on or off'],
   ['r', 'repeat: all, one, off'],
