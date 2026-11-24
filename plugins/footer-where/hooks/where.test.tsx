@@ -11,7 +11,8 @@ test('home is shortened to ~, and only on a whole folder name', () => {
   expect(tilde('/srv/a', undefined)).toBe('/srv/a')
 })
 
-for (const surface of ['terminal', 'desktop'] as const) {
+{
+  const surface = 'terminal'
   test(`${surface}: the footer shows the directory and branch after the mode labels, and follows a checkout`, async ($, on) => {
     let branch: string | null = 'main'
     on('session.cwd', () => ({ value: '/home/yh/projects/claude-kit' }))
@@ -38,3 +39,19 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+test('the desktop app draws nothing and reads nothing', async ($, on) => {
+  let reads = 0
+  on('session.cwd', () => (reads++, { value: '/home/yh/projects/claude-kit' }))
+  on('env.get', () => ({ value: '/home/yh' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('vcs.detect', () => ({ vcs: 'git', root: '/home/yh/projects/claude-kit', mainRoot: null, revision: null, branch: 'main', defaultBranch: 'main', remote: null }))
+  await $.session.start({ cwd: '/home/yh/projects/claude-kit', surface: 'desktop', isInteractive: true })
+  await $.turn.complete({ reason: 'answer', answer: '' } as never)
+  expect(reads).toBe(0)
+
+  const ui = await $.ui.mount({ plugin: PLUGIN, component: 'SessionMode', surface: 'desktop', props: { modes: ['auto mode on'] } })
+  expect(JSON.stringify(await ui.find({ type: 'Box' }) ?? null)).not.toContain('claude-kit')
+  await ui.unmount()
+})
