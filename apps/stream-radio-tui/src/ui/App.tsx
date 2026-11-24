@@ -8,6 +8,7 @@ import { Hints } from './Hints'
 import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
 import type { Media } from '../media'
 import type { MouseSource } from '../mouse/sgr'
+import { MouseProvider } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
 import { isCurrent, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
@@ -22,9 +23,14 @@ const WIDE_COLUMNS = 80
 // pictures go, when the terminal can show them. Neither in most tests.
 type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics; mouse?: MouseSource }
 
-export function App({ session, subscribe, media, graphics }: Props) {
+// mouse: the clicks and wheel read out of stdin; none in most tests.
+export function App({ session, subscribe, media, graphics, mouse }: Props) {
   const view = usePlayer(session, subscribe)
-  return view ? <Player session={session} view={view} media={media} graphics={graphics} /> : null
+  return view ? (
+    <MouseProvider source={mouse}>
+      <Player session={session} view={view} media={media} graphics={graphics} />
+    </MouseProvider>
+  ) : null
 }
 
 function Player({ session, view, media, graphics }: { session: Session; view: View; media?: Media; graphics?: Graphics }) {

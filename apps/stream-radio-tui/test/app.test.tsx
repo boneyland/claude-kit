@@ -12,6 +12,7 @@ import type { Media } from '../src/media'
 import type { Wave } from '../src/media/peaks'
 import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
+import type { MouseEvent, MouseSource } from '../src/mouse/sgr'
 
 // What the mocked mpv answers, unless a test says otherwise (and afterEach
 // puts it back): the length, and the song's tags.
@@ -81,7 +82,9 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     listeners.add(fn)
     return () => void listeners.delete(fn)
   }
-  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} />)
+  let onMouse: ((e: MouseEvent) => void) | undefined
+  const mouse: MouseSource = fn => ((onMouse = fn), () => (onMouse = undefined))
+  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} />)
   if (columns !== 100 || rows) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
     if (rows) Object.defineProperty(ui.stdout, 'rows', { value: rows, configurable: true })
@@ -95,8 +98,31 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
       await tick()
     }
   }
-  return { ui, session, host, vars, lines, press, say }
+  // The mouse: cells are 0-based from the top left, as the app is drawn.
+  const click = async (x: number, y: number) => {
+    onMouse!({ kind: 'press', button: 'left', x, y })
+    onMouse!({ kind: 'release', button: 'left', x, y })
+    await tick()
+  }
+  const dblclick = async (x: number, y: number) => {
+    onMouse!({ kind: 'press', button: 'left', x, y })
+    onMouse!({ kind: 'press', button: 'left', x, y })
+    await tick()
+  }
+  const wheel = async (x: number, y: number, dir: 'up' | 'down') => {
+    onMouse!({ kind: 'wheel', button: 'none', dir, x, y })
+    await tick()
+  }
+  // Where `text` first shows: its line, and the column of its first character.
+  const where = (text: string) => {
+    const y = lines().findIndex(l => l.includes(text))
+    expect(y, `"${text}" on screen`).toBeGreaterThanOrEqual(0)
+    return { x: [...stripAnsi(lines()[y]).slice(0, stripAnsi(lines()[y]).indexOf(text))].length, y }
+  }
+  return { ui, session, host, vars, lines, press, say, click, dblclick, wheel, where }
 }
+
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
 
