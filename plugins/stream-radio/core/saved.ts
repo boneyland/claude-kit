@@ -40,7 +40,7 @@ const isRepeat = (x: unknown): x is Repeat => x === 'all' || x === 'one' || x ==
 
 function resumeOf(v: unknown): Resume {
   if (!isObject(v) || !isString(v.url) || !isNumber(v.index) || !isNumber(v.seconds)) return NO_AT
-  return { url: v.url, index: v.index, seconds: v.seconds, title: isString(v.title) ? v.title : '' }
+  return { url: v.url, index: v.index, seconds: v.seconds, title: isString(v.title) ? v.title : '', ...(isString(v.path) && v.path ? { path: v.path } : {}) }
 }
 
 // Field by field: a field of the wrong shape is dropped, the rest kept.

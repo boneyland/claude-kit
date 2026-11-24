@@ -136,3 +136,20 @@ describe('host', () => {
     expect(await h.home()).toBe(process.env.HOME ?? '')
   })
 })
+
+describe('fs.list', () => {
+  test('lists a folder with each entry\'s kind', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-list-'))
+    try {
+      fs.writeFileSync(path.join(dir, 'a.flac'), '')
+      fs.mkdirSync(path.join(dir, 'Sub'))
+      const list = await host().fs.list(dir)
+      expect([...list].sort((x, y) => x.name.localeCompare(y.name))).toEqual([
+        { name: 'a.flac', kind: 'file' },
+        { name: 'Sub', kind: 'dir' },
+      ])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
