@@ -41,6 +41,8 @@ export type Action =
   // the picked songs (or the cursor's) one place up (-1) or down
   | { kind: 'move'; by: 1 | -1 }
   | { kind: 'remove' }
+  // the whole queue, stopping the player; from a key, only when pressed twice
+  | { kind: 'clearPlaylist'; isSure?: boolean }
   // the cursor a row up or down, picking the rows from the anchor
   | { kind: 'extendPick'; by: 1 | -1 }
   | { kind: 'togglePick' }
@@ -121,6 +123,7 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   if (isPlain && input === 'm') return { kind: 'menu' }
   if (isPlain && input === 'S') return { kind: 'sortNext' }
   if (isPlain && input === 'R') return { kind: 'sortReverse' }
+  if (isPlain && isPlaylist && input === 'C') return { kind: 'clearPlaylist' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
   if (key.leftArrow) return { kind: 'shutFolder' }

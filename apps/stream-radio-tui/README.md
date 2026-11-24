@@ -77,9 +77,10 @@ One row per song: its title (from its tags, else its file name), then, dimmed, i
 | `Delete` (or Backspace) | remove the picked songs |
 | `S` | sort by title, artist, album artist, album, or folder then file name |
 | `R` | the same sort the other way round |
+| `C` twice | clear the playlist and stop (also in the row's menu) |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
 
-A sort reorders the queue for good: it plays in that order afterwards, and songs added later go where they are added. Sorting or moving turns shuffle off. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does. The edited queue is kept, so `l` after a stop resumes the same song, found by its path.
+A sort reorders the queue for good: it plays in that order afterwards, and songs added later go where they are added. Sorting or moving turns shuffle off. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the playlist. The edited queue is kept, so `l` after a stop resumes the same song, found by its path.
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 

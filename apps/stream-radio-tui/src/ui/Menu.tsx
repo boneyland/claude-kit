@@ -34,4 +34,5 @@ export const PLAYLIST_MENU: readonly MenuItem[] = [
   { label: 'Move up', key: 'u', action: { kind: 'move', by: -1 } },
   { label: 'Move down', key: 'd', action: { kind: 'move', by: 1 } },
   { label: 'Remove', key: 'Del', action: { kind: 'remove' } },
+  { label: 'Clear playlist', key: 'C', action: { kind: 'clearPlaylist', isSure: true } },
 ]

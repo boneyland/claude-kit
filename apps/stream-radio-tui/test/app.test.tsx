@@ -1011,6 +1011,28 @@ describe('playlist editing', () => {
   const SHIFT_DOWN = '\x1b[1;2B'
   const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
 
+  test('C once only asks; C again clears the playlist and stops', async () => {
+    const { press, lines, host, session } = await show(100, FIVE)
+    await press('C')
+    expect(status(lines())).toContain('Press C again to clear all 5 songs.')
+    expect(player.stopPlaying).not.toHaveBeenCalled()
+    await press('C')
+    await vi.waitFor(() => expect(player.stopPlaying).toHaveBeenCalledWith(host, session.config))
+    await vi.waitFor(() => expect(status(lines())).toContain('Cleared the playlist. l brings it back.'))
+  })
+
+  test("C in Files doesn't clear the playlist", async () => {
+    const { press } = await show(100, FIVE)
+    await press('\t', 'C', 'C')
+    expect(player.stopPlaying).not.toHaveBeenCalled()
+  })
+
+  test("the row's menu clears the playlist at once", async () => {
+    const { press, host, session } = await show(100, FIVE)
+    await press('m', 'k', '\r')
+    await vi.waitFor(() => expect(player.stopPlaying).toHaveBeenCalledWith(host, session.config))
+  })
+
   test('Shift-↓ twice picks 3 rows; Space then unpicks one, not pausing; Esc clears and Space pauses', async () => {
     const { press, lines } = await show(100, FIVE)
     await press(SHIFT_DOWN, SHIFT_DOWN)
@@ -1360,10 +1382,10 @@ describe('the key list', () => {
     const { press, lines } = await show(100, PLAYING, '', '', { rows: 16 })
     await press('?')
     expect(lines().join('\n')).not.toContain('Shift-drag')
-    await press(...Array(30).fill('j'))
+    await press(...Array(40).fill('j'))
     expect(lines().join('\n')).toContain('Shift-drag')
     expect(lines().join('\n')).not.toContain('Keys')
-    await press(...Array(30).fill('k'))
+    await press(...Array(40).fill('k'))
     expect(lines().join('\n')).toContain('Keys')
   })
 })

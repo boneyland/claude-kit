@@ -30,6 +30,7 @@ export const PLAYLIST_KEY_HELP: [string, string][] = [
   ['Alt-↑ ↓  u d', 'move the picked songs (or this one)'],
   ['Delete', 'remove the picked songs (or this one)'],
   ['R', 'sort the other way round'],
+  ['C twice', 'clear the playlist and stop; l brings it back'],
   ['/', 'filter the list; Enter plays the first match, Esc clears'],
 ]
 

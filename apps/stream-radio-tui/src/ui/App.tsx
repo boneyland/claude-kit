@@ -37,7 +37,7 @@ const current = (held: Held | undefined, key: string): Held | undefined =>
 
 // Rows the wheel moves the list by.
 const WHEEL_ROWS = 3
-// How soon a second Ctrl-C must come to quit.
+// How soon a second Ctrl-C must come to quit, or a second C to clear the playlist.
 const INTERRUPT_MS = 2000
 
 // Lines besides the list and now playing: title, tab row, list heading, the
@@ -97,6 +97,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [helpTopRef, setHelpTop] = useRefState(0)
   // when Ctrl-C was last pressed; 0 for not lately
   const interruptAt = useRef(0)
+  // when C was last pressed; 0 for not lately
+  const clearAt = useRef(0)
   const mode = modeRef.current
   const [notice, setNotice] = useState('')
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
@@ -285,6 +287,24 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
             return removeFromQueue(h, session.config, indexes)
           }),
         )
+      case 'clearPlaylist': {
+        if (!isPl() || !isEditable()) return
+        // a lone C only asks: hundreds of songs gone at one key is too easy
+        const now = Date.now()
+        const isAgain = now - clearAt.current <= INTERRUPT_MS
+        clearAt.current = isAgain ? 0 : now
+        if (!a.isSure && !isAgain) return setNotice(`Press C again to clear all ${q.items.length} songs.`)
+        clearAt.current = 0
+        setPl(undefined)
+        setTop(undefined)
+        setSort({ isReversed: false })
+        return act(() =>
+          inTurn(async () => {
+            await stopPlaying(h, session.config)
+            return 'Cleared the playlist. l brings it back.'
+          }),
+        )
+      }
       case 'sortNext':
         if (!isPl()) return files.setSort(FILES_SORTS[(FILES_SORTS.indexOf(files.sort) + 1) % FILES_SORTS.length])
         if (!isEditable()) return
