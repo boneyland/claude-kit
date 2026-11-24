@@ -13,6 +13,7 @@ import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
 import { ICONS } from '../src/ui/Controls'
 import type { MouseEvent, MouseSource } from '../src/mouse/sgr'
+import { tagReader, type TagReader } from '../src/media/tags'
 
 // What the mocked mpv answers, unless a test says otherwise (and afterEach
 // puts it back): the length, and the song's tags.
@@ -65,14 +66,14 @@ const ESC = '\x1b'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-type Extra = { media?: Media; graphics?: Graphics; rows?: number }
+type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']> }
 async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', extra: Extra = {}) {
-  const { media, graphics, rows } = extra
+  const { media, graphics, rows, tags, fs } = extra
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
-  const host = { program: 'tui', vars, home: async () => home } as unknown as Host
+  const host = { program: 'tui', vars, home: async () => home, fs } as unknown as Host
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -87,7 +88,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
   const mouseFns = new Set<(e: MouseEvent) => void>()
   const mouse: MouseSource = fn => (mouseFns.add(fn), () => void mouseFns.delete(fn))
   const onMouse = (e: MouseEvent) => mouseFns.forEach(fn => fn(e))
-  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} />)
+  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} tags={tags} />)
   if (columns !== 100 || rows) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
     if (rows) Object.defineProperty(ui.stdout, 'rows', { value: rows, configurable: true })
@@ -514,16 +515,10 @@ describe('keys', () => {
     expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([67, 75, 84])
   })
 
-  test('Enter on a folder shuts it (the mark moves to it); on a song, plays it', async () => {
-    const { press, host, vars, lines } = await show(100)
+  test('Enter on a song plays it', async () => {
+    const { press, host } = await show(100)
     await press(UP, ENTER)
     expect(player.pick).toHaveBeenCalledWith(host, 1)
-    await press(UP, UP, ENTER)
-    expect(await vars.read('openFolders')).toEqual([])
-    expect(lines().join('\n')).not.toContain('Song two')
-    expect(lines().join('\n')).toMatch(/▶ ▸ 📁 Disc 1\/ · 3/)
-    await press('\x1b[C')
-    expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
   })
 
   test('/ filters as you type; Enter plays the first match', async () => {
@@ -556,7 +551,7 @@ describe('mouse rows', () => {
     openFolders: [],
   }
   // The number of the first track the list shows.
-  const firstShown = (all: string[]) => Number(/(\d+)\. Track/.exec(all[lineOf(all, /Playlist/) + 1])?.[1])
+  const firstShown = (all: string[]) => Number(/(\d+)\. Track/.exec(all[lineOf(all, /\d+\. Track/)])?.[1])
 
   test('a click selects a song; it does not play it', async () => {
     const { click, where, press, host } = await show(100)
@@ -572,33 +567,6 @@ describe('mouse rows', () => {
     const at = where('Song two')
     await dblclick(at.x, at.y)
     expect(player.pick).toHaveBeenCalledWith(host, 1)
-  })
-
-  test("a click on a folder's arrow shuts it; elsewhere on its row it only selects; a double-click shuts it", async () => {
-    const { click, dblclick, where, vars, press } = await show(100)
-    // a double-click on the arrow toggles it once, not twice
-    await dblclick(where('▾').x, where('▾').y)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    let at = where('Disc 1/')
-    await click(at.x + 3, at.y)
-    expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
-    // selected: Enter shuts it
-    await press(ENTER)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    // a click on another row first, or this one would make a double-click
-    await click(where('Intro').x, where('Intro').y)
-    at = where('▾')
-    await click(at.x, at.y)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    at = where('Disc 1/')
-    await dblclick(at.x, at.y)
-    expect(await vars.read('openFolders')).toEqual([])
   })
 
   test('the wheel scrolls the list, not the selection; a click then lands where it points; a key brings the view back', async () => {
@@ -630,6 +598,62 @@ describe('mouse rows', () => {
     expect(firstShown(lines())).toBe(last)
     for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'up')
     expect(firstShown(lines())).toBe(1)
+  })
+})
+
+describe('tabs', () => {
+  // Tests draw without colour, so which tab shows is read from the heading
+  // under the tab row.
+  const INV = /^\s*Playlist/
+  const INV_FILES = /^\s*Files/
+  const tabHeading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+  const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
+
+  test('starts on Playlist with a queue, on Files without', async () => {
+    const a = await show(100)
+    expect(tabHeading(a.lines())).toMatch(INV)
+    expect(a.lines().join('\n')).toContain('3. Song three')
+    cleanup()
+    const b = await show(100, EMPTY)
+    expect(tabHeading(b.lines())).toMatch(INV_FILES)
+  })
+
+  test('Tab and Shift-Tab switch; each tab keeps its own list', async () => {
+    const { press, lines } = await show(100)
+    await press('\t')
+    expect(tabHeading(lines())).toMatch(INV_FILES)
+    expect(lines().join('\n')).not.toContain('Song three ·')
+    expect(lines().join('\n')).not.toMatch(/\d+\. Song two/)
+    await press('\x1b[Z')
+    expect(tabHeading(lines())).toMatch(INV)
+    expect(lines().join('\n')).toContain('2. Song two')
+  })
+
+  test('a click on a tab name switches', async () => {
+    const { click, where, lines } = await show(100)
+    const at = where(' Files ')
+    await click(at.x + 2, at.y)
+    expect(tabHeading(lines())).toMatch(INV_FILES)
+    const back = where(' Playlist ')
+    await click(back.x + 2, back.y)
+    expect(tabHeading(lines())).toMatch(INV)
+  })
+
+  test('rows show the title from the file\'s tags once read', async () => {
+    const tags = tagReader(async p => ({ title: p.endsWith('02.mp3') ? 'Tagged Two' : '', artist: 'Tag Band', albumArtist: '', album: '' }))
+    const fs = { stat: async () => ({ kind: 'file' as const, mtimeMs: 5 }) }
+    const { lines } = await show(100, PLAYING, '', '', { tags, fs })
+    await vi.waitFor(() => expect(lines().join('\n')).toMatch(/2\. Tagged Two · Tag Band/))
+    expect(lines().join('\n')).toContain('1. Intro')
+  })
+
+  test('the playlist is flat: every song, no folders, shut or not', async () => {
+    const { lines } = await show(100, { ...PLAYING, openFolders: [] })
+    const all = lines().join('\n')
+    expect(all).not.toContain('📁')
+    for (const n of ['1. Intro', '2. Song two', '3. Song three', '4. Other']) expect(all).toContain(n)
+    // the folder, dimmed, after the title
+    expect(all).toMatch(/4\. Other.*Disc 2/)
   })
 })
 

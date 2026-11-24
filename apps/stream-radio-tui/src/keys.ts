@@ -1,4 +1,5 @@
 import type { Key } from 'ink'
+import type { Tab } from './ui/Tabs'
 
 // list: keys are commands; filter and open: keys edit a line of text; help:
 // the key list shows, and keys scroll or close it.
@@ -34,6 +35,8 @@ export type Action =
   | { kind: 'erase' }
   | { kind: 'submit' }
   | { kind: 'cancel' }
+  // to the other tab
+  | { kind: 'tab' }
 
 // How far b and f jump, as the mod's panel does.
 export const SEEK_SECONDS = 10
@@ -59,8 +62,11 @@ const LETTERS: Record<string, Action> = {
   '?': { kind: 'help' },
 }
 
+// Which tab shows, and whether any row of it is picked.
+export type KeyContext = { tab: Tab; hasPick: boolean }
+
 // What a key press means in `mode`; null for a key that means nothing there.
-export function keyAction(input: string, key: Key, mode: Mode): Action | null {
+export function keyAction(input: string, key: Key, mode: Mode, _ctx: KeyContext = { tab: 'playlist', hasPick: false }): Action | null {
   if (key.ctrl && input === 'c') return { kind: 'interrupt' }
   if (mode === 'help') {
     if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
@@ -76,6 +82,8 @@ export function keyAction(input: string, key: Key, mode: Mode): Action | null {
     if (key.ctrl || key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null
     return { kind: 'type', text: input }
   }
+  // Tab and Shift-Tab: with two tabs, either goes to the other
+  if (key.tab) return { kind: 'tab' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
   if (key.leftArrow) return { kind: 'shutFolder' }

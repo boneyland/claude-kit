@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import { filterRows, nextRepeat, playlistRows, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
+import { nextRepeat, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
 import { locate, pick, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
@@ -11,7 +11,12 @@ import type { Media } from '../media'
 import type { MouseSource } from '../mouse/sgr'
 import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
-import { firstRow, isCurrent, isOnArrow, List } from './List'
+import { firstRow } from './List'
+import { PlaylistView } from './PlaylistView'
+import { Tabs, type Tab } from './Tabs'
+import { useTagBook } from './tagbook'
+import type { TagReader } from '../media/tags'
+import { filterFlat, flatRows } from '../playlist/rows'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
 // Rows the wheel moves the list by.
@@ -19,23 +24,24 @@ const WHEEL_ROWS = 3
 // How soon a second Ctrl-C must come to quit.
 const INTERRUPT_MS = 2000
 
-// Lines besides the list and now playing: title, list heading, the text line,
-// the rule, the status line, two hint lines; and one left free, as Ink clears
-// the whole screen at each frame that fills it.
-const FIXED_ROWS = 8
+// Lines besides the list and now playing: title, tab row, list heading, the
+// text line, the rule, the status line, two hint lines; and one left free, as
+// Ink clears the whole screen at each frame that fills it.
+const FIXED_ROWS = 9
 const WIDE_COLUMNS = 80
 
 // media: the files and mpv the pane draws pictures from; graphics: where the
 // pictures go, when the terminal can show them. Neither in most tests.
-type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics; mouse?: MouseSource }
+// tags: reads songs' tags; music-metadata unless a test gives another.
+type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics; mouse?: MouseSource; tags?: TagReader }
 
 // mouse: the clicks and wheel read out of stdin; none in most tests.
-export function App({ session, subscribe, media, graphics, mouse }: Props) {
+export function App({ session, subscribe, media, graphics, mouse, tags }: Props) {
   const view = usePlayer(session, subscribe)
-  return <MouseProvider source={mouse}>{view ? <Player session={session} view={view} media={media} graphics={graphics} /> : null}</MouseProvider>
+  return <MouseProvider source={mouse}>{view ? <Player session={session} view={view} media={media} graphics={graphics} tagReader={tags} /> : null}</MouseProvider>
 }
 
-function Player({ session, view, media, graphics }: { session: Session; view: View; media?: Media; graphics?: Graphics }) {
+function Player({ session, view, media, graphics, tagReader }: { session: Session; view: View; media?: Media; graphics?: Graphics; tagReader?: TagReader }) {
   const h = session.host
   const { exit } = useApp()
   const { columns, rows: lines } = useSize()
@@ -50,6 +56,10 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const art = useArt(media, track, !!graphics && isWide)
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
+  // Playlist when there is something in it, else Files
+  const [tabRef, setTab] = useRefState<Tab>(view.queue.kind !== 'none' ? 'playlist' : 'files')
+  const tab = tabRef.current
+  const book = useTagBook(h, tagReader)
   const [typedRef, setTyped] = useRefState('')
   // the row picked with the arrows; undefined follows the playing one
   const [cursorRef, setCursor] = useRefState<number | undefined>(undefined)
@@ -66,11 +76,9 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
 
   const q = view.queue
   const filter = view.filter.trim()
-  const rows = useMemo(
-    () => (filter ? filterRows(q.items, q.paths, q.root, filter) : playlistRows(q.items, q.paths, q.root, new Set(view.openFolders), q.current)),
-    [q, view.openFolders, filter],
-  )
-  const playingRow = rows.findIndex(r => isCurrent(r, q.current))
+  const allRows = flatRows(q, book.get, home)
+  const rows = filter ? filterFlat(allRows, filter) : allRows
+  const playingRow = rows.findIndex(r => r.index === q.current)
   const selectedNow = () => Math.max(0, Math.min(cursorRef.current ?? playingRow, rows.length - 1))
   const selected = selectedNow()
 
@@ -88,11 +96,6 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
       error => setNotice(`stream-radio failed: ${error instanceof Error ? error.message : String(error)}`),
     )
   }
-  // isOpen: undefined flips it, as the store has it now
-  const setOpen = (path: string, isOpen?: boolean) =>
-    void h.vars.change('openFolders', list =>
-      (isOpen ?? !list.includes(path)) ? [...new Set([...list, path])] : list.filter(p => p !== path),
-    )
   const setFilter = (fn: (text: string) => string) => {
     setCursor(undefined)
     setTop(undefined)
@@ -110,13 +113,13 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         setTop(undefined)
         return setCursor(Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
       case 'enter':
-        if (row?.kind === 'folder') return setOpen(row.path)
-        if (row?.kind === 'item') act(() => pick(h, row.index))
+        if (tabRef.current === 'playlist' && row) act(() => pick(h, row.index))
         return
       case 'shutFolder':
       case 'openFolder':
-        if (row?.kind === 'folder') setOpen(row.path, a.kind === 'openFolder')
         return
+      case 'tab':
+        return setTab(tabRef.current === 'files' ? 'playlist' : 'files')
       case 'pause':
         return act(async () => ((await togglePause(h)) ? '' : 'The player is not ready yet.'))
       case 'next':
@@ -175,8 +178,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
           // The store, not the last render: typing may not have redrawn yet.
           return act(async () => {
             const [queue, text] = await Promise.all([h.vars.read('queue'), h.vars.read('filter')])
-            const first = filterRows(queue.items, queue.paths, queue.root, text.trim()).find(r => r.kind === 'item')
-            return first?.kind === 'item' ? pick(h, first.index) : 'Nothing matches.'
+            const first = filterFlat(flatRows(queue, book.get, home), text.trim())[0]
+            return first ? pick(h, first.index) : 'Nothing matches.'
           })
         }
         const text = typedRef.current
@@ -191,7 +194,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
     }
   }
   useInput((input, key) => {
-    const a = keyAction(input, key, modeRef.current)
+    const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: false })
     if (a) handle(a)
   })
 
@@ -199,7 +202,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const listWidth = isWide ? columns - sideWidth : columns
   const listHeight = Math.max(1, lines - FIXED_ROWS - (isWide ? 0 : NOW_PLAYING_ROWS + 1))
   // The lines between the title and the text line: the list and the pane.
-  const bodyHeight = listHeight + 1 + (isWide ? 0 : NOW_PLAYING_ROWS + 1)
+  const bodyHeight = listHeight + 2 + (isWide ? 0 : NOW_PLAYING_ROWS + 1)
   const heading = filter
     ? `${rows.length} of ${q.items.length} ${q.kind === 'chapters' ? 'chapters' : 'songs'} match`
     : q.kind === 'playlist'
@@ -213,18 +216,25 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
   const first = firstRow(selected, rows.length, listHeight, topRef.current)
   // A click selects and holds the view where it is; a double-click does what
-  // Enter does; a click on a folder's arrow opens or shuts it at once.
+  // Enter does.
   const onRow = (index: number, hit: Hit) => {
-    const row = rows[index]
     setTop(first)
     setCursor(index)
-    // the second press of a double-click on the arrow would only undo the first
-    if (row && isOnArrow(row, hit.x) && row.kind === 'folder') return hit.isDouble ? undefined : setOpen(row.path)
     if (hit.isDouble) handle({ kind: 'enter' })
   }
   const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const shown = tab === 'playlist' ? rows.slice(first, first + listHeight) : []
+  const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
+  useEffect(() => book.need(shownKey ? shownKey.split('\n') : []), [book, shownKey])
   const list = (
-    <List heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} first={first} onRow={onRow} onWheel={onWheel} />
+    <Box flexDirection="column" width={listWidth}>
+      <Tabs tab={tab} width={listWidth} onTab={setTab} />
+      {tab === 'playlist' ? (
+        <PlaylistView heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} first={first} onRow={onRow} onWheel={onWheel} />
+      ) : (
+        <Text dimColor>Files</Text>
+      )}
+    </Box>
   )
 
   return (
@@ -234,10 +244,10 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         {mode === 'help' ? (
           <Help top={helpTopRef.current} height={bodyHeight} width={columns} />
         ) : isWide ? (
-          <Box flexDirection="row" height={listHeight + 1}>
+          <Box flexDirection="row" height={listHeight + 2}>
             {list}
             <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-              <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+              <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 2, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
             </Box>
           </Box>
         ) : (
@@ -245,7 +255,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
             <Box marginBottom={1}>
               <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
             </Box>
-            <Box height={listHeight + 1}>{list}</Box>
+            <Box height={listHeight + 2}>{list}</Box>
           </Box>
         )}
         <Text wrap="truncate-end">{textLine}</Text>
