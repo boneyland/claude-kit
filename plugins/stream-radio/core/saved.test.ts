@@ -81,11 +81,41 @@ test("the mod's store moves into state.json once", async () => {
   })
 })
 
-test('with state.json there, the store is left alone', async () => {
-  const before = JSON.stringify({ version: 1, repeat: 'one' })
+test('once the mod has run on state.json, the store is left alone', async () => {
+  const before = JSON.stringify({ version: 1, knownDefault: { mod: '' } })
   const { h, files } = hostOf('mod', { [STATE]: before })
   expect(await migrateFromStore(h, { get: async () => 'all' })).toBe(false)
   expect(files[STATE]).toBe(before)
+})
+
+test('a state.json the TUI wrote first still takes the store, keeping what the TUI saved', async () => {
+  const store: Record<string, unknown> = {
+    last: { url: '/m', resumeAt: AT, knownDefault: 'https://example.com/d' },
+    volume: { value: 35, configured: 60 },
+    repeat: 'one',
+  }
+  const { h, files } = hostOf('mod', { [STATE]: JSON.stringify({ version: 1, last: null, knownDefault: { tui: 'B' } }) })
+  expect(await migrateFromStore(h, { get: async k => store[k] })).toBe(true)
+  expect(JSON.parse(files[STATE]!)).toEqual({
+    version: 1,
+    last: { url: '/m', resumeAt: AT },
+    knownDefault: { mod: 'https://example.com/d', tui: 'B' },
+    volume: { value: 35, configured: { mod: 60 } },
+    repeat: 'one',
+  })
+})
+
+test("a value the TUI saved is not overwritten by the store's", async () => {
+  const store: Record<string, unknown> = { repeat: 'one' }
+  const { h } = hostOf('mod', { [STATE]: JSON.stringify({ version: 1, repeat: 'off', knownDefault: { tui: 'B' } }) })
+  await migrateFromStore(h, { get: async k => store[k] })
+  expect((await readSaved(h)).repeat).toBe('off')
+})
+
+test('an empty store writes nothing', async () => {
+  const { h, files } = hostOf('mod')
+  expect(await migrateFromStore(h, { get: async () => undefined })).toBe(false)
+  expect(files).toEqual({})
 })
 
 test("each program keeps the saved volume while its own setting is unchanged", async () => {

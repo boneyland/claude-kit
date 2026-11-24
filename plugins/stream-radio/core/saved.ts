@@ -82,12 +82,13 @@ export function updateSaved(h: Host, fn: (s: SavedState) => SavedState): Promise
   return step.catch(() => undefined)
 }
 
-// The mod kept these in Claude Code's store before state.json: on its first
-// start without state.json it copies them over, so nothing saved is lost.
-// Resolves to whether it did.
+// The mod kept these in Claude Code's store before state.json: until the mod
+// has run on state.json (its checkDefault always records knownDefault.mod), it
+// copies them over, so nothing saved is lost, even when another program wrote
+// state.json first. Only what state.json lacks is filled: a value another
+// program saved stays. Resolves to whether it copied anything.
 export async function migrateFromStore(h: Host, store: { get(key: string): Promise<unknown> }): Promise<boolean> {
-  const isThere = await h.fs.exists((await paths(h)).state).catch(() => true)
-  if (isThere) return false
+  if ((await readSaved(h)).knownDefault.mod !== undefined) return false
   const get = (key: string) => store.get(key).catch(() => undefined)
   const [last, volume, repeat] = [await get('last'), await get('volume'), await get('repeat')]
   if (last === undefined && volume === undefined && repeat === undefined) return false
@@ -97,6 +98,12 @@ export async function migrateFromStore(h: Host, store: { get(key: string): Promi
     volume: isObject(volume) ? { value: volume.value, configured: { mod: volume.configured } } : undefined,
     repeat,
   })
-  await updateSaved(h, () => from)
+  await updateSaved(h, s => ({
+    ...s,
+    last: s.last ?? from.last,
+    knownDefault: from.knownDefault.mod === undefined ? s.knownDefault : { ...s.knownDefault, mod: from.knownDefault.mod },
+    volume: s.volume ?? from.volume,
+    repeat: s.repeat ?? from.repeat,
+  }))
   return true
 }
