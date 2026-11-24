@@ -1,11 +1,14 @@
 // Ink 5 takes any character stored as two UTF-16 code units for a double-width
 // one. Kitty's image placeholder, U+10EEEE, is two code units but one column,
-// so every placeholder cell pushed the text after it a column right. Ask
-// string-width (already imported by that file) instead. Applied by build.mjs
-// and vitest.config.ts; it throws rather than build a TUI with the old check.
+// so every placeholder cell pushed the text after it a column right. Such a
+// character is now wide only if string-width (already imported by that file)
+// agrees. Characters of one code unit keep Ink's answer: string-width calls ▶
+// two columns (it can be an emoji), but terminals draw it as one. Applied by
+// build.mjs and vitest.config.ts; it throws rather than build a TUI with the
+// old check.
 
 const OLD = 'const isWideCharacter = character.fullWidth || character.value.length > 1;'
-const NEW = 'const isWideCharacter = character.fullWidth || stringWidth(character.value) > 1;'
+const NEW = 'const isWideCharacter = character.fullWidth || (character.value.length > 1 && stringWidth(character.value) > 1);'
 
 export const INK_OUTPUT = /[\\/]ink[\\/]build[\\/]output\.js$/
 

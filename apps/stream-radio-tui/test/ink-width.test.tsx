@@ -27,6 +27,20 @@ test('a double-width character still takes two', () => {
   expect(lastFrame()).toBe('漢字ab|end')
 })
 
+// string-width calls ▶ two columns (it can be an emoji); terminals draw it
+// as one, as Ink did before the fix. The playlist's playing row starts with it.
+test('▶ keeps one column, so a fixed-width row still reaches its edge', () => {
+  const { lastFrame } = render(
+    <Box>
+      <Box width={6}>
+        <Text>▶ x</Text>
+      </Box>
+      <Text>|</Text>
+    </Box>,
+  )
+  expect(lastFrame()).toBe('▶ x   |')
+})
+
 test('the patch refuses an Ink it does not recognise', () => {
   expect(() => patchInkOutput('nothing here')).toThrow(/ink-width-fix/)
 })
