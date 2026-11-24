@@ -71,8 +71,11 @@ test('the panel jumps back and ahead 10 seconds', async ($, on) => {
   await clock.advance(10)
 
   const pane = await $.ui.mount(PANE)
-  expect((await pane.find({ type: 'Button', key: 'seek-back' }))?.props.label).toBe('⏪ 10s')
-  expect((await pane.find({ type: 'Button', key: 'seek-ahead' }))?.props.label).toBe('10s ⏩')
+  // b and f press them while the panel has the keyboard
+  const back = await pane.find({ type: 'Button', key: 'seek-back' })
+  const ahead = await pane.find({ type: 'Button', key: 'seek-ahead' })
+  expect([back?.props.label, back?.props.hotkey]).toEqual(['⏪ 10s (b)', 'b'])
+  expect([ahead?.props.label, ahead?.props.hotkey]).toEqual(['(f) 10s ⏩', 'f'])
   await pane.press({ key: 'seek-ahead' })
   expect(world.sent).toContainEqual(['seek', 52, 'absolute'])
   await pane.press({ key: 'seek-back' })

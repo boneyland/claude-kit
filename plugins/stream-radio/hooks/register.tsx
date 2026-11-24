@@ -458,8 +458,8 @@ export const register: Register = (on, options) => {
               <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying(hostFor($, config), config), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
-              <Button key="seek-back" label="⏪ 10s" onPress={() => act(() => seekBy($, config, -SEEK_SECONDS, true))} />
-              <Button key="seek-ahead" label="10s ⏩" onPress={() => act(() => seekBy($, config, SEEK_SECONDS, true))} />
+              <Button key="seek-back" label="⏪ 10s (b)" hotkey="b" onPress={() => act(() => seekBy($, config, -SEEK_SECONDS, true))} />
+              <Button key="seek-ahead" label="(f) 10s ⏩" hotkey="f" onPress={() => act(() => seekBy($, config, SEEK_SECONDS, true))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, -1)), ''))} />
