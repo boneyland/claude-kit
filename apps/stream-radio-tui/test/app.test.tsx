@@ -753,6 +753,16 @@ describe('the key list', () => {
     expect(player.stopPlaying).not.toHaveBeenCalled()
   })
 
+  test('every description starts in the same column, the icons row too', async () => {
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    await press('?')
+    const starts = ['move', 'pause or resume', 'scroll the list', 'previous, pause or play, next', 'seek there'].map(text => {
+      const line = lines().find(l => l.includes(text)) ?? ''
+      return columnOf(line, line.indexOf(text))
+    })
+    expect(new Set(starts).size).toBe(1)
+  })
+
   test('keys that act in the list do nothing while it shows', async () => {
     const { press } = await show(100)
     await press('?', 'x', ' ', 'n')
