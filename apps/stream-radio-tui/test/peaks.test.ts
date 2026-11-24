@@ -58,16 +58,19 @@ describe('decodePeaks', () => {
   })
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-  test('folds what mpv decodes, and asks for 8 kHz mono PCM', async () => {
-    const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm(Array(160).fill(32767)), pcm(Array(160).fill(0))], code: 0 }))
+  test('folds what mpv decodes, and asks for 8 kHz stereo PCM', async () => {
+    // 160 stereo frames a peak: loud on the right only, then silent
+    const loudRight = Array.from({ length: 320 }, (_, i) => (i % 2 ? 32767 : 0))
+    const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm(loudRight), pcm(Array(320).fill(0))], code: 0 }))
     expect([...(await decodePeaks(song, { spawn }))!]).toEqual([255, 0])
     const args = children[0].args
     // --o=- (the encoder writes fd 1 itself): mpv can't open /dev/stdout when Node's pipe is a socket
-    expect(args).toEqual(expect.arrayContaining(['--no-config', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-samplerate=8000', '--audio-channels=mono', '--ytdl=no', song]))
+    // stereo, not mono: mpv's downmix adds the channels up and clips loud songs
+    expect(args).toEqual(expect.arrayContaining(['--no-config', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-samplerate=8000', '--audio-channels=stereo', '--ytdl=no', song]))
     expect(args.some(a => a.startsWith('--ao'))).toBe(false)
   })
   test('a second time comes from the cache', async () => {
-    const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm(Array(160).fill(32767))], code: 0 }))
+    const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm(Array(320).fill(32767))], code: 0 }))
     const cache = path.join(dir, 'cache')
     await decodePeaks(song, { spawn, cache })
     expect([...(await decodePeaks(song, { spawn, cache }))!]).toEqual([255])

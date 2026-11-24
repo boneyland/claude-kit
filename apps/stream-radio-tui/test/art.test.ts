@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { artSources, cropToCells, cutRows, fitArt, loadArt, youtubeId } from '../src/media/art'
+import { artSources, cellStrips, cropToCells, cutRows, fitArt, loadArt, resizeRgba, youtubeId } from '../src/media/art'
 import { fakeSpawn } from './fake-spawn'
 
 describe('youtubeId', () => {
@@ -80,6 +80,34 @@ describe('cropToCells', () => {
   test('an exact fit is left alone', () => {
     const art = grid(80, 32)
     expect(cropToCells(art, 10, 2, cell)).toBe(art)
+  })
+})
+
+describe('cellStrips', () => {
+  // kitty fits each strip inside its row keeping its shape; strips of
+  // unequal heights came out alternately inset and short
+  test('every strip is exactly one row of cells in pixels, so kitty scales nothing', () => {
+    const art = { width: 600, height: 338, rgba: new Uint8Array(600 * 338 * 4) }
+    const strips = cellStrips(art, 33, 9, { width: 10, height: 21 })
+    expect(strips).toHaveLength(9)
+    for (const s of strips) expect([s.width, s.height, s.rgba.length]).toEqual([330, 21, 330 * 21 * 4])
+  })
+})
+
+describe('resizeRgba', () => {
+  test('a flat colour stays that colour, up or down', () => {
+    const src = new Uint8Array(7 * 5 * 4).fill(0).map((_, i) => [10, 20, 30, 255][i % 4])
+    for (const [w, h] of [[3, 2], [20, 9]]) {
+      const out = resizeRgba(src, 7, 5, w, h)
+      expect(out).toHaveLength(w * h * 4)
+      expect(new Set(out.filter((_, i) => i % 4 === 0))).toEqual(new Set([10]))
+      expect(new Set(out.filter((_, i) => i % 4 === 2))).toEqual(new Set([30]))
+    }
+  })
+  test('halving averages each 2×2 block', () => {
+    // red is 0, 100 / 200, 40 in a 2×2 picture
+    const src = new Uint8Array([0, 0, 0, 255, 100, 0, 0, 255, 200, 0, 0, 255, 40, 0, 0, 255])
+    expect([...resizeRgba(src, 2, 2, 1, 1)]).toEqual([85, 0, 0, 255])
   })
 })
 

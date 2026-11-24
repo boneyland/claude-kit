@@ -72,6 +72,53 @@ export function cropToCells(art: Art, cols: number, rows: number, cell: Cell): A
   return { width, height, rgba }
 }
 
+// One axis of a box-filter resize: for each output pixel, the input pixels it
+// covers and how much of each.
+function spans(from: number, to: number): { at: number; weight: number }[][] {
+  const scale = from / to
+  return [...Array(to).keys()].map(i => {
+    const start = i * scale
+    const end = start + scale
+    const out = []
+    for (let p = Math.floor(start); p < Math.min(from, Math.ceil(end)); p++) {
+      const weight = Math.min(end, p + 1) - Math.max(start, p)
+      if (weight > 0) out.push({ at: p, weight: weight / scale })
+    }
+    return out
+  })
+}
+
+// `src` (sw × sh RGBA) resized to dw × dh, each output pixel the average of
+// the input it covers: smooth when shrinking, blocky-but-true when growing.
+export function resizeRgba(src: Uint8Array, sw: number, sh: number, dw: number, dh: number): Uint8Array {
+  const across = spans(sw, dw)
+  const down = spans(sh, dh)
+  const mid = new Float32Array(dw * sh * 4)
+  for (let y = 0; y < sh; y++)
+    for (let x = 0; x < dw; x++)
+      for (const { at, weight } of across[x])
+        for (let c = 0; c < 4; c++) mid[(y * dw + x) * 4 + c] += src[(y * sw + at) * 4 + c] * weight
+  const out = new Uint8Array(dw * dh * 4)
+  for (let y = 0; y < dh; y++)
+    for (let x = 0; x < dw; x++)
+      for (let c = 0; c < 4; c++) {
+        let v = 0
+        for (const { at, weight } of down[y]) v += mid[(at * dw + x) * 4 + c] * weight
+        out[(y * dw + x) * 4 + c] = Math.min(255, Math.round(v))
+      }
+  return out
+}
+
+// The art ready for a cols × rows box: trimmed to its shape, resized to its
+// exact size in pixels, and cut into one strip per row, each exactly a row of
+// cells. kitty fits a strip inside its row keeping its shape, so strips of
+// any other size come out inset or short.
+export function cellStrips(art: Art, cols: number, rows: number, cell: Cell): Art[] {
+  const trimmed = cropToCells(art, cols, rows, cell)
+  const [width, height] = [cols * cell.width, rows * cell.height]
+  return cutRows({ width, height, rgba: resizeRgba(trimmed.rgba, trimmed.width, trimmed.height, width, height) }, rows)
+}
+
 // The picture as `rows` strips, top to bottom, one per row of cells.
 export function cutRows(art: Art, rows: number): Art[] {
   const line = art.width * 4

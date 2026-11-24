@@ -8,11 +8,16 @@ export const PEAKS_PER_SECOND = 50
 export const DECODE_TIMEOUT_MS = 300_000
 
 const BUCKET = SAMPLE_RATE / PEAKS_PER_SECOND
+// Both channels, interleaved; a peak is the louder of the two. Not mono:
+// mpv's downmix adds the channels up (about 1.4× for a centred sound), which
+// flattened loud songs against the ceiling.
+const CHANNELS = 2
 const PAGE = 64 * 1024
 
-// Folds s16le mono samples into one peak (0–255) per BUCKET samples as they
-// stream in. Only the peaks are kept, never the samples.
-export function peakFolder(): { add(chunk: Buffer): void; done(): Uint8Array } {
+// Folds s16le samples into one peak (0–255) per `samplesPerPeak` samples as
+// they stream in (interleaved channels count each). Only the peaks are kept,
+// never the samples.
+export function peakFolder(samplesPerPeak = BUCKET): { add(chunk: Buffer): void; done(): Uint8Array } {
   const pages: Uint8Array[] = [new Uint8Array(PAGE)]
   let count = 0
   let carry: number | undefined // a byte left from a sample split across chunks
@@ -29,7 +34,7 @@ export function peakFolder(): { add(chunk: Buffer): void; done(): Uint8Array } {
     const a = Math.abs(s)
     if (a > peak) peak = a
     inBucket += 1
-    if (inBucket === BUCKET) push()
+    if (inBucket === samplesPerPeak) push()
   }
   return {
     add(chunk) {
@@ -56,14 +61,15 @@ export function peakFolder(): { add(chunk: Buffer): void; done(): Uint8Array } {
 export async function decodePeaks(file: string, opts: { signal?: AbortSignal; spawn?: Spawn; cache?: string } = {}): Promise<Uint8Array | undefined> {
   const { signal, spawn, cache = '' } = opts
   const stat = await fs.stat(file)
-  const name = `${cacheKey('peaks', file, stat.size, stat.mtimeMs)}.peaks`
+  // 'stereo': peaks cached from the old mono decode were clipped
+  const name = `${cacheKey('peaks-stereo', file, stat.size, stat.mtimeMs)}.peaks`
   const cached = await readCache(cache, name)
   if (cached) return new Uint8Array(cached)
-  const folder = peakFolder()
+  const folder = peakFolder(BUCKET * CHANNELS)
   // The encoder (--o=-) writes raw samples to fd 1 as fast as it decodes.
   // Not --ao=pcm with /dev/stdout: Node's pipe to a child is a socket, and
   // mpv can't open() a socket by that path.
-  const args = ['--no-video', '--ytdl=no', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-format=s16', `--audio-samplerate=${SAMPLE_RATE}`, '--audio-channels=mono', '--really-quiet', '--', file]
+  const args = ['--no-video', '--ytdl=no', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-format=s16', `--audio-samplerate=${SAMPLE_RATE}`, '--audio-channels=stereo', '--really-quiet', '--', file]
   try {
     const { code } = await runMpv(args, { signal, spawn, timeoutMs: DECODE_TIMEOUT_MS, maxBytes: Infinity, onData: chunk => folder.add(chunk) })
     if (code !== 0) return undefined

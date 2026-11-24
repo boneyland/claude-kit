@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react'
 import { Box, Text } from 'ink'
 import { ART_IDS, placeholderRow } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
-import { cropToCells, cutRows, fitArt } from '../media/art'
+import { cellStrips, fitArt } from '../media/art'
 import type { ArtState } from './hooks'
 
 type Props = { art: ArtState; cols: number; rows: number; graphics: Graphics }
@@ -25,7 +25,7 @@ export function Art({ art, cols, rows, graphics }: Props) {
 
 function Picture({ art, cols, rows, graphics }: { art: NonNullable<ArtState['art']>; cols: number; rows: number; graphics: Graphics }) {
   const fit = fitArt(art, cols, rows, graphics.cell)
-  const strips = useMemo(() => cutRows(cropToCells(art, fit.cols, fit.rows, graphics.cell), fit.rows), [art, fit.cols, fit.rows, graphics])
+  const strips = useMemo(() => cellStrips(art, fit.cols, fit.rows, graphics.cell), [art, fit.cols, fit.rows, graphics])
   useEffect(() => graphics.show(ART_IDS.first, strips, fit.cols), [graphics, strips, fit.cols])
   useEffect(() => () => graphics.drop(ART_IDS.first, 0), [graphics])
   return (
