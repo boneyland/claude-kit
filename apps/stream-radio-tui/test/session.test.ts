@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import fs from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import os from 'node:os'
@@ -18,6 +18,8 @@ const ok: Result = { exitCode: 0, stdout: '', stderr: '' }
 let fake: Fake | undefined
 let session: Session | undefined
 let ran: string[][] = []
+// the fake mpv a detached start is bringing up, so cleanup can wait for it
+let starting: Promise<unknown> | undefined
 
 // Records every argv. Stands in for the system: `rm -f` removes the socket, and
 // the detached start brings up a fake mpv on it; mpv itself never runs.
@@ -30,7 +32,7 @@ function recorder(missing = false) {
       return ok
     }
     if (argv[0] === 'rm') fs.rmSync(argv[2], { force: true })
-    if (argv[0] === 'sh') fake = await fakeMpv(dir)
+    if (argv[0] === 'sh') fake = await (starting = fakeMpv(dir))
     return ok
   }
 }
@@ -48,6 +50,9 @@ const until = async (cond: () => boolean) => {
 
 beforeAll(() => fs.mkdirSync(dir, { recursive: true }))
 afterEach(async () => {
+  vi.restoreAllMocks()
+  await starting?.catch(() => undefined)
+  starting = undefined
   session?.close()
   session = undefined
   await fake?.close()
@@ -68,7 +73,7 @@ describe('openSession', () => {
     orphanSocket()
     const music = fs.mkdtempSync(path.join(state, 'music-'))
     session = await openSession([music], { env, run: recorder() })
-    await until(() => ran.some(a => a[0] === 'sh'))
+    await until(() => fake !== undefined && fake.received.length > 0)
     const rm = ran.findIndex(a => a.join(' ') === `rm -f ${sock}`)
     const starts = ran.filter(a => a.join(' ').includes('setsid'))
     expect(starts).toHaveLength(1)
@@ -103,5 +108,39 @@ describe('openSession', () => {
     session = await openSession([path.join(state, 'nope')], { env, run: recorder() })
     expect(session.status()).toContain('No such file or folder')
     expect(ran.some(a => a.join(' ').includes('setsid'))).toBe(false)
+  })
+
+  test('a setup step that rejects shows in status; the session still closes', async () => {
+    const broken = { ...env }
+    Object.defineProperty(broken, 'XDG_CONFIG_HOME', {
+      get() {
+        throw new Error('config unreadable')
+      },
+    })
+    session = await openSession([], { env: broken, run: recorder() })
+    expect(session.status()).toContain('config unreadable')
+    expect(() => session!.close()).not.toThrow()
+  })
+
+  test('close during a missing-mpv start leaves no timer armed', async () => {
+    orphanSocket()
+    const music = fs.mkdtempSync(path.join(state, 'music-'))
+    let release!: () => void
+    const gate = new Promise<void>(res => (release = res))
+    const run = recorder(true)
+    session = await openSession([music], {
+      env,
+      run: async argv => {
+        if (argv.includes('--version')) await gate
+        return run(argv)
+      },
+    })
+    await until(() => true)
+    session.close()
+    const spy = vi.spyOn(globalThis, 'setInterval')
+    release()
+    await new Promise(r => setTimeout(r, 300))
+    expect(spy).not.toHaveBeenCalled()
+    expect(session.status()).toBe('')
   })
 })
