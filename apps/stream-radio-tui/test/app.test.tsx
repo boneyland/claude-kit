@@ -3,6 +3,7 @@ import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
 import * as player from '../../../plugins/stream-radio/core/player'
+import { moveBy, moveTo } from '../../../plugins/stream-radio/core/queue'
 import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
@@ -40,6 +41,9 @@ vi.mock('../../../plugins/stream-radio/core/player', async original => {
     start: vi.fn(),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
     mpv: vi.fn(defaultMpv),
+    reorderQueue: vi.fn(async () => ''),
+    removeFromQueue: vi.fn(async () => ''),
+    addToQueue: vi.fn(async () => ''),
   }
 })
 
@@ -113,6 +117,21 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     onMouse({ kind: 'press', button: 'left', x, y })
     await tick()
   }
+  const modClick = async (x: number, y: number, mod: 'shift' | 'alt' | 'ctrl') => {
+    const mods = { shift: mod === 'shift', alt: mod === 'alt', ctrl: mod === 'ctrl' }
+    onMouse({ kind: 'press', button: 'left', x, y, mods })
+    onMouse({ kind: 'release', button: 'left', x, y, mods })
+    await tick()
+  }
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    onMouse({ kind: 'press', button: 'left', ...from })
+    await tick()
+    onMouse({ kind: 'drag', button: 'left', x: to.x, y: Math.round((from.y + to.y) / 2) })
+    onMouse({ kind: 'drag', button: 'left', ...to })
+    await tick()
+    onMouse({ kind: 'release', button: 'left', ...to })
+    await tick()
+  }
   const wheel = async (x: number, y: number, dir: 'up' | 'down') => {
     onMouse({ kind: 'wheel', button: 'none', dir, x, y })
     await tick()
@@ -124,7 +143,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     const line = stripAnsi(lines()[y])
     return { x: columnOf(line, line.indexOf(text)), y }
   }
-  return { ui, session, host, vars, lines, press, say, click, dblclick, wheel, where }
+  return { ui, session, host, vars, lines, press, say, click, dblclick, modClick, drag, wheel, where }
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -654,6 +673,99 @@ describe('tabs', () => {
     for (const n of ['1. Intro', '2. Song two', '3. Song three', '4. Other']) expect(all).toContain(n)
     // the folder, dimmed, after the title
     expect(all).toMatch(/4\. Other.*Disc 2/)
+  })
+})
+
+describe('playlist editing', () => {
+  const FIVE: Partial<PlayerKeys> = {
+    ...PLAYING,
+    queue: {
+      kind: 'playlist',
+      items: ['Aa', 'Bb', 'Cc', 'Dd', 'Ee'].map(t => `${t} song`),
+      paths: ['Aa', 'Bb', 'Cc', 'Dd', 'Ee'].map(t => `/m/${t}.mp3`),
+      root: '/m',
+      current: 0,
+    },
+  }
+  const SHIFT_DOWN = '\x1b[1;2B'
+  const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+
+  test('Shift-↓ twice picks 3 rows; Space then unpicks one, not pausing; Esc clears and Space pauses', async () => {
+    const { press, lines } = await show(100, FIVE)
+    await press(SHIFT_DOWN, SHIFT_DOWN)
+    expect(status(lines())).toContain('3 picked · Space picks/unpicks · Esc clears')
+    await press(' ')
+    expect(status(lines())).toContain('2 picked')
+    expect(player.togglePause).not.toHaveBeenCalled()
+    await press(ESC)
+    expect(status(lines())).not.toContain('picked')
+    await press(' ')
+    expect(player.togglePause).toHaveBeenCalled()
+  })
+
+  test('d moves the picked rows down and the pick follows them', async () => {
+    const { press, host } = await show(100, FIVE)
+    await press(SHIFT_DOWN, 'd')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [0, 1], 1).order)
+    await press('d')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [1, 2], 1).order)
+  })
+
+  test('u and Alt-↑ move up; with no pick, the cursor\'s row', async () => {
+    const { press, host } = await show(100, FIVE)
+    await press('j', 'j', 'u')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [2], -1).order)
+    await press('\x1b[1;3A')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [1], -1).order)
+  })
+
+  test('Delete removes the picked rows, and the pick clears', async () => {
+    const { press, host, session, lines } = await show(100, FIVE)
+    await press('j', SHIFT_DOWN, '\x1b[3~')
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1, 2])
+    expect(status(lines())).not.toContain('picked')
+  })
+
+  test('Ctrl-click picks one row; Alt-click and Shift-click pick a range', async () => {
+    const { modClick, where, lines } = await show(100, FIVE)
+    await modClick(where('Dd song').x, where('Dd song').y, 'ctrl')
+    expect(status(lines())).toContain('1 picked')
+    await modClick(where('Bb song').x, where('Bb song').y, 'alt')
+    expect(status(lines())).toContain('3 picked')
+    await modClick(where('Ee song').x, where('Ee song').y, 'shift')
+    expect(status(lines())).toContain('2 picked')
+  })
+
+  test('a drag moves the row to where it is let go', async () => {
+    const { drag, where, host } = await show(100, FIVE)
+    await drag(where('Bb song'), where('Ee song'))
+    expect(player.reorderQueue).toHaveBeenCalledWith(host, moveTo(5, [1], 4).order)
+  })
+
+  test('a drag of picked rows moves them all; the pick stays', async () => {
+    const { drag, modClick, where, host, lines } = await show(100, FIVE)
+    await modClick(where('Aa song').x, where('Aa song').y, 'ctrl')
+    await modClick(where('Bb song').x, where('Bb song').y, 'ctrl')
+    // from the other picked row: a press on Bb this soon would be a double-click
+    await drag(where('Aa song'), where('Dd song'))
+    expect(player.reorderQueue).toHaveBeenCalledWith(host, moveTo(5, [0, 1], 3).order)
+    expect(status(lines())).toContain('2 picked')
+  })
+
+  test('S sorts the queue by title; R the other way', async () => {
+    const { press, host, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
+    await press('S')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [2, 0, 4, 1, 3])
+    expect(lines().join('\n')).toContain('sort: title')
+    await press('R')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [3, 1, 4, 0, 2])
+  })
+
+  test('a song in the queue twice: only the picked copy moves', async () => {
+    const twice = { ...FIVE, queue: { ...FIVE.queue!, items: ['a', 'b', 'a', 'c', 'd'], paths: ['/m/a', '/m/b', '/m/a', '/m/c', '/m/d'] } }
+    const { press, host } = await show(100, twice)
+    await press('j', 'j', 'u')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [0, 2, 1, 3, 4])
   })
 })
 

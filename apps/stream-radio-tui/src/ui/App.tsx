@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { nextRepeat, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
-import { locate, pick, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
+import { locate, pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
+import { moveBy, moveTo, type Moved } from '../../../../plugins/stream-radio/core/queue'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
@@ -17,6 +18,8 @@ import { Tabs, type Tab } from './Tabs'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
 import { filterFlat, flatRows } from '../playlist/rows'
+import { nextSortField, SORT_LABEL, sortOrder, type SortField } from '../playlist/sort'
+import { clamp, clear, extend, remap, select, targets, toggle, type Selection } from './selection'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
 // Rows the wheel moves the list by.
@@ -61,8 +64,15 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const tab = tabRef.current
   const book = useTagBook(h, tagReader)
   const [typedRef, setTyped] = useRefState('')
-  // the row picked with the arrows; undefined follows the playing one
-  const [cursorRef, setCursor] = useRefState<number | undefined>(undefined)
+  // the Playlist's cursor and picked rows (places in its rows); undefined
+  // follows the playing song
+  const [plSelRef, setPlSel] = useRefState<Selection | undefined>(undefined)
+  // the Playlist's last sort, for R and the tab row
+  const [sortRef, setSort] = useRefState<{ field?: SortField; isReversed: boolean }>({ isReversed: false })
+  // a drag in the Playlist: the row pressed and where the rows would land
+  const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
+  // a press on a picked row selects it only when let go without a drag
+  const pendingSelect = useRef<number | undefined>(undefined)
   // the list's first row once the wheel or a click has placed it; undefined
   // keeps the view centred on the selection, as the keys move it
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
@@ -79,8 +89,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const allRows = flatRows(q, book.get, home)
   const rows = filter ? filterFlat(allRows, filter) : allRows
   const playingRow = rows.findIndex(r => r.index === q.current)
-  const selectedNow = () => Math.max(0, Math.min(cursorRef.current ?? playingRow, rows.length - 1))
+  // The Playlist's selection as it is now, within its rows.
+  const plSel = (): Selection => {
+    const at = Math.max(0, playingRow)
+    return clamp(plSelRef.current ?? { cursor: at, anchor: at, picked: [] }, rows.length)
+  }
+  const selectedNow = () => plSel().cursor
   const selected = selectedNow()
+  const picked = plSel().picked
 
   // Volume and repeat step from the value as it is when their turn comes, not
   // from the last render: keys in one stdin chunk would all read the same one.
@@ -97,9 +113,52 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     )
   }
   const setFilter = (fn: (text: string) => string) => {
-    setCursor(undefined)
+    setPlSel(undefined)
     setTop(undefined)
     void h.vars.change('filter', fn)
+  }
+
+  // The queue and the Playlist's rows as the store has them now: an edit's
+  // turn may come after an earlier edit changed them.
+  const freshRows = async () => {
+    const [queue, text] = await Promise.all([h.vars.read('queue'), h.vars.read('filter')])
+    const all = flatRows(queue, book.get, home)
+    return { queue, rows: text.trim() ? filterFlat(all, text.trim()) : all }
+  }
+  // Moves the picked rows (or the cursor's); the pick follows them.
+  const moveRows = (make: (count: number, picked: number[]) => Moved) =>
+    act(() =>
+      inTurn(async () => {
+        const { queue, rows } = await freshRows()
+        const sel = clamp(plSelRef.current ?? plSel(), rows.length)
+        const from = targets(sel).flatMap(at => (rows[at] ? [rows[at].index] : []))
+        if (!from.length) return
+        const moved = make(queue.items.length, from)
+        if (moved.order.every((old, i) => old === i)) return
+        // the rows shown after the move, by their new indexes
+        const shownOld = new Set(rows.map(r => r.index))
+        const shownNew = moved.order.flatMap((old, i) => (shownOld.has(old) ? [i] : []))
+        setPlSel(remap(sel, moved.picked.map(n => shownNew.indexOf(n))))
+        setTop(undefined)
+        return reorderQueue(h, moved.order)
+      }),
+    )
+  const sortBy = (field: SortField, isReversed: boolean) => {
+    setSort({ field, isReversed })
+    act(() =>
+      inTurn(async () => {
+        const queue = await h.vars.read('queue')
+        const sortRows = queue.items.map((item, i) => {
+          const path = queue.paths[i] ?? ''
+          const tags = book.get(path)
+          return { path, title: tags?.title || item, tags }
+        })
+        const unread = field === 'title' || field === 'folder' ? 0 : sortRows.filter(r => r.path.startsWith('/') && !r.tags).length
+        if (plSelRef.current) setPlSel(clear(plSelRef.current))
+        const reply = await reorderQueue(h, sortOrder(sortRows, field, isReversed))
+        return reply || (unread ? `Sorted; ${unread} songs' tags weren't read yet, so they went last.` : '')
+      }),
+    )
   }
 
   const handle = (a: Action) => {
@@ -111,7 +170,31 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'down':
         if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight))
         setTop(undefined)
-        return setCursor(Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
+        {
+          // the arrows move the cursor and keep the pick, so Space can add to it
+          const to = Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1))
+          return setPlSel({ cursor: to, anchor: to, picked: plSel().picked })
+        }
+      case 'extendPick':
+        setTop(undefined)
+        return setPlSel(extend(plSel(), Math.max(0, Math.min(at + a.by, rows.length - 1))))
+      case 'togglePick':
+        return setPlSel(toggle(plSel(), at))
+      case 'clearPick':
+        return setPlSel(clear(plSel()))
+      case 'move':
+        return moveRows((count, from) => moveBy(count, from, a.by))
+      case 'remove': {
+        const sel = plSel()
+        const indexes = targets(sel).flatMap(i => (rows[i] ? [rows[i].index] : []))
+        if (!indexes.length) return
+        setPlSel(clear(sel))
+        return act(() => inTurn(() => removeFromQueue(h, session.config, indexes)))
+      }
+      case 'sortNext':
+        return sortBy(nextSortField(sortRef.current.field), false)
+      case 'sortReverse':
+        return sortBy(sortRef.current.field ?? 'title', !sortRef.current.isReversed)
       case 'enter':
         if (tabRef.current === 'playlist' && row) act(() => pick(h, row.index))
         return
@@ -194,7 +277,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     }
   }
   useInput((input, key) => {
-    const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: false })
+    const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: tabRef.current === 'playlist' && plSel().picked.length > 0 })
     if (a) handle(a)
   })
 
@@ -216,27 +299,85 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
   const first = firstRow(selected, rows.length, listHeight, topRef.current)
   // A click selects and holds the view where it is; a double-click does what
-  // Enter does.
+  // Enter does. Ctrl-click picks one row; Shift- or Alt-click a range.
   const onRow = (index: number, hit: Hit) => {
     setTop(first)
-    setCursor(index)
-    if (hit.isDouble) handle({ kind: 'enter' })
+    pendingSelect.current = undefined
+    const sel = plSel()
+    if (hit.mods.ctrl) return setPlSel(toggle(sel, index))
+    if (hit.mods.shift || hit.mods.alt) return setPlSel(extend(sel, index))
+    if (hit.isDouble) {
+      setPlSel(select(sel, index))
+      return handle({ kind: 'enter' })
+    }
+    // a picked row may be about to be dragged with the rest
+    if (sel.picked.includes(index)) {
+      pendingSelect.current = index
+      return setPlSel({ ...sel, cursor: index })
+    }
+    setPlSel(select(sel, index))
+  }
+  // dy: rows from the row pressed
+  const onRowDrag = (index: number, dy: number) => {
+    pendingSelect.current = undefined
+    setDrag({ from: index, to: Math.max(0, Math.min(index + dy, rows.length)) })
+  }
+  const onRowRelease = () => {
+    const drag = dragRef.current
+    setDrag(undefined)
+    if (pendingSelect.current !== undefined) {
+      setPlSel(select(plSel(), pendingSelect.current))
+      pendingSelect.current = undefined
+    }
+    if (!drag || drag.to === drag.from) return
+    const to = drag.to < rows.length ? rows[drag.to].index : q.items.length
+    moveRows((count, from) => moveTo(count, from, to))
   }
   const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const shown = tab === 'playlist' ? rows.slice(first, first + listHeight) : []
   const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
+  // every song's tags, for sorting; the shown rows' first (the newest asked is read first)
+  const allKey = tab === 'playlist' ? q.paths.join('\n') : ''
+  useEffect(() => book.need(allKey ? allKey.split('\n') : []), [book, allKey])
   useEffect(() => book.need(shownKey ? shownKey.split('\n') : []), [book, shownKey])
   const list = (
     <Box flexDirection="column" width={listWidth}>
-      <Tabs tab={tab} width={listWidth} onTab={setTab} />
+      <Tabs
+        tab={tab}
+        width={listWidth}
+        onTab={setTab}
+        sortLabel={tab === 'playlist' && q.kind === 'playlist' ? (sortRef.current.field ? `${SORT_LABEL[sortRef.current.field]}${sortRef.current.isReversed ? ' ↑' : ''}` : 'as queued') : undefined}
+        onSort={() => handle({ kind: 'sortNext' })}
+      />
       {tab === 'playlist' ? (
-        <PlaylistView heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} first={first} onRow={onRow} onWheel={onWheel} />
+        <PlaylistView
+          heading={heading}
+          rows={rows}
+          selected={selected}
+          picked={new Set(picked)}
+          dropAt={dragRef.current?.to}
+          current={q.current}
+          height={listHeight}
+          width={listWidth}
+          first={first}
+          onRow={onRow}
+          onRowDrag={onRowDrag}
+          onRowRelease={onRowRelease}
+          onWheel={onWheel}
+        />
       ) : (
         <Text dimColor>Files</Text>
       )}
     </Box>
   )
 
+  const drag = dragRef.current
+  const statusLine =
+    tab === 'playlist' && drag && drag.to !== drag.from
+      ? `Let go to move ${Math.max(1, picked.length)} song${picked.length > 1 ? 's' : ''} ${drag.to < rows.length ? `above ${rows[drag.to].number}. ${rows[drag.to].title}` : 'to the end'}.`
+      : tab === 'playlist' && picked.length
+        ? `${picked.length} picked · Space picks/unpicks · Esc clears`
+        : notice
   return (
     <Settling.Provider value={isSettling}>
       <Box flexDirection="column" width={columns}>
@@ -260,7 +401,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         )}
         <Text wrap="truncate-end">{textLine}</Text>
         <Text dimColor>{'─'.repeat(columns)}</Text>
-        <Text wrap="truncate-end">{notice || ' '}</Text>
+        <Text wrap="truncate-end">{statusLine || ' '}</Text>
         <Hints mode={mode} isWide={isWide} />
       </Box>
     </Settling.Provider>
