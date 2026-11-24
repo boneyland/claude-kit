@@ -6,6 +6,6 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: { forks: { maxForks: 2 } },
     testTimeout: 10_000,
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.{ts,tsx}'],
   },
 })
