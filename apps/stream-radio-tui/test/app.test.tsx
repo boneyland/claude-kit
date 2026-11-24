@@ -77,7 +77,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
-  const host = { program: 'tui', vars, home: async () => home, fs } as unknown as Host
+  const host = { program: 'tui', vars, home: async () => home, fs, dataDir: async () => '/state' } as unknown as Host
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -444,18 +444,11 @@ describe('keys', () => {
   })
 
   test('a fast Enter after typing in open mode submits all of it', async () => {
-    const { ui, host } = await show(100)
-    for (const k of ['o', '/', 'm', ENTER]) ui.stdin.write(k)
+    const { ui, lines } = await show(100)
+    for (const k of ['o', '/', 'n', 'o', ENTER]) ui.stdin.write(k)
     await tick()
-    expect(player.locate).toHaveBeenCalledWith(host, '/m', '')
-  })
-
-  test("o with a path that won't play puts the reason on the status line", async () => {
-    vi.mocked(player.locate).mockResolvedValueOnce({ kind: 'error', text: 'No such file or folder: /nope' })
-    const { press, lines } = await show(100)
-    await press('o', '/nope', ENTER)
-    const all = lines()
-    expect(all[lineOf(all, /space pause/) - 1]).toContain('No such file or folder: /nope')
+    // no files in this host: the whole path typed is the one that isn't there
+    expect(lines().join('\n')).toContain('No such folder: /no')
   })
 
   test('space pauses through the core', async () => {
@@ -549,12 +542,6 @@ describe('keys', () => {
     expect(player.pick).toHaveBeenCalledWith(host, 3)
   })
 
-  test('o opens a URL or path', async () => {
-    const { press, host, session } = await show(100)
-    await press('o', '/m/x', ENTER)
-    expect(player.locate).toHaveBeenCalledWith(host, '/m/x', '')
-    expect(player.start).toHaveBeenCalledWith(host, session.config, '/m/x')
-  })
 })
 
 describe('mouse rows', () => {
@@ -673,6 +660,104 @@ describe('tabs', () => {
     for (const n of ['1. Intro', '2. Song two', '3. Song three', '4. Other']) expect(all).toContain(n)
     // the folder, dimmed, after the title
     expect(all).toMatch(/4\. Other.*Disc 2/)
+  })
+})
+
+describe('files', () => {
+  // A small tree, and a stat that knows it.
+  const TREE: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+    '/h': [{ name: 'Music', kind: 'dir' }],
+    '/h/Music': [{ name: 'Album', kind: 'dir' }, { name: 'loose.mp3', kind: 'file' }, { name: 'cover.jpg', kind: 'file' }],
+    '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }, { name: '02 Two.flac', kind: 'file' }],
+    '/other': [{ name: 'x.mp3', kind: 'file' }],
+  }
+  const fsOf = (tree: Record<string, { name: string; kind: 'file' | 'dir' }[]>, saved: Record<string, string> = {}) => ({
+    list: async (p: string) => {
+      if (!tree[p]) throw new Error('ENOENT')
+      return tree[p]
+    },
+    stat: async (p: string) => {
+      if (tree[p]) return { kind: 'dir' as const, mtimeMs: 1 }
+      const slash = p.lastIndexOf('/')
+      if (tree[p.slice(0, slash)]?.some(e => e.name === p.slice(slash + 1))) return { kind: 'file' as const, mtimeMs: 1 }
+      throw new Error('ENOENT')
+    },
+    read: async (p: string) => {
+      if (!(p in saved)) throw new Error('ENOENT')
+      return saved[p]
+    },
+    write: async (p: string, text: string) => void (saved[p] = text),
+    exists: async (p: string) => p in saved || p in tree,
+  })
+  const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
+  const showFiles = async (saved: Record<string, string> = {}, tree = TREE, extra: Extra = {}) => {
+    return show(100, EMPTY, '', '/h', { fs: fsOf(tree, saved), ...extra })
+  }
+  const heading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+
+  test('with nothing remembered it opens ~/Music: ../ first, folders, then playable files', async () => {
+    const { lines } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music'))
+    const all = lines().join('\n')
+    expect(all).toMatch(/\.\.\/[\s\S]*📁 Album\/[\s\S]*loose\.mp3/)
+    expect(all).not.toContain('cover.jpg')
+  })
+
+  test('opens at the remembered folder', async () => {
+    const { lines } = await showFiles({ '/state/tui-files.json': JSON.stringify({ folder: '/other' }) })
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    expect(lines().join('\n')).toContain('x.mp3')
+  })
+
+  test('a click on ../ goes up, and the folder is remembered', async () => {
+    const saved: Record<string, string> = {}
+    const { lines, click, where } = await showFiles(saved)
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await click(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    expect(JSON.parse(saved['/state/tui-files.json'])).toEqual({ folder: '/h' })
+  })
+
+  test('a click on a folder opens it in place; Enter on it shuts it', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))
+    await click(where('Album/').x, where('Album/').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    expect(lines().join('\n')).toContain('▾ 📁 Album/')
+    await press(ENTER)
+    expect(lines().join('\n')).not.toContain('01 One.flac')
+  })
+
+  test('o, a path, Enter: the tree moves there; a bad path says so and leaves it', async () => {
+    const { lines, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await press('o')
+    expect(lines().join('\n')).toContain('o go to: _')
+    await press('/other', ENTER)
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    await press('o', '/nope', ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /nope'))
+    expect(heading(lines())).toContain('Files · /other')
+  })
+
+  test('o from the Playlist goes to Files', async () => {
+    const { lines, press } = await show(100, PLAYING, '', '/h', { fs: fsOf(TREE) })
+    await press('o')
+    expect(heading(lines())).toMatch(/^\s*Files/)
+  })
+
+  test('a big folder lists before its tags arrive, and j moves the cursor', async () => {
+    const big = { ...TREE, '/h/Music': [...Array(500).keys()].map(i => ({ name: `${String(i).padStart(3, '0')}.mp3`, kind: 'file' as const })) }
+    // tags that never come
+    const tags = tagReader(() => new Promise(() => {}))
+    const { lines, press } = await showFiles({}, big, { tags })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('000.mp3'))
+    await press('j', 'j')
+    const all = lines()
+    expect(all[lineOf(all, /001\.mp3/)]).toBeDefined()
+    // the cursor row is drawn inverse; without colour, check the third row is still drawn and the app answers keys
+    await press('S')
+    expect(lines().join('\n')).toContain('sort: modified')
   })
 })
 

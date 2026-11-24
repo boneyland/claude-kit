@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { nextRepeat, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
-import { locate, pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
+import { pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { moveBy, moveTo, type Moved } from '../../../../plugins/stream-radio/core/queue'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
@@ -14,6 +14,9 @@ import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { PlaylistView } from './PlaylistView'
+import { FilesView } from './FilesView'
+import { useFiles } from '../files/useFiles'
+import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { Tabs, type Tab } from './Tabs'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
@@ -63,6 +66,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [tabRef, setTab] = useRefState<Tab>(view.queue.kind !== 'none' ? 'playlist' : 'files')
   const tab = tabRef.current
   const book = useTagBook(h, tagReader)
+  const files = useFiles(h, book)
+  const fRows = files.rows
   const [typedRef, setTyped] = useRefState('')
   // the Playlist's cursor and picked rows (places in its rows); undefined
   // follows the playing song
@@ -94,6 +99,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const at = Math.max(0, playingRow)
     return clamp(plSelRef.current ?? { cursor: at, anchor: at, picked: [] }, rows.length)
   }
+  const filesSel = (): Selection => clamp(files.sel(), fRows.length)
+  // The tab showing: its selection, rows and scroll.
+  const isPl = () => tabRef.current === 'playlist'
+  const curSel = () => (isPl() ? plSel() : filesSel())
+  const setCurSel = (sel: Selection) => (isPl() ? setPlSel(sel) : files.setSel(sel))
+  const curCount = () => (isPl() ? rows.length : fRows.length)
+  const setCurTop = (top: number | undefined) => (isPl() ? setTop(top) : files.setTop(top))
   const selectedNow = () => plSel().cursor
   const selected = selectedNow()
   const picked = plSel().picked
@@ -162,26 +174,28 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   }
 
   const handle = (a: Action) => {
-    const at = selectedNow()
+    const at = curSel().cursor
     const row = rows[at]
+    const fileRow = fRows[at]
     const mode = modeRef.current
+    const inRange = (n: number) => Math.max(0, Math.min(n, curCount() - 1))
     switch (a.kind) {
       case 'up':
       case 'down':
         if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight))
-        setTop(undefined)
+        setCurTop(undefined)
         {
           // the arrows move the cursor and keep the pick, so Space can add to it
-          const to = Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1))
-          return setPlSel({ cursor: to, anchor: to, picked: plSel().picked })
+          const to = inRange(at + (a.kind === 'up' ? -1 : 1))
+          return setCurSel({ cursor: to, anchor: to, picked: curSel().picked })
         }
       case 'extendPick':
-        setTop(undefined)
-        return setPlSel(extend(plSel(), Math.max(0, Math.min(at + a.by, rows.length - 1))))
+        setCurTop(undefined)
+        return setCurSel(extend(curSel(), inRange(at + a.by)))
       case 'togglePick':
-        return setPlSel(toggle(plSel(), at))
+        return setCurSel(toggle(curSel(), at))
       case 'clearPick':
-        return setPlSel(clear(plSel()))
+        return setCurSel(clear(curSel()))
       case 'move':
         return moveRows((count, from) => moveBy(count, from, a.by))
       case 'remove': {
@@ -192,14 +206,19 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return act(() => inTurn(() => removeFromQueue(h, session.config, indexes)))
       }
       case 'sortNext':
+        if (!isPl()) return files.setSort(FILES_SORTS[(FILES_SORTS.indexOf(files.sort) + 1) % FILES_SORTS.length])
         return sortBy(nextSortField(sortRef.current.field), false)
       case 'sortReverse':
+        if (!isPl()) return
         return sortBy(sortRef.current.field ?? 'title', !sortRef.current.isReversed)
       case 'enter':
-        if (tabRef.current === 'playlist' && row) act(() => pick(h, row.index))
+        if (isPl()) return row ? act(() => pick(h, row.index)) : undefined
+        if (fileRow?.kind === 'up') return files.goUp()
+        if (fileRow?.kind === 'dir') return files.setOpen(fileRow.path)
         return
       case 'shutFolder':
       case 'openFolder':
+        if (!isPl() && fileRow?.kind === 'dir') files.setOpen(fileRow.path, a.kind === 'openFolder')
         return
       case 'tab':
         return setTab(tabRef.current === 'files' ? 'playlist' : 'files')
@@ -219,11 +238,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'filterMode':
         return setMode('filter')
       case 'openMode':
+        // o edits the Files tab's location
+        setTab('files')
         setTyped('')
         return setMode('open')
       case 'last':
         return act(async () => {
-          if (!view.lastUrl) return 'Nothing played yet: press o to open a URL or path.'
+          if (!view.lastUrl) return 'Nothing played yet: add songs from the Files tab.'
           // lastUrl is what plays, so starting it again would only jump back
           if (view.playing) return `Already playing ${view.playing}.`
           resume(h, session.config, view.lastUrl, view.resumeAt)
@@ -267,9 +288,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         }
         const text = typedRef.current
         return act(async () => {
-          const parsed = await locate(h, text.trim(), session.config.defaultUrl)
-          if (parsed.kind === 'play') return start(h, session.config, parsed.url)
-          return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
+          if (!text.trim()) return ''
+          return files.goTo(text.trim())
         })
       case 'cancel':
         if (mode === 'filter') setFilter(() => '')
@@ -277,7 +297,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     }
   }
   useInput((input, key) => {
-    const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: tabRef.current === 'playlist' && plSel().picked.length > 0 })
+    const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: curSel().picked.length > 0 })
     if (a) handle(a)
   })
 
@@ -293,7 +313,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No playlist or chapters.'
-  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
+  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o go to: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
@@ -334,6 +354,26 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     moveRows((count, from) => moveTo(count, from, to))
   }
   const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const fSel = filesSel()
+  const fFirst = firstRow(fSel.cursor, fRows.length, listHeight, files.top)
+  const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  // ../ goes up and a folder opens or shuts, at a click; a file only selects.
+  const onFileRow = (index: number, hit: Hit) => {
+    files.setTop(fFirst)
+    const sel = filesSel()
+    if (hit.mods.ctrl) return files.setSel(toggle(sel, index))
+    if (hit.mods.shift || hit.mods.alt) return files.setSel(extend(sel, index))
+    const row = fRows[index]
+    if (row?.kind === 'up') return files.goUp()
+    files.setSel(select(sel, index))
+    if (row?.kind === 'dir') files.setOpen(row.path)
+  }
+  const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
+  const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
+  // every file's tags when sorting by them; the shown ones' first
+  const fAllKey = tab === 'files' && (files.sort === 'artist' || files.sort === 'albumArtist') ? fRows.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n') : ''
+  useEffect(() => book.need(fAllKey ? fAllKey.split('\n') : []), [book, fAllKey])
+  useEffect(() => book.need(fShownKey ? fShownKey.split('\n') : []), [book, fShownKey])
   const shown = tab === 'playlist' ? rows.slice(first, first + listHeight) : []
   const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
   // every song's tags, for sorting; the shown rows' first (the newest asked is read first)
@@ -346,7 +386,15 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         tab={tab}
         width={listWidth}
         onTab={setTab}
-        sortLabel={tab === 'playlist' && q.kind === 'playlist' ? (sortRef.current.field ? `${SORT_LABEL[sortRef.current.field]}${sortRef.current.isReversed ? ' ↑' : ''}` : 'as queued') : undefined}
+        sortLabel={
+          tab === 'files'
+            ? FILES_SORT_LABEL[files.sort]
+            : q.kind === 'playlist'
+              ? sortRef.current.field
+                ? `${SORT_LABEL[sortRef.current.field]}${sortRef.current.isReversed ? ' ↑' : ''}`
+                : 'as queued'
+              : undefined
+        }
         onSort={() => handle({ kind: 'sortNext' })}
       />
       {tab === 'playlist' ? (
@@ -366,7 +414,18 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           onWheel={onWheel}
         />
       ) : (
-        <Text dimColor>Files</Text>
+        <FilesView
+          heading={`Files · ${files.root ? tilde(files.root, home) : 'loading…'}`}
+          rows={fRows}
+          selected={fSel.cursor}
+          picked={new Set(fSel.picked)}
+          height={listHeight}
+          width={listWidth}
+          first={fFirst}
+          tags={book.get}
+          onRow={onFileRow}
+          onWheel={onFilesWheel}
+        />
       )}
     </Box>
   )
@@ -375,8 +434,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const statusLine =
     tab === 'playlist' && drag && drag.to !== drag.from
       ? `Let go to move ${Math.max(1, picked.length)} song${picked.length > 1 ? 's' : ''} ${drag.to < rows.length ? `above ${rows[drag.to].number}. ${rows[drag.to].title}` : 'to the end'}.`
-      : tab === 'playlist' && picked.length
-        ? `${picked.length} picked · Space picks/unpicks · Esc clears`
+      : (tab === 'playlist' ? picked : fSel.picked).length
+        ? `${(tab === 'playlist' ? picked : fSel.picked).length} picked · Space picks/unpicks · Esc clears`
         : notice
   return (
     <Settling.Provider value={isSettling}>
