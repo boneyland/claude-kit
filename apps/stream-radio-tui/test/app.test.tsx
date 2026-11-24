@@ -877,6 +877,61 @@ describe('files actions', () => {
   })
 })
 
+describe('youtube in files', () => {
+  const LIST = 'https://www.youtube.com/playlist?list=PL1'
+  const MIX = { _type: 'playlist', title: 'Road Mix', entries: [
+    { url: 'https://www.youtube.com/watch?v=1', title: 'Drive One', channel: 'Chan' },
+    { url: 'https://www.youtube.com/watch?v=2', title: 'Drive Two', channel: 'Chan' },
+  ] }
+  const withRun = async (result: { exitCode: number; stdout: string; stderr: string }) => {
+    const shown = await fsTree()
+    ;(shown.host as unknown as { run: unknown }).run = vi.fn(async () => result)
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('loose.mp3'))
+    return shown
+  }
+
+  test('a playlist URL lists its videos under a folder of its title; adding the folder adds every video with its title', async () => {
+    const { press, lines, host, session } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    expect(lines().join('\n')).toContain('▾ 📁 Road Mix/')
+    expect(lines().join('\n')).toContain('Drive One · Chan')
+    await press('j', 'a')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [
+      { path: 'https://www.youtube.com/watch?v=1', title: 'Drive One' },
+      { path: 'https://www.youtube.com/watch?v=2', title: 'Drive Two' },
+    ], 'end')
+    expect(player.start).not.toHaveBeenCalled()
+    expect(player.pick).not.toHaveBeenCalled()
+  })
+
+  test('one video added from the list keeps its title', async () => {
+    const { press, host, session, lines } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    await press('j', 'j', 'j', 'A')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: 'https://www.youtube.com/watch?v=2', title: 'Drive Two' }], 'next')
+  })
+
+  test("yt-dlp's error shows on the status line; the tree stays; nothing plays", async () => {
+    const { press, lines } = await withRun({ exitCode: 1, stdout: '', stderr: 'ERROR: Private video' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Private video'))
+    expect(lines().join('\n')).toContain('Files · ~/Music')
+    expect(lines().join('\n')).toContain('loose.mp3')
+    expect(player.start).not.toHaveBeenCalled()
+    expect(player.addToQueue).not.toHaveBeenCalled()
+  })
+
+  test('../ from the playlist goes back to the folder before it', async () => {
+    const { press, lines, click, where } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    await click(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+  })
+})
+
 describe('playlist editing', () => {
   const FIVE: Partial<PlayerKeys> = {
     ...PLAYING,

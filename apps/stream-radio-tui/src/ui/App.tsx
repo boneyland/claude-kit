@@ -189,7 +189,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const folders = chosen.length - songs
     const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
     const said = `Added ${[songs ? plural(songs, 'song') : '', folders ? plural(folders, 'folder') : ''].filter(Boolean).join(' and ')}${where === 'next' ? ' to play next' : ''}.`
-    act(() => inTurn(async () => (await addToQueue(h, session.config, chosen.map(r => ({ path: r.path })), where)) || said))
+    act(() => inTurn(async () => (await addToQueue(h, session.config, chosen.flatMap(r => files.entriesOf(r)), where)) || said))
   }
   // The menu of row `at` of the tab showing; the cursor moves there unless it is picked.
   const openMenu = (at: number) => {
@@ -335,7 +335,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         const text = typedRef.current
         return act(async () => {
           if (!text.trim()) return ''
-          return files.goTo(text.trim())
+          return files.goTo(text.trim(), setNotice)
         })
       case 'cancel':
         if (mode === 'menu') return closeMenu()
@@ -476,14 +476,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         />
       ) : (
         <FilesView
-          heading={`Files · ${files.root ? tilde(files.root, home) : 'loading…'}`}
+          heading={`Files · ${files.rootLabel(home)}`}
           rows={fRows}
           selected={fSel.cursor}
           picked={new Set(fSel.picked)}
           height={listHeight}
           width={listWidth}
           first={fFirst}
-          tags={book.get}
+          tags={files.tags}
           onRow={onFileRow}
           onMenu={openMenu}
           onWheel={onFilesWheel}
