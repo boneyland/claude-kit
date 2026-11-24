@@ -2,6 +2,7 @@
 // mod made before the core existed, so the player behaves as it always has.
 import type { EngineInterface } from 'claude-code'
 
+import { stateDir } from '../core/paths'
 import type { Host, Queue, Resume, StateStore, WatchStream } from '../core/host'
 import type { Queue as ContractQueue, Resume as ContractResume } from '../types'
 
@@ -64,7 +65,7 @@ export function hostOf($: EngineInterface, vars: StateStore, events: Host['event
     },
     home: async () => (await $.env.get('HOME')) ?? '',
     cwd: () => $.session.cwd(),
-    dataDir: async () => (await $.process.hookEnv()).CLAUDE_PLUGIN_DATA ?? '',
+    dataDir: () => stateDir(name => (name === 'XDG_STATE_HOME' ? $.env.get('XDG_STATE_HOME') : $.env.get('HOME'))),
     saved: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value as never) },
     vars,
     log: (text, to) => void (to ? $.ui.log(text, { to }) : $.ui.log(text)),

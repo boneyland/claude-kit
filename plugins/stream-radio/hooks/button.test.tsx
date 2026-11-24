@@ -14,7 +14,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
         return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
       })
-      on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: '/tmp/stream-radio-test' } }) as never)
+      on('env.get', (_$, e) => ({ value: (e as { name: string }).name === 'XDG_STATE_HOME' ? '/tmp/stream-radio-test' : undefined }) as never)
       on('ui.toast', () => ({ value: undefined }) as never)
 
       const ui = await $.ui.mount({

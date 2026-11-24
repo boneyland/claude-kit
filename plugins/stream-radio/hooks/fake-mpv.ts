@@ -5,7 +5,7 @@
 // reconnect.lock.
 import type { On } from 'claude-code'
 
-export const DATA = '/tmp/stream-radio-test'
+export const DATA = '/tmp/stream-radio-test/stream-radio'
 export const SOCK = `${DATA}/mpv.sock`
 export const INTENT = `${DATA}/player.json`
 export const LOCK = `${DATA}/reconnect.lock`
@@ -16,6 +16,8 @@ type Event = Record<string, unknown>
 type Watcher = { events: Event[]; wake: () => void; isClosed: boolean }
 
 export type FakeOptions = {
+  // HOME (default /home/me)
+  home?: string
   // media-title of a player started (default: its URL)
   title?: string
   // more properties a started player has (time-pos, duration, metadata, chapter-metadata…)
@@ -146,7 +148,10 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
   const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } }) as never
   const fail = () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never
 
-  on('process.hookEnv', () => ({ value: { CLAUDE_PLUGIN_DATA: DATA } }) as never)
+  on('env.get', (_$, e) => {
+    const name = (e as { name: string }).name
+    return { value: name === 'XDG_STATE_HOME' ? '/tmp/stream-radio-test' : name === 'HOME' ? (options.home ?? '/home/me') : undefined } as never
+  })
   on('ui.toast', (_$, e) => (world.toasts.push(e.text), { value: undefined }) as never)
   on('ui.log', (_$, e) => (world.logs.push(e.text), { value: undefined }) as never)
   on('process.run', (_$, e) => {

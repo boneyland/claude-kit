@@ -13,7 +13,6 @@ const PANE = {
 } as const
 
 function engine(on: On, options: FakeOptions = {}) {
-  on('env.get', () => ({ value: '/home/me' }) as never)
   on('session.cwd', () => ({ value: '/home/me/Music' }) as never)
   return fakeMpv(on, { title: 'one.flac', props: { 'time-pos': 3, duration: true }, exists: path => FILES.includes(path), ...options })
 }
