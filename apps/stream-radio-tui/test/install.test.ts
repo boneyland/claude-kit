@@ -7,12 +7,13 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const APP = path.resolve(__dirname, '..')
-const BUNDLE = path.join(APP, 'dist/stream-radio-tui.mjs')
+const version: string = JSON.parse(fs.readFileSync(path.join(APP, 'package.json'), 'utf8')).version
 const INSTALL = path.join(APP, 'install.sh')
 
 let server: http.Server
 let url = ''
 let tmp = ''
+let bundle = ''
 
 function run(env: Record<string, string>): Promise<{ code: number; out: string }> {
   return new Promise(resolve => {
@@ -41,15 +42,15 @@ const NEEDED = ['sh', 'node', 'curl', 'mkdir', 'mktemp', 'mv', 'chmod', 'rm']
 
 beforeAll(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'install-test-'))
-  if (!fs.existsSync(BUNDLE)) {
-    await new Promise<void>((resolve, reject) =>
-      execFile('node', ['build.mjs'], { cwd: APP }, err => (err ? reject(err) : resolve())),
-    )
-  }
+  // always a fresh build, to a file of its own: never a leftover dist/
+  bundle = path.join(tmp, 'stream-radio-tui.mjs')
+  await new Promise<void>((resolve, reject) =>
+    execFile('node', ['build.mjs'], { cwd: APP, env: { ...process.env, STREAM_RADIO_TUI_OUT: bundle } }, err => (err ? reject(err) : resolve())),
+  )
   server = http.createServer((req, res) => {
     if (req.url === '/stream-radio-tui.mjs') {
       res.writeHead(200, { 'content-type': 'text/javascript' })
-      res.end(fs.readFileSync(BUNDLE))
+      res.end(fs.readFileSync(bundle))
     } else {
       res.writeHead(404).end()
     }
@@ -76,7 +77,7 @@ describe('install.sh', () => {
     const v = await new Promise<string>((resolve, reject) =>
       execFile(target, ['--version'], (err, stdout) => (err ? reject(err) : resolve(stdout))),
     )
-    expect(v).toMatch(/^stream-radio-tui 0\.1\.0 /)
+    expect(v).toMatch(new RegExp(`^stream-radio-tui ${version.replaceAll('.', '\\.')} `))
     expect(r.out).toMatch(/not on your PATH/)
   })
 

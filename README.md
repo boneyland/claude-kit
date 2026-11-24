@@ -1,8 +1,8 @@
 # claude-kit
 
-My mods for [Claude Code](https://claude.com/claude-code), plus savvy-flow and savvy-progress, forked from [johnnyvizz/claude-kit](https://github.com/johnnyvizz/claude-kit). Every item is a standalone plugin under `plugins/`: install only what you need.
+My mods for [Claude Code](https://claude.com/claude-code), plus savvy-flow and savvy-progress, forked from [johnnyvizz/claude-kit](https://github.com/johnnyvizz/claude-kit). Every item is standalone, a plugin under `plugins/` or an app under `apps/`: install only what you need.
 
-| Plugin | Type | What it does |
+| Name | Type | What it does |
 | --- | --- | --- |
 | [savvy-flow](plugins/savvy-flow) | skill + agents | `/savvy-flow <task>`: the session model plans, delegates to tiered worker subagents and reviews their work. |
 | [savvy-progress](plugins/savvy-progress) | mod | A progress bar above the prompt and a live agents panel. Made for savvy-flow, shows any subagents, and mirrors Claude Code's own task list otherwise. |

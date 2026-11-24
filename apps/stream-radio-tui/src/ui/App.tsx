@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { filterRows, nextRepeat, playlistRows } from '../../../../plugins/stream-radio/core/nowplaying'
 import { locate, pick, resume, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
@@ -46,6 +46,14 @@ function Player({ session, view }: { session: Session; view: View }) {
   const selectedNow = () => Math.max(0, Math.min(cursorRef.current ?? playingRow, rows.length - 1))
   const selected = selectedNow()
 
+  // Volume and repeat step from the value as it is when their turn comes, not
+  // from the last render: keys in one stdin chunk would all read the same one.
+  const turns = useRef<Promise<unknown>>(Promise.resolve())
+  const inTurn = (work: () => Promise<string | void>) => {
+    const run = turns.current.then(work)
+    turns.current = run.catch(() => undefined)
+    return run
+  }
   const act = (work: () => Promise<string | void>) => {
     work().then(
       reply => setNotice(reply ?? ''),
@@ -84,11 +92,11 @@ function Player({ session, view }: { session: Session; view: View }) {
       case 'prev':
         return act(() => step(h, a.kind === 'next' ? 1 : -1))
       case 'volume':
-        return act(() => setVolume(h, session.config.volume, view.volume + a.by))
+        return act(() => inTurn(async () => setVolume(h, session.config.volume, (await h.vars.read('volume')) + a.by)))
       case 'shuffle':
         return act(() => toggleShuffle(h))
       case 'repeat':
-        return act(() => setRepeat(h, nextRepeat(view.repeat)))
+        return act(() => inTurn(async () => setRepeat(h, nextRepeat(await h.vars.read('repeat')))))
       case 'filterMode':
         return setMode('filter')
       case 'openMode':

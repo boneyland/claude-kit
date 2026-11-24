@@ -78,6 +78,9 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
   return {
     host,
     config,
+    // A reconnect already waiting in the core (2, 5 or 15 s) still finishes
+    // after q: the terminal is back, but the process lives up to about 15 s to
+    // restart the music. Deliberate: quitting never stops the music.
     close() {
       isClosed = true
       detach()

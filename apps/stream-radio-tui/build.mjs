@@ -18,7 +18,8 @@ const noDevtools = {
 
 await build({
   entryPoints: ['src/main.tsx'],
-  outfile: 'dist/stream-radio-tui.mjs',
+  // STREAM_RADIO_TUI_OUT: build somewhere else (the installer test), dist/ by default
+  outfile: process.env.STREAM_RADIO_TUI_OUT || 'dist/stream-radio-tui.mjs',
   bundle: true,
   platform: 'node',
   format: 'esm',

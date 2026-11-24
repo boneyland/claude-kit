@@ -3,6 +3,7 @@ import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
 import * as player from '../../../plugins/stream-radio/core/player'
+import { VOLUME_STEP } from '../../../plugins/stream-radio/core/nowplaying'
 import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
@@ -196,6 +197,21 @@ describe('keys', () => {
     await press('+')
     expect(player.setVolume).toHaveBeenCalledWith(host, DEFAULT_CONFIG.volume, 65)
     expect(lines().join('\n')).toContain('Volume 65%.')
+  })
+
+  test('keys that arrive together each step from the volume the one before set', async () => {
+    const { ui, vars } = await show(100)
+    const set = async (h: Host, _c: number, level: number) => {
+      await h.vars.change('volume', () => level)
+      return `Volume ${level}%.`
+    }
+    vi.mocked(player.setVolume).mockImplementationOnce(set).mockImplementationOnce(set).mockImplementationOnce(set)
+    ui.stdin.write('+')
+    ui.stdin.write('+')
+    ui.stdin.write('+')
+    await tick()
+    expect(await vars.read('volume')).toBe(60 + 3 * VOLUME_STEP)
+    expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([60 + VOLUME_STEP, 60 + 2 * VOLUME_STEP, 60 + 3 * VOLUME_STEP])
   })
 
   test('Enter on a folder shuts it (the mark moves to it); on a song, plays it', async () => {
