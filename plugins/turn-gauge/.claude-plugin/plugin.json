@@ -1,6 +1,6 @@
 {
   "name": "turn-gauge",
-  "version": "0.21.1",
+  "version": "0.22.0",
   "icon": "./.claude-plugin/icon.png",
   "description": "Band above the prompt: turn number, output speed, turn and session cost, prompt cache countdown, model, effort, context fill, cache hit rate and token counts, plan-limit pace projection; warns on running out before a reset, cache misses and output-heavy turns; notifies before the cache expires.",
   "author": {

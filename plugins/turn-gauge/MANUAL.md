@@ -154,6 +154,8 @@ The heads-up and `/turn-gauge pace` use the *shown* model. Its run-out time is w
 
 **When it starts.** Nothing is shown for the first 30 minutes of a 5-hour window or the first 12 hours of a week.
 
+**A free reset.** A reset offered in the desktop app puts usage back to 0 without moving the reset time. When a reading falls 5 or more points under the window's highest at the same reset time, the mod takes it as such a reset. The rest of the window counts from the last reading before it: its percent through, its run rate, and where it ends. The part before the reset is scored only if it was used up (100%), the one end that is known. The week is still learned into the weekly profile whole, as the hours you used don't change, but it isn't used as the last window for the week after.
+
 ### Is it any good?
 
 `/turn-gauge pace` shows each window's forecast from every model, and how each has done. At 25%, 50% and 75% of each window, the mod notes every model's forecast. When the window resets, it compares those forecasts with where usage really ended (the highest reading of the window) and keeps the last 40 windows. Forecasting texts call this rolling-origin evaluation. The score is each model's mean absolute miss in percentage points, at each mark, with the number of windows scored.

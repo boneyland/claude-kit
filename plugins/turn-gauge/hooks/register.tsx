@@ -367,6 +367,15 @@ const recordPace = async ($: EngineInterface, list: readonly Limit[]) => {
       await loadPace($)
     }
 
+    // A free reset after the window was used up: its forecasts scored, nothing learned.
+    if (added.cut !== null) {
+      const history = ((await $.store.get(PACE_HISTORY_KEY)) as PaceRecord[] | undefined) ?? []
+      const done = added.cut
+      if (!history.some(r => r.kind === done.kind && r.resetsAt === done.resetsAt)) {
+        await $.store.set(PACE_HISTORY_KEY, [...history, done].slice(-HISTORY_KEPT))
+      }
+    }
+
     const ctx = contextOfPace(await read($, pace), l.kind, now)
     const window = checkpoint(added.window, project(l.kind, added.window, now, ctx))
     if (added.isChanged || window !== added.window) await $.store.set(PACE_KEY(l.kind), window)

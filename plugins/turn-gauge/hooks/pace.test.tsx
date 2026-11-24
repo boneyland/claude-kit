@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { accuracy, addSample, checkpoint, describe, describeAccuracy, learnWeek, project, runOutWarning, span, when, type PaceWindow } from './pace'
+import { accuracy, addSample, checkpoint, describe, describeAccuracy, finalOf, learnWeek, project, runOutWarning, span, when, type PaceWindow } from './pace'
 
 const H = 3600_000
 const D = 24 * H
@@ -35,6 +35,30 @@ test('readings: kept once per change, a new reset time starts a window and score
 // A week 3 days in (resets in 4), 30% used: 10%/day on average.
 const week = (samples: [number, number][]): PaceWindow => ({ resetsAt: NOW + 4 * D, samples, checks: {} })
 const NONE = { prev: null, profile: null, offsetMinutes: 0 }
+
+test('a free reset from the app: the same reset time, the reading back near 0', () => {
+  const w: PaceWindow = { resetsAt: NOW + 4 * D, samples: [[NOW - 2 * D, 50], [NOW - D, 100]], checks: { '50': { smooth: 120, linear: 110 } } }
+  // A 1-point dip is the plan's rounding, not a reset.
+  const dip = addSample({ ...w, samples: [[NOW - D, 58]] }, 'seven_day', NOW + 4 * D, NOW, 57)
+  expect(dip.cut).toBe(null)
+  expect(dip.window.cutAt).toBe(undefined)
+  // Used up before the reset: what it ended at is known, so its forecasts are scored.
+  const r = addSample(w, 'seven_day', NOW + 4 * D, NOW, 0)
+  expect(r.finished).toBe(null)
+  expect(r.cut).toEqual({ kind: 'seven_day', resetsAt: NOW - D, final: 100, checks: w.checks })
+  expect(r.window).toEqual({ resetsAt: NOW + 4 * D, samples: [...w.samples, [NOW, 0]], checks: {}, cutAt: NOW - D })
+  // Reset before it ran out: where it would have ended is unknown, so nothing is scored.
+  expect(addSample({ ...w, samples: [[NOW - D, 80]] }, 'seven_day', NOW + 4 * D, NOW, 0).cut).toBe(null)
+  // The rest of the week counts from the reset: its own marks, end and run rate.
+  const after = addSample(r.window, 'seven_day', NOW + 4 * D, NOW + D, 10).window
+  expect(finalOf(after)).toBe(10)
+  const p = project('seven_day', after, NOW + D, NONE)!
+  expect(p.used).toBe(10)
+  expect(Math.round(p.fraction * 100)).toBe(40)
+  expect(Math.round(p.models.linear!)).toBe(25)
+  // A second dip below the new start is measured from it.
+  expect(addSample(after, 'seven_day', NOW + 4 * D, NOW + D + H, 9).cut).toBe(null)
+})
 
 test('a steady pace projects the same smoothed or straight', () => {
   const steady = week([[NOW - 2 * D, 10], [NOW - D, 20], [NOW, 30]])
@@ -101,6 +125,8 @@ test('the last window, at the same point through it, is the seasonal naive forec
   expect(p.models.snaive).toBe(99)
   // A week that isn't the one just before is no guide.
   expect(project('seven_day', w, now, { prev: workWeek(SUN - 14 * D, 2), profile: null, offsetMinutes: 0 })!.models.snaive).toBe(null)
+  // Nor one a free reset cut short.
+  expect(project('seven_day', w, now, { prev: { ...prev, cutAt: SUN - 3 * D }, profile: null, offsetMinutes: 0 })!.models.snaive).toBe(null)
 })
 
 test('the weekly profile learns the hours used, scales to this week, and takes over after two weeks', () => {
@@ -247,4 +273,39 @@ test('live readings are saved for every session, and a reset scores the window',
   // Kept as the last window, and learned as a week of the profile.
   expect((store['pace-prev:seven_day'] as PaceWindow).resetsAt).toBe(reset1)
   expect((store['pace-profile'] as { weeks: number }).weeks).toBe(1)
+})
+
+test('a free reset mid-week scores the part used up, and the week is still learned whole', async ($, on: On) => {
+  const store: Record<string, unknown> = {}
+  let now = NOW
+  on('store.get', (_, e) => ({ value: store[e.key] }))
+  on('store.set', (_, e) => ((store[e.key] = e.value), { value: undefined }))
+  on('clock.now', () => ({ value: now }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  const measure = async (pct: number, resetsAt = NOW + 3.5 * D) =>
+    $.session.measure({
+      changed: ['rateLimits'],
+      rateLimits: [{ kind: 'seven_day', percentUsed: pct, resetsAt: new Date(resetsAt).toISOString() }],
+    } as never)
+
+  await measure(60)
+  now += 6 * H
+  await measure(100)
+  const before = store['pace:seven_day'] as PaceWindow
+  now += 2 * H
+  await measure(0)
+  expect(store['pace-history']).toEqual([{ kind: 'seven_day', resetsAt: NOW + 6 * H, final: 100, checks: before.checks }])
+  expect(store['pace-prev:seven_day']).toBe(undefined)
+  expect(store['pace-profile']).toBe(undefined)
+
+  now = NOW + 3.5 * D - H
+  await measure(30)
+  now = NOW + 3.5 * D + H
+  await measure(2, NOW + 10.5 * D)
+  const history = store['pace-history'] as { resetsAt: number; final: number }[]
+  expect(history.map(r => [r.resetsAt, r.final])).toEqual([[NOW + 6 * H, 100], [NOW + 3.5 * D, 30]])
+  // Learned whole: 100 before the reset and 30 after.
+  const profile = store['pace-profile'] as { points: number[]; weeks: number }
+  expect(profile.weeks).toBe(1)
+  expect(Math.round(profile.points.reduce((a, b) => a + b, 0))).toBe(130)
 })

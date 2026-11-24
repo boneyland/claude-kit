@@ -23,7 +23,9 @@ export type Sample = [number, number]
 export type Mark = '25' | '50' | '75'
 export type Model = 'smooth' | 'linear' | 'snaive' | 'profile'
 export type Check = Partial<Record<Model, number>>
-export type PaceWindow = { resetsAt: number; samples: Sample[]; checks: Partial<Record<Mark, Check>> }
+// `cutAt`: the last reading before a free reset (from the app) put the window back
+// near 0 without moving its reset time; the window's end and pace count from there.
+export type PaceWindow = { resetsAt: number; samples: Sample[]; checks: Partial<Record<Mark, Check>>; cutAt?: number }
 export type PaceRecord = { kind: Kind; resetsAt: number; final: number; checks: Partial<Record<Mark, Check>> }
 // Percentage points used in each hour of the week (0 = Sunday 00:00 local), summed
 // over `weeks` finished weeks.
@@ -50,6 +52,9 @@ const MAX_SAMPLES = 400
 const REPEAT_MS = 30 * 60_000
 // Reset times within this of each other are the same window.
 const SAME_WINDOW_MS = 10 * 60_000
+// A reading this many points under the window's highest is a free reset; a smaller
+// dip is the plan's rounding.
+const RESET_DROP = 5
 const MARKS: readonly Mark[] = ['25', '50', '75']
 // A mark is noted only when a reading lands this close after it.
 const MARK_SLACK = 0.15
@@ -74,23 +79,39 @@ export type Projection = {
 export type Context = { prev: PaceWindow | null; profile: Profile | null; offsetMinutes: number }
 
 // A reading: kept in its window, or it starts a new one and the old one is
-// finished, its highest reading what it ended at.
-export const addSample = (w: PaceWindow | null, kind: Kind, resetsAt: number, t: number, pct: number) => {
+// finished, its highest reading what it ended at. A reading well under the
+// window's highest, at the same reset time, is a free reset: the window is cut
+// there (`cut`), and scored only if it was used up, the one end that is known.
+type Added = { window: PaceWindow; finished: PaceRecord | null; cut: PaceRecord | null; isChanged: boolean }
+export const addSample = (w: PaceWindow | null, kind: Kind, resetsAt: number, t: number, pct: number): Added => {
   if (w !== null && Math.abs(w.resetsAt - resetsAt) <= SAME_WINDOW_MS) {
     const last = w.samples[w.samples.length - 1]
     if (last !== undefined && (t < last[0] || (last[1] === pct && t - last[0] < REPEAT_MS))) {
-      return { window: w, finished: null, isChanged: false }
+      return { window: w, finished: null, cut: null, isChanged: false }
     }
-    return { window: { ...w, samples: [...w.samples, [t, pct] as Sample].slice(-MAX_SAMPLES) }, finished: null, isChanged: true }
+    const samples = [...w.samples, [t, pct] as Sample].slice(-MAX_SAMPLES)
+    if (last !== undefined && t > last[0] && sinceCut(w).length > 0 && pct <= finalOf(w) - RESET_DROP) {
+      const final = finalOf(w)
+      const cut: PaceRecord | null = final >= 100 ? { kind, resetsAt: last[0], final, checks: w.checks } : null
+      return { window: { ...w, samples, checks: {}, cutAt: last[0] }, finished: null, cut, isChanged: true }
+    }
+    return { window: { ...w, samples }, finished: null, cut: null, isChanged: true }
   }
   // A reading of a window older than the one kept: a stale session's; dropped.
-  if (w !== null && resetsAt < w.resetsAt) return { window: w, finished: null, isChanged: false }
+  if (w !== null && resetsAt < w.resetsAt) return { window: w, finished: null, cut: null, isChanged: false }
   const finished: PaceRecord | null =
-    w !== null && w.samples.length > 0 ? { kind, resetsAt: w.resetsAt, final: finalOf(w), checks: w.checks } : null
-  return { window: { resetsAt, samples: [[t, pct] as Sample], checks: {} }, finished, isChanged: true }
+    w !== null && sinceCut(w).length > 0 ? { kind, resetsAt: w.resetsAt, final: finalOf(w), checks: w.checks } : null
+  return { window: { resetsAt, samples: [[t, pct] as Sample], checks: {} }, finished, cut: null, isChanged: true }
 }
 
-export const finalOf = (w: PaceWindow) => Math.max(...w.samples.map(s => s[1]))
+// The readings since the last free reset: all of them in a window never cut.
+const sinceCut = (w: PaceWindow) => (w.cutAt === undefined ? w.samples : w.samples.filter(s => s[0] > w.cutAt!))
+
+export const finalOf = (w: PaceWindow) => Math.max(...sinceCut(w).map(s => s[1]))
+
+// Where the window's own time starts: its reset time less its length, or the last
+// reading before a free reset.
+const startOf = (kind: Kind, w: PaceWindow) => w.cutAt ?? w.resetsAt - WINDOW_MS[kind]
 
 // The window as stretches of time with the points used in each: from its start
 // (0%) through the readings, then flat to `end`. Use between readings is taken
@@ -173,7 +194,7 @@ const usedAt = (kind: Kind, w: PaceWindow, t: number) => {
 export const project = (kind: Kind, w: PaceWindow | null, now: number, ctx: Context): Projection | null => {
   if (w === null || w.samples.length === 0) return null
   const len = WINDOW_MS[kind]
-  const start = w.resetsAt - len
+  const start = startOf(kind, w)
   const remaining = w.resetsAt - now
   const elapsed = now - start
   if (remaining <= 0 || elapsed < MIN_ELAPSED_MS[kind]) return null
@@ -186,7 +207,7 @@ export const project = (kind: Kind, w: PaceWindow | null, now: number, ctx: Cont
   // The last window, at the same point through it. A week must be the one just before.
   const prev = ctx.prev
   const isPrevUsable =
-    prev !== null && prev.samples.length > 0 && prev.resetsAt < w.resetsAt && (kind === 'five_hour' || Math.abs(prev.resetsAt + len - w.resetsAt) <= HOUR)
+    prev !== null && prev.samples.length > 0 && prev.cutAt === undefined && w.cutAt === undefined && prev.resetsAt < w.resetsAt && (kind === 'five_hour' || Math.abs(prev.resetsAt + len - w.resetsAt) <= HOUR)
   const snaive = isPrevUsable ? used + Math.max(0, finalOf(prev) - usedAt(kind, prev, prev.resetsAt - len + elapsed)) : null
 
   // The weekly profile, scaled by how this week runs against it.
@@ -227,7 +248,7 @@ export const project = (kind: Kind, w: PaceWindow | null, now: number, ctx: Cont
     runOutAt,
     ratePerHour: rate * HOUR,
     resetsAt: w.resetsAt,
-    fraction: elapsed / len,
+    fraction: elapsed / (w.resetsAt - start),
   }
 }
 
