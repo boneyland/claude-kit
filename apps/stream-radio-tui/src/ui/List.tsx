@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Text } from 'ink'
+import { Clickable, type Hit } from '../mouse/Clickable'
 import type { TreeRow } from '../../../../plugins/stream-radio/core/nowplaying'
 
 // Whether a row carries the playing mark: the current song, or a shut folder
@@ -15,26 +16,42 @@ function label(row: TreeRow, current: number): string {
   return `${mark} ${indent}${row.number}. ${row.name}${row.where ? ` · ${row.where}` : ''}`
 }
 
-type Props = { heading: string; rows: TreeRow[]; selected: number; current: number; height: number; width: number }
+// The first row shown: `top` once the wheel or a click has placed the view,
+// else the window centred on the selected row; never past either end.
+export function firstRow(selected: number, count: number, height: number, top?: number): number {
+  const last = Math.max(0, count - height)
+  return Math.max(0, Math.min(top ?? selected - Math.floor(height / 2), last))
+}
 
-// The playlist or chapters: the window of rows around the selected one.
-export function List({ heading, rows, selected, current, height, width }: Props) {
-  const first = Math.max(0, Math.min(selected - Math.floor(height / 2), rows.length - height))
+// Whether `x`, from a row's left edge, is on a folder row's ▸/▾.
+export const isOnArrow = (row: TreeRow, x: number) => row.kind === 'folder' && x >= 2 + 2 * row.depth && x <= 3 + 2 * row.depth
+
+type Props = {
+  heading: string
+  rows: TreeRow[]
+  selected: number
+  current: number
+  height: number
+  width: number
+  first: number
+  onRow?(index: number, hit: Hit): void
+  onWheel?(dir: 'up' | 'down'): void
+}
+
+// The playlist or chapters: the window of rows from `first`.
+export function List({ heading, rows, selected, current, height, width, first, onRow, onWheel }: Props) {
   return (
-    <Box flexDirection="column" width={width}>
+    <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Text dimColor wrap="truncate-end">
         {heading}
       </Text>
       {rows.slice(first, first + height).map((row, i) => (
-        <Text
-          key={row.kind === 'item' ? `item-${row.index}` : `folder-${row.path}`}
-          inverse={first + i === selected}
-          bold={isCurrent(row, current)}
-          wrap="truncate-end"
-        >
-          {label(row, current)}
-        </Text>
+        <Clickable key={row.kind === 'item' ? `item-${row.index}` : `folder-${row.path}`} onClick={hit => onRow?.(first + i, hit)}>
+          <Text inverse={first + i === selected} bold={isCurrent(row, current)} wrap="truncate-end">
+            {label(row, current)}
+          </Text>
+        </Clickable>
       ))}
-    </Box>
+    </Clickable>
   )
 }

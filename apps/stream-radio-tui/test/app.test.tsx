@@ -82,8 +82,9 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     listeners.add(fn)
     return () => void listeners.delete(fn)
   }
-  let onMouse: ((e: MouseEvent) => void) | undefined
-  const mouse: MouseSource = fn => ((onMouse = fn), () => (onMouse = undefined))
+  const mouseFns = new Set<(e: MouseEvent) => void>()
+  const mouse: MouseSource = fn => (mouseFns.add(fn), () => void mouseFns.delete(fn))
+  const onMouse = (e: MouseEvent) => mouseFns.forEach(fn => fn(e))
   const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} />)
   if (columns !== 100 || rows) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
@@ -100,17 +101,17 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
   }
   // The mouse: cells are 0-based from the top left, as the app is drawn.
   const click = async (x: number, y: number) => {
-    onMouse!({ kind: 'press', button: 'left', x, y })
-    onMouse!({ kind: 'release', button: 'left', x, y })
+    onMouse({ kind: 'press', button: 'left', x, y })
+    onMouse({ kind: 'release', button: 'left', x, y })
     await tick()
   }
   const dblclick = async (x: number, y: number) => {
-    onMouse!({ kind: 'press', button: 'left', x, y })
-    onMouse!({ kind: 'press', button: 'left', x, y })
+    onMouse({ kind: 'press', button: 'left', x, y })
+    onMouse({ kind: 'press', button: 'left', x, y })
     await tick()
   }
   const wheel = async (x: number, y: number, dir: 'up' | 'down') => {
-    onMouse!({ kind: 'wheel', button: 'none', dir, x, y })
+    onMouse({ kind: 'wheel', button: 'none', dir, x, y })
     await tick()
   }
   // Where `text` first shows: its line, and the column of its first character.
@@ -481,5 +482,88 @@ describe('keys', () => {
     await press('o', '/m/x', ENTER)
     expect(player.locate).toHaveBeenCalledWith(host, '/m/x', '')
     expect(player.start).toHaveBeenCalledWith(host, session.config, '/m/x')
+  })
+})
+
+describe('mouse rows', () => {
+  const LONG: Partial<PlayerKeys> = {
+    ...PLAYING,
+    queue: {
+      kind: 'playlist',
+      items: [...Array(30).keys()].map(i => `Track ${i + 1}`),
+      paths: [...Array(30).keys()].map(i => `${ALBUM}/${String(i + 1).padStart(2, '0')}.mp3`),
+      root: ALBUM,
+      current: 0,
+    },
+    openFolders: [],
+  }
+  // The number of the first track the list shows.
+  const firstShown = (all: string[]) => Number(/(\d+)\. Track/.exec(all[lineOf(all, /Playlist/) + 1])?.[1])
+
+  test('a click selects a song; it does not play it', async () => {
+    const { click, where, press, host } = await show(100)
+    const at = where('Song two')
+    await click(at.x, at.y)
+    expect(player.pick).not.toHaveBeenCalled()
+    await press(ENTER)
+    expect(player.pick).toHaveBeenCalledWith(host, 1)
+  })
+
+  test('a double-click plays it', async () => {
+    const { dblclick, where, host } = await show(100)
+    const at = where('Song two')
+    await dblclick(at.x, at.y)
+    expect(player.pick).toHaveBeenCalledWith(host, 1)
+  })
+
+  test("a click on a folder's arrow shuts it; elsewhere on its row it only selects; a double-click shuts it", async () => {
+    const { click, dblclick, where, vars, press } = await show(100)
+    let at = where('Disc 1/')
+    await click(at.x + 3, at.y)
+    expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
+    // selected: Enter shuts it
+    await press(ENTER)
+    expect(await vars.read('openFolders')).toEqual([])
+    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
+    await tick()
+    at = where('▾')
+    await click(at.x, at.y)
+    expect(await vars.read('openFolders')).toEqual([])
+    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
+    await tick()
+    at = where('Disc 1/')
+    await dblclick(at.x, at.y)
+    expect(await vars.read('openFolders')).toEqual([])
+  })
+
+  test('the wheel scrolls the list, not the selection; a click then lands where it points; a key brings the view back', async () => {
+    const { wheel, click, where, press, lines, host } = await show(100, LONG)
+    expect(firstShown(lines())).toBe(1)
+    const list = where('Track 2')
+    await wheel(list.x, list.y, 'down')
+    expect(firstShown(lines())).toBe(4)
+    // the selection stayed on the first track
+    await press(ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, 0)
+    // the row now under the pointer
+    const under = Number(/(\d+)\. Track/.exec(lines()[list.y])![1])
+    await click(list.x, list.y)
+    expect(firstShown(lines())).toBe(4)
+    await press(ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, under - 1)
+    await press('j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j')
+    expect(lines().some(l => l.includes(`${under + 20}. Track ${under + 20}`))).toBe(true)
+  })
+
+  test('the wheel stops at the ends', async () => {
+    const { wheel, where, lines } = await show(100, LONG)
+    const list = where('Track 2')
+    for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'down')
+    expect(lines().some(l => l.includes('30. Track 30'))).toBe(true)
+    const last = firstShown(lines())
+    await wheel(list.x, list.y, 'down')
+    expect(firstShown(lines())).toBe(last)
+    for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'up')
+    expect(firstShown(lines())).toBe(1)
   })
 })

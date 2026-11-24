@@ -8,10 +8,13 @@ import { Hints } from './Hints'
 import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
 import type { Media } from '../media'
 import type { MouseSource } from '../mouse/sgr'
-import { MouseProvider } from '../mouse/Clickable'
+import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
-import { isCurrent, List } from './List'
+import { firstRow, isCurrent, isOnArrow, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
+
+// Rows the wheel moves the list by.
+const WHEEL_ROWS = 3
 
 // Lines besides the list and now playing: title, list heading, the text line,
 // the rule, the status line, two hint lines; and one left free, as Ink clears
@@ -26,11 +29,7 @@ type Props = { session: Session; subscribe: (fn: () => void) => () => void; medi
 // mouse: the clicks and wheel read out of stdin; none in most tests.
 export function App({ session, subscribe, media, graphics, mouse }: Props) {
   const view = usePlayer(session, subscribe)
-  return view ? (
-    <MouseProvider source={mouse}>
-      <Player session={session} view={view} media={media} graphics={graphics} />
-    </MouseProvider>
-  ) : null
+  return <MouseProvider source={mouse}>{view ? <Player session={session} view={view} media={media} graphics={graphics} /> : null}</MouseProvider>
 }
 
 function Player({ session, view, media, graphics }: { session: Session; view: View; media?: Media; graphics?: Graphics }) {
@@ -49,6 +48,9 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const [typedRef, setTyped] = useRefState('')
   // the row picked with the arrows; undefined follows the playing one
   const [cursorRef, setCursor] = useRefState<number | undefined>(undefined)
+  // the list's first row once the wheel or a click has placed it; undefined
+  // keeps the view centred on the selection, as the keys move it
+  const [topRef, setTop] = useRefState<number | undefined>(undefined)
   const mode = modeRef.current
   const [notice, setNotice] = useState('')
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
@@ -84,6 +86,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
     )
   const setFilter = (fn: (text: string) => string) => {
     setCursor(undefined)
+    setTop(undefined)
     void h.vars.change('filter', fn)
   }
 
@@ -94,6 +97,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
     switch (a.kind) {
       case 'up':
       case 'down':
+        setTop(undefined)
         return setCursor(Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
       case 'enter':
         if (row?.kind === 'folder') return setOpen(row.path)
@@ -176,7 +180,20 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         ? 'Chapters'
         : 'No playlist or chapters.'
   const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
-  const list = <List heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} />
+  const first = firstRow(selected, rows.length, listHeight, topRef.current)
+  // A click selects and holds the view where it is; a double-click does what
+  // Enter does; a click on a folder's arrow opens or shuts it at once.
+  const onRow = (index: number, hit: Hit) => {
+    const row = rows[index]
+    setTop(first)
+    setCursor(index)
+    if (row && isOnArrow(row, hit.x) && row.kind === 'folder') return setOpen(row.path)
+    if (hit.isDouble) handle({ kind: 'enter' })
+  }
+  const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const list = (
+    <List heading={heading} rows={rows} selected={selected} current={q.current} height={listHeight} width={listWidth} first={first} onRow={onRow} onWheel={onWheel} />
+  )
 
   return (
     <Box flexDirection="column" width={columns}>

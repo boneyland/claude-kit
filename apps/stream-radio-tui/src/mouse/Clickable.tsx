@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react'
+import React, { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import { Box, type BoxProps, type DOMElement } from 'ink'
 import type { MouseSource } from './sgr'
 
@@ -75,7 +75,8 @@ export function Clickable({ onClick, onWheel, children, ...box }: BoxProps & Han
   handlers.current = { onClick, onWheel }
   const id = useRef(0)
   if (!id.current) id.current = nextId++
-  useEffect(() => {
+  // At commit, with the rows: a click right after a redraw finds the box.
+  useLayoutEffect(() => {
     if (!entries) return
     entries.set(id.current, { node, handlers })
     return () => void entries.delete(id.current)
