@@ -60,20 +60,25 @@ export function useSize(): { columns: number; rows: number } {
   return size
 }
 
-// The playing file's length in seconds, asked of mpv once per title (the core
-// keeps only whether there is one); 0 when unknown or live.
-export function useDuration(h: Host, playing: string, hasPosition: boolean): number {
-  const [duration, setDuration] = useState(0)
+// The playing file's length in seconds, asked of mpv (the core keeps only
+// whether there is one); 0 when unknown or live. A playlist's next title
+// arrives while mpv is still opening the file and has no length yet, so it is
+// asked again at each position tick until mpv knows it. A live stream has no
+// position (elapsed -1), so it is never asked.
+export function useDuration(h: Host, playing: string, elapsed: number): number {
+  const [known, setKnown] = useState({ title: '', seconds: 0 })
+  const duration = known.title === playing ? known.seconds : 0
   useEffect(() => {
-    setDuration(0)
-    if (!playing || !hasPosition) return
+    if (!playing || elapsed < 0 || duration > 0) return
     let isLive = true
     mpv(h, ['get_property', 'duration'])
-      .then(reply => isLive && setDuration(typeof reply?.data === 'number' ? reply.data : 0))
+      .then(reply => {
+        if (isLive && typeof reply?.data === 'number' && reply.data > 0) setKnown({ title: playing, seconds: reply.data })
+      })
       .catch(() => undefined)
     return () => {
       isLive = false
     }
-  }, [h, playing, hasPosition])
+  }, [h, playing, elapsed, duration])
   return duration
 }

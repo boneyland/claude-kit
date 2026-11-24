@@ -26,7 +26,7 @@ function Player({ session, view }: { session: Session; view: View }) {
   const h = session.host
   const { exit } = useApp()
   const { columns, rows: lines } = useSize()
-  const duration = useDuration(h, view.playing, view.elapsed >= 0)
+  const duration = useDuration(h, view.playing, view.elapsed)
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
   const [typedRef, setTyped] = useRefState('')

@@ -131,6 +131,22 @@ describe('drawing', () => {
     expect(lines().join('\n')).not.toContain('━')
   })
 
+  test('a length mpv does not know yet at the title change is asked again as the position moves', async () => {
+    // A playlist's next file: the title changes while mpv is still opening it,
+    // so its duration is unavailable then; a second later it is known.
+    let isLoaded = false
+    vi.mocked(player.mpv).mockImplementation(async (_h, command) =>
+      command[1] === 'duration' ? (isLoaded ? { data: 245 } : undefined) : undefined,
+    )
+    const { lines, vars } = await show(100)
+    expect(lines().join('\n')).toContain('♪ live')
+    isLoaded = true
+    await vars.change('elapsed', () => 162)
+    await tick()
+    expect(lines().join('\n')).not.toContain('♪ live')
+    expect(lines().join('\n')).toContain('4:05')
+  })
+
   test("a start failure's reason shows on the status line, above the hints", async () => {
     const { lines } = await show(100, {}, 'mpv: not found')
     const all = lines()
