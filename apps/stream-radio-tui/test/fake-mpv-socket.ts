@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-// A stand-in for mpv's IPC socket: answers get_property pid with 4242 and other
-// commands with success, and pushes scripted events once a client observes.
+// A stand-in for mpv's IPC socket: answers get_property pid with 4242, a
+// property named in `props` with its value, and other commands with success, and pushes scripted events once a client observes.
 export type Fake = {
   path: string
   // writes these JSON objects, one a line, to every client
@@ -17,7 +17,7 @@ export type Fake = {
 }
 
 // `inDir`: put mpv.sock there (only the socket is removed on close); else a new temp folder.
-export async function fakeMpv(inDir?: string): Promise<Fake> {
+export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {}): Promise<Fake> {
   const dir = inDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sr-fake-'))
   const sock = path.join(dir, 'mpv.sock')
   const clients = new Set<net.Socket>()
@@ -36,9 +36,13 @@ export async function fakeMpv(inDir?: string): Promise<Fake> {
         received.push(msg)
         // an unrelated event first, to show the reply is matched by request_id
         c.write(JSON.stringify({ event: 'idle' }) + '\n')
-        const isPid = msg.command[0] === 'get_property' && msg.command[1] === 'pid'
+        const isGet = msg.command[0] === 'get_property'
+        const isPid = isGet && msg.command[1] === 'pid'
+        const isProp = isGet && typeof msg.command[1] === 'string' && msg.command[1] in props
         const reply = isPid
           ? { data: 4242, request_id: msg.request_id, error: 'success' }
+          : isProp
+            ? { data: props[msg.command[1] as string], request_id: msg.request_id, error: 'success' }
           : msg.command[0] === 'bad'
             ? { request_id: msg.request_id, error: 'invalid parameter' }
             : { data: null, request_id: msg.request_id, error: 'success' }
