@@ -4,6 +4,7 @@ import { filterRows, nextRepeat, playlistRows } from '../../../../plugins/stream
 import { locate, pick, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
+import { Help, helpTop } from './Help'
 import { Hints } from './Hints'
 import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
 import type { Media } from '../media'
@@ -51,6 +52,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   // the list's first row once the wheel or a click has placed it; undefined
   // keeps the view centred on the selection, as the keys move it
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
+  // the key list's first line shown
+  const [helpTopRef, setHelpTop] = useRefState(0)
   const mode = modeRef.current
   const [notice, setNotice] = useState('')
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
@@ -97,6 +100,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
     switch (a.kind) {
       case 'up':
       case 'down':
+        if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight))
         setTop(undefined)
         return setCursor(Math.max(0, Math.min(at + (a.kind === 'up' ? -1 : 1), rows.length - 1)))
       case 'enter':
@@ -135,6 +139,11 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
           await stopPlaying(h, session.config)
           return 'Stopped.'
         })
+      case 'help':
+        setHelpTop(0)
+        return setMode('help')
+      case 'closeHelp':
+        return setMode('list')
       case 'quit':
         session.close()
         return exit()
@@ -172,6 +181,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const sideWidth = isWide ? Math.max(28, Math.floor(columns * 0.35)) : columns
   const listWidth = isWide ? columns - sideWidth : columns
   const listHeight = Math.max(1, lines - FIXED_ROWS - (isWide ? 0 : NOW_PLAYING_ROWS + 1))
+  // The lines between the title and the text line: the list and the pane.
+  const bodyHeight = listHeight + 1 + (isWide ? 0 : NOW_PLAYING_ROWS + 1)
   const heading = filter
     ? `${rows.length} of ${q.items.length} ${q.kind === 'chapters' ? 'chapters' : 'songs'} match`
     : q.kind === 'playlist'
@@ -202,7 +213,9 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   return (
     <Box flexDirection="column" width={columns}>
       <Text bold>stream-radio</Text>
-      {isWide ? (
+      {mode === 'help' ? (
+        <Help top={helpTopRef.current} height={bodyHeight} width={columns} />
+      ) : isWide ? (
         <Box flexDirection="row" height={listHeight + 1}>
           {list}
           <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>

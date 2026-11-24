@@ -44,6 +44,7 @@ const listCases: Case[] = [
   ['x', 'x', key(), { kind: 'stop' }],
   ['q', 'q', key(), { kind: 'quit' }],
   ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'quit' }],
+  ['?', '?', key({ shift: true }), { kind: 'help' }],
   ['an unbound letter', 'z', key(), null],
   ['Esc', '', key({ escape: true }), null],
   ['Ctrl-N is not n', 'n', key({ ctrl: true }), null],
@@ -78,5 +79,25 @@ describe('keyAction in the list', () => {
 describe.each(['filter', 'open'] as Mode[])('keyAction in %s mode', mode => {
   test.each(textCases)('%s', (_name, input, k, expected) => {
     expect(keyAction(input, k, mode)).toEqual(expected)
+  })
+})
+
+// The key list: it closes, scrolls, or lets Ctrl-C quit; nothing else acts.
+const helpCases: Case[] = [
+  ['?', '?', key({ shift: true }), { kind: 'closeHelp' }],
+  ['Esc', '', key({ escape: true }), { kind: 'closeHelp' }],
+  ['q closes it, not the TUI', 'q', key(), { kind: 'closeHelp' }],
+  ['↑', '', key({ upArrow: true }), { kind: 'up' }],
+  ['k', 'k', key(), { kind: 'up' }],
+  ['↓', '', key({ downArrow: true }), { kind: 'down' }],
+  ['j', 'j', key(), { kind: 'down' }],
+  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'quit' }],
+  ['x does nothing here', 'x', key(), null],
+  ['space does nothing here', ' ', key(), null],
+]
+
+describe('keyAction in the key list', () => {
+  test.each(helpCases)('%s', (_name, input, k, expected) => {
+    expect(keyAction(input, k, 'help')).toEqual(expected)
   })
 })

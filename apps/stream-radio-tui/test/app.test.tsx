@@ -62,6 +62,7 @@ const PLAYING: Partial<PlayerKeys> = {
 const tick = () => new Promise(r => setTimeout(r, 30))
 const UP = '\x1b[A'
 const ENTER = '\r'
+const ESC = '\x1b'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
@@ -161,7 +162,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
-    expect(lineOf(all, /o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
+    expect(lineOf(all, /\? all keys.*o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => [...l].length <= 100)).toBe(true)
   })
 
@@ -687,5 +688,42 @@ describe('mouse seek', () => {
     await click(at.x, at.y)
     await click(at.x + 10, at.y)
     expect(player.seek).not.toHaveBeenCalled()
+  })
+})
+
+describe('the key list', () => {
+  test('? shows every key and what the mouse does in place of the list and pane; Esc, ? or q closes it', async () => {
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    for (const close of [ESC, '?', 'q']) {
+      await press('?')
+      const all = lines().join('\n')
+      expect(all).not.toContain('Playlist')
+      for (const text of ['Keys', 'stop the player', 'resume the last URL', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
+        expect(all).toContain(text)
+      }
+      await press(close)
+      expect(lines().join('\n')).toContain('Playlist')
+    }
+    // q closed the list; it did not quit
+    expect(player.stopPlaying).not.toHaveBeenCalled()
+  })
+
+  test('keys that act in the list do nothing while it shows', async () => {
+    const { press } = await show(100)
+    await press('?', 'x', ' ', 'n')
+    expect(player.stopPlaying).not.toHaveBeenCalled()
+    expect(player.togglePause).not.toHaveBeenCalled()
+    expect(player.step).not.toHaveBeenCalled()
+  })
+
+  test('on a short screen it scrolls with j and k', async () => {
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 16 })
+    await press('?')
+    expect(lines().join('\n')).not.toContain('Shift-drag')
+    await press(...Array(30).fill('j'))
+    expect(lines().join('\n')).toContain('Shift-drag')
+    expect(lines().join('\n')).not.toContain('Keys')
+    await press(...Array(30).fill('k'))
+    expect(lines().join('\n')).toContain('Keys')
   })
 })

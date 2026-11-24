@@ -29,6 +29,7 @@ Keys:
   o            open a URL or path
   l            resume the last URL from where it got to
   x            stop the player
+  ?            every key and what the mouse does
   q, Ctrl-C    quit (the music keeps playing)
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json

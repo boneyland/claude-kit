@@ -38,6 +38,7 @@ With no argument it attaches to the player that is already running, or shows the
 | `o` | type a URL or path to play |
 | `l` | resume the last URL from where it got to (after `x`, or on a fresh start); while it plays, does nothing |
 | `x` | stop the player |
+| `?` | every key and what the mouse does; `?`, `Esc` or `q` closes it |
 | `q`, `Ctrl-C` | quit the TUI; the music keeps playing |
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.

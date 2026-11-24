@@ -1,8 +1,9 @@
 import type { Key } from 'ink'
 import { VOLUME_STEP } from '../../../plugins/stream-radio/core/nowplaying'
 
-// list: keys are commands; filter and open: keys edit a line of text.
-export type Mode = 'list' | 'filter' | 'open'
+// list: keys are commands; filter and open: keys edit a line of text; help:
+// the key list shows, and keys scroll or close it.
+export type Mode = 'list' | 'filter' | 'open' | 'help'
 
 export type Action =
   | { kind: 'up' }
@@ -22,6 +23,8 @@ export type Action =
   | { kind: 'last' }
   | { kind: 'stop' }
   | { kind: 'quit' }
+  | { kind: 'help' }
+  | { kind: 'closeHelp' }
   // in a text mode
   | { kind: 'type'; text: string }
   | { kind: 'erase' }
@@ -44,11 +47,18 @@ const LETTERS: Record<string, Action> = {
   l: { kind: 'last' },
   x: { kind: 'stop' },
   q: { kind: 'quit' },
+  '?': { kind: 'help' },
 }
 
 // What a key press means in `mode`; null for a key that means nothing there.
 export function keyAction(input: string, key: Key, mode: Mode): Action | null {
   if (key.ctrl && input === 'c') return { kind: 'quit' }
+  if (mode === 'help') {
+    if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
+    if (key.upArrow || input === 'k') return { kind: 'up' }
+    if (key.downArrow || input === 'j') return { kind: 'down' }
+    return null
+  }
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
