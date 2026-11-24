@@ -5,6 +5,7 @@ import { placeholderRow, WAVE_IDS } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
 import { brailleWave, waveRgba, type BrailleCell } from '../gfx/wave'
 import { cutRows } from '../media/art'
+import { useHeld, useIsSettling } from './hooks'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import type { Wave } from '../media/peaks'
 
@@ -65,21 +66,24 @@ function runs(line: BrailleCell[], played: number): React.ReactNode[] {
 type PixelsProps = { wave: Wave; share: number; width: number; graphics: Graphics; times: React.ReactNode; onClick(hit: Hit): void }
 
 // Rows of pixels, sent again only when the playhead reaches a new column.
+// While the terminal is resized, drawn at the width it last settled on; blank
+// when that no longer fits.
 function Pixels({ wave, share, width, graphics, times, onClick }: PixelsProps) {
   const { cell } = graphics
-  const playedPx = Math.round(share * width * cell.width)
+  const drawn = useHeld(width, !useIsSettling())
+  const playedPx = Math.round(share * drawn * cell.width)
   const strips = useMemo(() => {
-    const [w, h] = [width * cell.width, WAVE_ROWS * cell.height]
+    const [w, h] = [drawn * cell.width, WAVE_ROWS * cell.height]
     return cutRows({ width: w, height: h, rgba: waveRgba(wave, w, h, playedPx) }, WAVE_ROWS)
-  }, [wave, width, cell, playedPx])
-  useEffect(() => graphics.show(WAVE_IDS.first, strips, width), [graphics, strips, width])
+  }, [wave, drawn, cell, playedPx])
+  useEffect(() => graphics.show(WAVE_IDS.first, strips, drawn), [graphics, strips, drawn])
   useEffect(() => () => graphics.drop(WAVE_IDS.first, 0), [graphics])
   return (
     <Box flexDirection="column" width={width}>
       {times}
       <Clickable flexDirection="column" onClick={onClick}>
         {strips.map((_, i) => (
-          <Text key={i}>{placeholderRow(WAVE_IDS.first + i, width)}</Text>
+          <Text key={i}>{drawn <= width ? placeholderRow(WAVE_IDS.first + i, drawn) : ' '}</Text>
         ))}
       </Clickable>
     </Box>

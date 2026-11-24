@@ -6,7 +6,7 @@ import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
 import { Hints } from './Hints'
-import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
+import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSettling, useSize, useTags, Settling, type View } from './hooks'
 import type { Media } from '../media'
 import type { MouseSource } from '../mouse/sgr'
 import { MouseProvider, type Hit } from '../mouse/Clickable'
@@ -43,6 +43,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const peaks = usePeaks(media, track.file)
   const tags = useTags(h, view.playing)
   const isWide = columns >= WIDE_COLUMNS
+  // the pictures wait for a resize to settle; the text does not
+  const isSettling = useSettling(`${columns}x${lines}`)
   const art = useArt(media, track, !!graphics && isWide)
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
@@ -211,29 +213,31 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   )
 
   return (
-    <Box flexDirection="column" width={columns}>
-      <Text bold>stream-radio</Text>
-      {mode === 'help' ? (
-        <Help top={helpTopRef.current} height={bodyHeight} width={columns} />
-      ) : isWide ? (
-        <Box flexDirection="row" height={listHeight + 1}>
-          {list}
-          <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-            <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+    <Settling.Provider value={isSettling}>
+      <Box flexDirection="column" width={columns}>
+        <Text bold>stream-radio</Text>
+        {mode === 'help' ? (
+          <Help top={helpTopRef.current} height={bodyHeight} width={columns} />
+        ) : isWide ? (
+          <Box flexDirection="row" height={listHeight + 1}>
+            {list}
+            <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
+              <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+            </Box>
           </Box>
-        </Box>
-      ) : (
-        <Box flexDirection="column">
-          <Box marginBottom={1}>
-            <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
+        ) : (
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
+            </Box>
+            <Box height={listHeight + 1}>{list}</Box>
           </Box>
-          <Box height={listHeight + 1}>{list}</Box>
-        </Box>
-      )}
-      <Text wrap="truncate-end">{textLine}</Text>
-      <Text dimColor>{'─'.repeat(columns)}</Text>
-      <Text wrap="truncate-end">{notice || ' '}</Text>
-      <Hints mode={mode} isWide={isWide} />
-    </Box>
+        )}
+        <Text wrap="truncate-end">{textLine}</Text>
+        <Text dimColor>{'─'.repeat(columns)}</Text>
+        <Text wrap="truncate-end">{notice || ' '}</Text>
+        <Hints mode={mode} isWide={isWide} />
+      </Box>
+    </Settling.Provider>
   )
 }

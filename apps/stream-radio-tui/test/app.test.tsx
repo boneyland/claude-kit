@@ -368,6 +368,31 @@ describe('pixels', () => {
     expect(lines().some(l => l.includes(sgr(10)))).toBe(false)
   })
 
+  test('a drag of resizes redraws the text at once and the pictures once, when it stops', async () => {
+    const screen = fakeScreen()
+    const { ui, lines } = await show(120, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(11)))
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(201)))
+    screen.clear()
+    const sends = (id: number) => screen.sent().split(`a=t,`).filter(part => part.includes(`,i=${id},`)).length
+    for (const columns of [118, 114, 110, 106, 102, 100]) {
+      Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
+      ui.stdout.emit('resize')
+      await new Promise(r => setTimeout(r, 20))
+      // the text follows at once: nothing wider than the screen
+      expect(lines().every(l => [...l.replace(/\x1b\[[0-9;]*m/g, '')].length <= columns)).toBe(true)
+    }
+    // nothing sent while the size kept changing
+    expect(sends(1)).toBe(0)
+    expect(sends(201)).toBe(0)
+    // then once, at the size it settled on: 33 columns, 9 rows of art
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(9)))
+    await vi.waitFor(() => expect(sends(201)).toBe(1))
+    expect(sends(1)).toBe(1)
+    expect(screen.sent()).toContain(deleted(11))
+    expect(lines().some(l => l.includes(sgr(9) + P.repeat(33)))).toBe(true)
+  })
+
   test('narrow: no pictures, the bar as before, and what was shown is deleted', async () => {
     const screen = fakeScreen()
     const { ui, lines } = await show(100, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })

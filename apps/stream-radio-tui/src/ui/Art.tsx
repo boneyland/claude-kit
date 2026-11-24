@@ -4,7 +4,7 @@ import { ART_IDS, placeholderRow } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
 import { noteRgba } from '../gfx/note'
 import { cellStrips, cutRows, fitArt, type Art as ArtPixels } from '../media/art'
-import type { ArtState } from './hooks'
+import { useHeld, useIsSettling, type ArtState } from './hooks'
 
 type Props = { art: ArtState; cols: number; rows: number; graphics: Graphics }
 
@@ -17,27 +17,33 @@ export function Art({ art, cols, rows, graphics }: Props) {
 }
 
 function Picture({ art, cols, rows, graphics }: { art: ArtPixels; cols: number; rows: number; graphics: Graphics }) {
-  const fit = fitArt(art, cols, rows, graphics.cell)
+  // while the terminal is resized, the box it was last drawn for
+  const box = useHeld({ cols, rows }, !useIsSettling())
+  const fit = fitArt(art, box.cols, box.rows, graphics.cell)
   const strips = useMemo(() => cellStrips(art, fit.cols, fit.rows, graphics.cell), [art, fit.cols, fit.rows, graphics])
-  return <Strips strips={strips} cols={fit.cols} width={cols} graphics={graphics} />
+  return <Strips strips={strips} cols={fit.cols} width={cols} rows={rows} graphics={graphics} />
 }
 
 // As large a square as fits, drawn to the box's exact pixels.
 function Placeholder({ cols, rows, graphics }: { cols: number; rows: number; graphics: Graphics }) {
   const { cell } = graphics
-  const h = Math.max(1, Math.min(rows, Math.round((cols * cell.width) / cell.height)))
-  const w = Math.max(1, Math.min(cols, Math.round((h * cell.height) / cell.width)))
+  const box = useHeld({ cols, rows }, !useIsSettling())
+  const h = Math.max(1, Math.min(box.rows, Math.round((box.cols * cell.width) / cell.height)))
+  const w = Math.max(1, Math.min(box.cols, Math.round((h * cell.height) / cell.width)))
   const strips = useMemo(() => {
     const [pw, ph] = [w * cell.width, h * cell.height]
     return cutRows({ width: pw, height: ph, rgba: noteRgba(pw, ph) }, h)
   }, [w, h, cell])
-  return <Strips strips={strips} cols={w} width={cols} graphics={graphics} />
+  return <Strips strips={strips} cols={w} width={cols} rows={rows} graphics={graphics} />
 }
 
-// Rows of pixels, centred in `width` columns, each `cols` wide.
-function Strips({ strips, cols, width, graphics }: { strips: ArtPixels[]; cols: number; width: number; graphics: Graphics }) {
+// Rows of pixels, centred in `width` columns, each `cols` wide. Drawn for a
+// bigger box than this one (the terminal shrinking, not yet settled), blank
+// rows in their place until the refit comes.
+function Strips({ strips, cols, width, rows, graphics }: { strips: ArtPixels[]; cols: number; width: number; rows: number; graphics: Graphics }) {
   useEffect(() => graphics.show(ART_IDS.first, strips, cols), [graphics, strips, cols])
   useEffect(() => () => graphics.drop(ART_IDS.first, 0), [graphics])
+  if (cols > width || strips.length > rows) return <Box height={Math.min(strips.length, rows)} />
   return (
     <Box flexDirection="column" width={width} alignItems="center">
       {strips.map((_, i) => (

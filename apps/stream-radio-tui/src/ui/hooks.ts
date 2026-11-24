@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type MutableRefObject } from 'react'
+import { createContext, useContext, useEffect, useReducer, useRef, useState, type MutableRefObject } from 'react'
 import { useStdout } from 'ink'
 import type { Host, PlayerKeys } from '../../../../plugins/stream-radio/core/host'
 import { mpv } from '../../../../plugins/stream-radio/core/player'
@@ -62,6 +62,32 @@ export function useSize(): { columns: number; rows: number } {
     return () => void stdout.off('resize', onResize)
   }, [stdout])
   return size
+}
+
+// How long the size must hold still before the pictures are drawn for it.
+export const SETTLE_MS = 150
+
+// True from a change of `key` until it has held still for `ms`: while the
+// terminal is being resized, as its edge is dragged.
+export function useSettling(key: string, ms = SETTLE_MS): boolean {
+  const [settled, setSettled] = useState(key)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(key), ms)
+    return () => clearTimeout(timer)
+  }, [key, ms])
+  return settled !== key
+}
+
+// Whether the size is still changing, for the pictures: they keep what they
+// drew until it settles, as each redraw refits and resends them.
+export const Settling = createContext(false)
+export const useIsSettling = () => useContext(Settling)
+
+// `value` as it was when `isLive` was last true.
+export function useHeld<T>(value: T, isLive: boolean): T {
+  const held = useRef(value)
+  if (isLive) held.current = value
+  return held.current
 }
 
 // A path under the home folder as `~/…`; any other path as it is.
