@@ -196,7 +196,7 @@ function hostFor($: EngineInterface, config: Config): Host {
 
 // To `seconds` into the playing file, or that far from where it is; '' when done.
 async function seekBy($: EngineInterface, config: Config, seconds: number, isRelative?: boolean): Promise<string> {
-  return seek(hostFor($, config), isRelative ? Math.max(0, await read($, elapsed)) + seconds : seconds)
+  return seek(hostFor($, config), seconds, isRelative)
 }
 
 export const register: Register = (on, options) => {

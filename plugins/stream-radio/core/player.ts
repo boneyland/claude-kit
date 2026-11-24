@@ -819,17 +819,23 @@ export async function step(h: Host, by: 1 | -1): Promise<string> {
   return (await mpv(h, command)) ? '' : 'The player is not ready yet.'
 }
 
-// Jumps the playing file to `seconds`, kept within it: a second short of the
-// end, since a seek to the very end would skip to the next song. The time and
-// the resume point follow at once, so a quit just after resumes from there.
-// '' when done, else what to show.
-export async function seek(h: Host, seconds: number): Promise<string> {
-  if ((await h.vars.read('elapsed')) < 0) return 'Nothing to seek in.'
+// Jumps the playing file to `seconds`, or with isRelative that far from where
+// it is (back when negative), kept within it: a second short of the end, since
+// a seek to the very end would skip to the next song. A relative jump counts
+// from mpv's own position, not `elapsed`, which is cut to whole seconds and
+// would make a 10-second jump anything from 9 to 11. The time and the resume
+// point follow at once, so a quit just after resumes from there. '' when done,
+// else what to show.
+export async function seek(h: Host, seconds: number, isRelative = false): Promise<string> {
+  const elapsed = await h.vars.read('elapsed')
+  if (elapsed < 0) return 'Nothing to seek in.'
+  const at = isRelative ? (await mpv(h, ['get_property', 'time-pos']))?.data : undefined
+  const target = isRelative ? (typeof at === 'number' ? at : elapsed) + seconds : seconds
   const length = (await mpv(h, ['get_property', 'duration']))?.data
-  const to = Math.max(0, typeof length === 'number' ? Math.min(seconds, length - 1) : seconds)
+  const to = Math.max(0, typeof length === 'number' ? Math.min(target, length - 1) : target)
   if (!(await mpv(h, ['seek', to, 'absolute']))) return 'The player is not ready yet.'
-  await h.vars.change('elapsed', () => to)
-  await recordPosition(h, to)
+  await h.vars.change('elapsed', () => Math.trunc(to))
+  await recordPosition(h, Math.trunc(to))
   return ''
 }
 
