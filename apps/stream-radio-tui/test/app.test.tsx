@@ -118,12 +118,17 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
   const where = (text: string) => {
     const y = lines().findIndex(l => l.includes(text))
     expect(y, `"${text}" on screen`).toBeGreaterThanOrEqual(0)
-    return { x: [...stripAnsi(lines()[y]).slice(0, stripAnsi(lines()[y]).indexOf(text))].length, y }
+    const line = stripAnsi(lines()[y])
+    return { x: columnOf(line, line.indexOf(text)), y }
   }
   return { ui, session, host, vars, lines, press, say, click, dblclick, wheel, where }
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
+// The screen column of `line[index]`: an emoji such as 📁 takes two; the
+// image placeholder, one.
+const columnOf = (line: string, index: number) =>
+  [...line.slice(0, index)].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) > 0xffff && ch !== '\u{10EEEE}' ? 2 : 1), 0)
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
 
@@ -147,7 +152,7 @@ describe('drawing', () => {
     const heading = lineOf(all, /Playlist/)
     expect(all[heading]).toMatch(/Playlist.*▶ Song three/)
     expect(all.join('\n')).toMatch(/2:41 ━+─* 4:05/)
-    expect(all.join('\n')).toContain('vol 60')
+    expect(all.join('\n')).toContain('vol 60%')
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
@@ -262,9 +267,11 @@ describe('pane', () => {
     await vi.waitFor(() => expect(lines().join('\n')).toContain('The Band · The Album'))
   })
 
-  test('volume, repeat and shuffle share one line', async () => {
+  test('the controls and the volume bar share a line; repeat and shuffle the next', async () => {
     const { lines } = await show(100)
-    expect(lines().some(l => /vol 60\s+repeat all\s+shuffle off/.test(l))).toBe(true)
+    const at = lineOf(lines(), /\|◂ +❚❚ +▸\| +\|.*vol 60%.*\|/)
+    expect(at).toBeGreaterThan(0)
+    expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
   })
 })
 
@@ -565,5 +572,53 @@ describe('mouse rows', () => {
     expect(firstShown(lines())).toBe(last)
     for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'up')
     expect(firstShown(lines())).toBe(1)
+  })
+})
+
+describe('mouse controls', () => {
+  // The volume bar's edges on the line that shows it.
+  const bar = (all: string[]) => {
+    const y = lineOf(all, /vol \d+%/)
+    const line = stripAnsi(all[y])
+    const text = line.search(/vol \d+%/)
+    return { y, left: columnOf(line, line.lastIndexOf('|', text)), right: columnOf(line, line.indexOf('|', text)) }
+  }
+
+  for (const columns of [100, 60]) {
+    test(`at ${columns} columns: previous, pause and next; repeat and shuffle`, async () => {
+      const { click, where, host } = await show(columns)
+      for (const [text, called] of [
+        ['|◂', () => expect(player.step).toHaveBeenLastCalledWith(host, -1)],
+        ['❚❚', () => expect(player.togglePause).toHaveBeenCalledTimes(1)],
+        ['▸|', () => expect(player.step).toHaveBeenLastCalledWith(host, 1)],
+        ['repeat all', () => expect(player.setRepeat).toHaveBeenCalledTimes(1)],
+        ['shuffle off', () => expect(player.toggleShuffle).toHaveBeenCalledTimes(1)],
+      ] as const) {
+        const at = where(text)
+        await click(at.x, at.y)
+        called()
+      }
+    })
+
+    test(`at ${columns} columns: a click on the volume bar sets the volume there`, async () => {
+      const { click, lines } = await show(columns)
+      const b = bar(lines())
+      await click(b.left + 1, b.y)
+      expect(player.setVolume).toHaveBeenLastCalledWith(expect.anything(), DEFAULT_CONFIG.volume, 0)
+      await click(b.right - 1, b.y)
+      expect(player.setVolume).toHaveBeenLastCalledWith(expect.anything(), DEFAULT_CONFIG.volume, 100)
+    })
+  }
+
+  test('the wheel over the volume bar does nothing', async () => {
+    const { wheel, lines } = await show(100)
+    const b = bar(lines())
+    await wheel(b.left + 3, b.y, 'up')
+    expect(player.setVolume).not.toHaveBeenCalled()
+  })
+
+  test('paused, the middle control shows ▸', async () => {
+    const { lines } = await show(100, { ...PLAYING, isPaused: true })
+    expect(lines().some(l => /\|◂ +▸ +▸\|/.test(l))).toBe(true)
   })
 })

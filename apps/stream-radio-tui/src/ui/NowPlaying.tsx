@@ -8,6 +8,8 @@ import { Art } from './Art'
 import type { ArtState } from './hooks'
 import type { Graphics } from '../gfx/screen'
 import type { Wave } from '../media/peaks'
+import type { Action } from '../keys'
+import { Controls, Toggle } from './Controls'
 
 // The lines it takes, for the layout to plan around.
 export const NOW_PLAYING_ROWS = 5
@@ -26,20 +28,23 @@ export function progress(elapsed: number, duration: number, width: number): stri
 // With `pixels`, the art at the top and the waveform in pixels.
 export type Full = { height: number; tags: { artist: string; album: string }; peaks?: Wave; pixels?: { graphics: Graphics; art: ArtState } }
 
-// Title, second line, tags, settings: what the art leaves room for.
-const DETAIL_ROWS = 4
+// Title, second line, tags, controls, settings: what the art leaves room for.
+const DETAIL_ROWS = 5
+// The narrow layout's volume bar.
+const NARROW_BAR = 16
 // Less room than this and the art is left out.
 const MIN_ART_ROWS = 4
 
-type Props = { view: View; duration: number; width: number; full?: Full }
+// onAction: a control clicked, as its key; onVolume: the volume bar clicked.
+type Props = { view: View; duration: number; width: number; full?: Full; onAction?(a: Action): void; onVolume?(level: number): void }
 
 // What plays, how far it is, and the volume, repeat and shuffle. Narrow, in
 // five lines; with `full`, down the whole column.
-export function NowPlaying({ view, duration, width, full }: Props) {
+export function NowPlaying({ view, duration, width, full, onAction, onVolume }: Props) {
   const { playing, isPaused, chapter, elapsed, lastUrl, resumeAt } = view
   const second = playing ? chapter : lastUrl ? `l plays ${resumable(resumeAt, lastUrl) || lastUrl}` : ''
   const time = !playing ? '' : elapsed < 0 || duration <= 0 ? '♪ live' : progress(elapsed, duration, width)
-  if (full) return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} />
+  if (full) return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} onAction={onAction} onVolume={onVolume} />
   return (
     <Box flexDirection="column" width={width}>
       <Text bold wrap="truncate-end">
@@ -49,17 +54,23 @@ export function NowPlaying({ view, duration, width, full }: Props) {
         {second || ' '}
       </Text>
       <Text>{time || ' '}</Text>
-      <Text>{`vol ${view.volume}   repeat ${view.repeat}`}</Text>
-      <Text>{`shuffle ${view.isShuffled ? 'on' : 'off'}`}</Text>
+      <Box>
+        <Controls isPaused={isPaused} volume={view.volume} width={NARROW_BAR + 14} isNarrow onAction={onAction} onVolume={onVolume} />
+        <Text>{'  '}</Text>
+        <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
+      </Box>
+      <Box>
+        <Toggle text={`shuffle ${view.isShuffled ? 'on' : 'off'}`} action={{ kind: 'shuffle' }} onAction={onAction} />
+      </Box>
     </Box>
   )
 }
 
-type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: string }
+type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: string } & Pick<Props, 'onAction' | 'onVolume'>
 
 // Title, second line, tags and settings at the top; the waveform, or the bar,
 // at the foot.
-function Column({ view, duration, width, full, second, time }: ColumnProps) {
+function Column({ view, duration, width, full, second, time, onAction, onVolume }: ColumnProps) {
   const { playing, isPaused, elapsed } = view
   const tags = [full.tags.artist, full.tags.album].filter(Boolean).join(' · ')
   const hasWave = !!full.peaks && full.peaks.peak.length > 0 && duration > 0 && elapsed >= 0
@@ -75,7 +86,12 @@ function Column({ view, duration, width, full, second, time }: ColumnProps) {
         {second || ' '}
       </Text>
       {tags ? <Text wrap="truncate-end">{tags}</Text> : null}
-      <Text wrap="truncate-end">{`vol ${view.volume}   repeat ${view.repeat}   shuffle ${view.isShuffled ? 'on' : 'off'}`}</Text>
+      <Controls isPaused={isPaused} volume={view.volume} width={width} onAction={onAction} onVolume={onVolume} />
+      <Box>
+        <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
+        <Text>{'   '}</Text>
+        <Toggle text={`shuffle ${view.isShuffled ? 'on' : 'off'}`} action={{ kind: 'shuffle' }} onAction={onAction} />
+      </Box>
       <Box flexGrow={1} />
       {hasWave ? (
         <Box height={WAVEFORM_ROWS}>

@@ -180,6 +180,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         ? 'Chapters'
         : 'No playlist or chapters.'
   const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
+  const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
   const first = firstRow(selected, rows.length, listHeight, topRef.current)
   // A click selects and holds the view where it is; a double-click does what
   // Enter does; a click on a folder's arrow opens or shuts it at once.
@@ -202,13 +203,13 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         <Box flexDirection="row" height={listHeight + 1}>
           {list}
           <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-            <NowPlaying view={view} duration={duration} width={sideWidth - 2} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+            <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
           </Box>
         </Box>
       ) : (
         <Box flexDirection="column">
           <Box marginBottom={1}>
-            <NowPlaying view={view} duration={duration} width={columns} />
+            <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} />
           </Box>
           <Box height={listHeight + 1}>{list}</Box>
         </Box>
