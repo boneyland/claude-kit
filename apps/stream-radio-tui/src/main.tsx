@@ -4,6 +4,7 @@ import { openSession } from './session'
 import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe'
 import { App } from './ui/App'
 import { nodeMedia } from './media'
+import { kittyGraphics, leaveScreen, type Graphics } from './gfx/screen'
 
 // Set by build.mjs; absent under vitest or tsx.
 declare const __VERSION__: string | undefined
@@ -44,7 +45,8 @@ async function pictures(setting: 'auto' | 'on' | 'off'): Promise<{ isOn: boolean
 }
 
 const ENTER_ALT = '\x1b[?1049h'
-const LEAVE_ALT = '\x1b[?1049l'
+// The pictures on screen, for the last-resort exit below main.
+let shown: Graphics | undefined
 
 async function main(argv: string[]) {
   if (argv.includes('--version')) return console.log(`stream-radio-tui ${VERSION} (${COMMIT})`)
@@ -57,14 +59,18 @@ async function main(argv: string[]) {
   }
   const session = await openSession(argv, { onChange: () => listeners.forEach(fn => fn()) })
   const display = await pictures(session.config.graphics)
+  const write = (s: string) => void process.stdout.write(s)
+  const graphics = display.isOn ? kittyGraphics(write, display.cell) : undefined
+  shown = graphics
 
+  // Every way out deletes the pictures, then leaves the alternate screen.
   let isOnAlt = true
   const leave = () => {
-    if (isOnAlt) process.stdout.write(LEAVE_ALT)
+    if (isOnAlt) leaveScreen(graphics, write)
     isOnAlt = false
   }
   process.stdout.write(ENTER_ALT)
-  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} />, { exitOnCtrlC: false })
+  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} graphics={graphics} />, { exitOnCtrlC: false })
   // Lets go of the player (it plays on), puts the terminal back, and goes.
   const bail = (code: number, error?: unknown) => {
     session.close()
@@ -79,6 +85,7 @@ async function main(argv: string[]) {
   }
   process.on('SIGINT', () => bail(130))
   process.on('SIGTERM', () => bail(143))
+  process.on('SIGHUP', () => bail(129))
   process.on('uncaughtException', error => bail(1, error))
   process.on('unhandledRejection', error => bail(1, error))
 
@@ -87,7 +94,7 @@ async function main(argv: string[]) {
 }
 
 main(process.argv.slice(2)).catch(error => {
-  process.stdout.write(LEAVE_ALT)
+  leaveScreen(shown, s => void process.stdout.write(s))
   console.error(error)
   process.exit(1)
 })

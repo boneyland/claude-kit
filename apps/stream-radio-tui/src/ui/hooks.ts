@@ -4,6 +4,7 @@ import type { Host, PlayerKeys } from '../../../../plugins/stream-radio/core/hos
 import { mpv } from '../../../../plugins/stream-radio/core/player'
 import { metaValue } from '../../../../plugins/stream-radio/core/nowplaying'
 import type { Media } from '../media'
+import type { Art } from '../media/art'
 import type { Session } from '../session'
 
 const DRAWN = ['playing', 'isPaused', 'elapsed', 'chapter', 'lastUrl', 'queue', 'openFolders', 'filter', 'resumeAt', 'volume', 'repeat', 'isShuffled'] as const
@@ -151,4 +152,32 @@ export function usePeaks(media: Media | undefined, file: string | undefined): Ui
     return () => ac.abort()
   }, [media, file])
   return file && known.file === file ? known.peaks : undefined
+}
+
+// The playing thing's art: 'loading' until known, then 'shown' with the
+// picture or 'missing' (a placeholder shows). 'none' when off or nothing
+// plays. A late answer for something no longer playing is dropped.
+export type ArtState = { state: 'none' | 'loading' | 'shown' | 'missing'; art?: Art }
+
+export function useArt(media: Media | undefined, track: { file?: string; url?: string }, isOn: boolean): ArtState {
+  const key = track.file ?? track.url ?? ''
+  const [known, setKnown] = useState<{ key: string } & ArtState>({ key: '', state: 'none' })
+  useEffect(() => {
+    if (!media || !isOn || !key) return
+    const ac = new AbortController()
+    media
+      .sources(track)
+      .then(sources => (sources.length && !ac.signal.aborted ? media.art(sources, ac.signal) : undefined))
+      .then(art => {
+        if (!ac.signal.aborted) setKnown(art ? { key, state: 'shown', art } : { key, state: 'missing' })
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setKnown({ key, state: 'missing' })
+      })
+    return () => ac.abort()
+    // track is read through key
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [media, isOn, key])
+  if (!media || !isOn || !key) return { state: 'none' }
+  return known.key === key ? { state: known.state, art: known.art } : { state: 'loading' }
 }

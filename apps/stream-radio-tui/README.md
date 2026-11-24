@@ -42,12 +42,24 @@ With no argument it attaches to the player that is already running, or shows the
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 
+## Pictures
+
+In a window 80 or more columns wide, the right-hand column shows what plays from top to bottom:
+
+- **Album art**, in terminals that can draw pictures (see below). It is the art inside the song's file, else a `cover`, `folder`, `front` or `album` image (`.jpg`, `.jpeg`, `.png` or `.webp`) in its folder; for a YouTube video, its thumbnail. With none, a ♪ placeholder shows.
+- **The title**, the artist and album when the file has them, and the volume, repeat and shuffle.
+- **The song's waveform** as the progress bar, for local files: in pixels where pictures work, in braille dots elsewhere. YouTube videos keep the plain bar; live streams show `♪ live`.
+
+Pictures need a terminal that speaks the Kitty graphics protocol with its placeholder cells, such as kitty or Ghostty. The TUI asks the terminal when it starts. It keeps to text inside tmux or screen, and in WezTerm and Konsole, which draw Kitty pictures but not the placeholder cells yet. The `graphics` setting below overrides the guess.
+
+Waveforms and art are decoded by mpv and kept in `${XDG_CACHE_HOME:-~/.cache}/stream-radio/`, so a song played again shows them at once.
+
 ## Config
 
 Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 
 ```json
-{ "volume": 60, "player": "mpv", "androidClient": false, "defaultUrl": "" }
+{ "volume": 60, "player": "mpv", "androidClient": false, "defaultUrl": "", "graphics": "auto" }
 ```
 
 | Field | Default | |
@@ -56,6 +68,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | `player` | `mpv` | the mpv executable |
 | `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md)) |
 | `defaultUrl` | empty | the URL shown at start when nothing else is known |
+| `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |
 
 A missing file, or a field of the wrong type, gives that field's default. The mod has its own settings with the same names; they are separate.
 

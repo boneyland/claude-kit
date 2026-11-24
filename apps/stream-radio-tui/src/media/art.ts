@@ -51,6 +51,26 @@ export function fitArt(img: { width: number; height: number }, maxCols: number, 
   return { cols: Math.max(1, Math.min(maxCols, Math.floor((maxRows * cell.height * aspect) / cell.width))), rows: Math.max(1, maxRows) }
 }
 
+// The picture trimmed to the exact shape of a cols × rows box of cells,
+// evenly from both ends. fitArt rounds the box to whole cells, so this is
+// under a cell's worth; without it kitty fits each strip inside its row and
+// leaves hairline seams between them.
+export function cropToCells(art: Art, cols: number, rows: number, cell: Cell): Art {
+  const box = (cols * cell.width) / (rows * cell.height)
+  let { width, height } = art
+  if (art.width / art.height > box) width = Math.max(1, Math.round(art.height * box))
+  else height = Math.max(1, Math.round(art.width / box))
+  if (width === art.width && height === art.height) return art
+  const x0 = Math.floor((art.width - width) / 2)
+  const y0 = Math.floor((art.height - height) / 2)
+  const rgba = new Uint8Array(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    const from = ((y0 + y) * art.width + x0) * 4
+    rgba.set(art.rgba.subarray(from, from + width * 4), y * width * 4)
+  }
+  return { width, height, rgba }
+}
+
 // The picture as `rows` strips, top to bottom, one per row of cells.
 export function cutRows(art: Art, rows: number): Art[] {
   const line = art.width * 4

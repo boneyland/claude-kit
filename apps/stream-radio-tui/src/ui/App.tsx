@@ -5,8 +5,9 @@ import { locate, pick, resume, setRepeat, setVolume, start, step, stopPlaying, t
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Hints } from './Hints'
-import { tilde, trackOf, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
+import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
 import type { Media } from '../media'
+import type { Graphics } from '../gfx/screen'
 import { isCurrent, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
@@ -16,15 +17,16 @@ import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 const FIXED_ROWS = 8
 const WIDE_COLUMNS = 80
 
-// media: the files and mpv the pane draws pictures from; none in most tests.
-type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media }
+// media: the files and mpv the pane draws pictures from; graphics: where the
+// pictures go, when the terminal can show them. Neither in most tests.
+type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics }
 
-export function App({ session, subscribe, media }: Props) {
+export function App({ session, subscribe, media, graphics }: Props) {
   const view = usePlayer(session, subscribe)
-  return view ? <Player session={session} view={view} media={media} /> : null
+  return view ? <Player session={session} view={view} media={media} graphics={graphics} /> : null
 }
 
-function Player({ session, view, media }: { session: Session; view: View; media?: Media }) {
+function Player({ session, view, media, graphics }: { session: Session; view: View; media?: Media; graphics?: Graphics }) {
   const h = session.host
   const { exit } = useApp()
   const { columns, rows: lines } = useSize()
@@ -33,6 +35,8 @@ function Player({ session, view, media }: { session: Session; view: View; media?
   const track = trackOf(view)
   const peaks = usePeaks(media, track.file)
   const tags = useTags(h, view.playing)
+  const isWide = columns >= WIDE_COLUMNS
+  const art = useArt(media, track, !!graphics && isWide)
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
   const [typedRef, setTyped] = useRefState('')
@@ -152,7 +156,6 @@ function Player({ session, view, media }: { session: Session; view: View; media?
     if (a) handle(a)
   })
 
-  const isWide = columns >= WIDE_COLUMNS
   const sideWidth = isWide ? Math.max(28, Math.floor(columns * 0.35)) : columns
   const listWidth = isWide ? columns - sideWidth : columns
   const listHeight = Math.max(1, lines - FIXED_ROWS - (isWide ? 0 : NOW_PLAYING_ROWS + 1))
@@ -173,7 +176,7 @@ function Player({ session, view, media }: { session: Session; view: View; media?
         <Box flexDirection="row" height={listHeight + 1}>
           {list}
           <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-            <NowPlaying view={view} duration={duration} width={sideWidth - 2} full={{ height: listHeight + 1, tags, peaks }} />
+            <NowPlaying view={view} duration={duration} width={sideWidth - 2} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
           </Box>
         </Box>
       ) : (

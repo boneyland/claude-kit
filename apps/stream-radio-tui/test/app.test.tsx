@@ -9,6 +9,7 @@ import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
 import { App } from '../src/ui/App'
 import type { Media } from '../src/media'
+import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
 
 // What the mocked mpv answers, unless a test says otherwise (and afterEach
@@ -60,7 +61,9 @@ const ENTER = '\r'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', media?: Media) {
+type Extra = { media?: Media; graphics?: Graphics; rows?: number }
+async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', extra: Extra = {}) {
+  const { media, graphics, rows } = extra
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
@@ -77,9 +80,10 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     listeners.add(fn)
     return () => void listeners.delete(fn)
   }
-  const ui = render(<App session={session} subscribe={subscribe} media={media} />)
-  if (columns !== 100) {
+  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} />)
+  if (columns !== 100 || rows) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
+    if (rows) Object.defineProperty(ui.stdout, 'rows', { value: rows, configurable: true })
     ui.stdout.emit('resize')
   }
   await tick()
@@ -192,7 +196,7 @@ const SONG3 = `${ALBUM}/Disc 1/03.mp3`
 describe('pane', () => {
   test('a local song shows its waveform at the foot of the pane, with the times above it', async () => {
     const { media, pending } = fakeMedia()
-    const { lines } = await show(100, PLAYING, '', '', media)
+    const { lines } = await show(100, PLAYING, '', '', { media })
     await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
     pending.get(SONG3)!.resolve(new Uint8Array(2048).fill(128))
     await vi.waitFor(() => expect(lines().filter(l => BRAILLE.test(l))).toHaveLength(2))
@@ -206,14 +210,14 @@ describe('pane', () => {
 
   test('until the waveform is ready the bar shows', async () => {
     const { media } = fakeMedia()
-    const { lines } = await show(100, PLAYING, '', '', media)
+    const { lines } = await show(100, PLAYING, '', '', { media })
     await vi.waitFor(() => expect(lines().join('\n')).toMatch(/2:41 ━+─* 4:05/))
     expect(lines().some(l => BRAILLE.test(l))).toBe(false)
   })
 
   test("a song changed before its waveform came back never shows the old one, and the old decode is stopped", async () => {
     const { media, pending } = fakeMedia()
-    const { lines, vars } = await show(100, PLAYING, '', '', media)
+    const { lines, vars } = await show(100, PLAYING, '', '', { media })
     await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
     await vars.change('queue', q => ({ ...q, current: 1 }))
     await vars.change('playing', () => 'Song two')
@@ -232,6 +236,80 @@ describe('pane', () => {
   test('volume, repeat and shuffle share one line', async () => {
     const { lines } = await show(100)
     expect(lines().some(l => /vol 60\s+repeat all\s+shuffle off/.test(l))).toBe(true)
+  })
+})
+
+// The escapes a fake terminal was sent, and a Graphics that sends them there.
+function fakeScreen() {
+  const out: string[] = []
+  const graphics = kittyGraphics(s => void out.push(s), { width: 8, height: 16 })
+  return { graphics, sent: () => out.join(''), clear: () => void (out.length = 0) }
+}
+const P = '\u{10EEEE}'
+const sgr = (id: number) => `\x1b[38;2;${(id >> 16) & 255};${(id >> 8) & 255};${id & 255}m`
+const placed = (id: number) => `a=p,U=1,q=2,i=${id},`
+const deleted = (id: number) => `a=d,d=I,q=2,i=${id}\x1b`
+// Media with an 800×450 picture and a waveform, both at once.
+const pictureMedia = (art = true): Media => ({
+  isLocalFile: async () => true,
+  peaks: async () => new Uint8Array(2048).fill(128),
+  sources: async () => [{ kind: 'file', path: SONG3 }],
+  art: async () => (art ? { width: 800, height: 450, rgba: new Uint8Array(800 * 450 * 4) } : undefined),
+})
+
+describe('pixels', () => {
+  // 100 columns: the pane is 33 wide; 40 rows: the pane is 33 tall, 26 of
+  // them free for art. 800×450 at 33 columns of 8×16 cells is 9 rows.
+  test('the art sits at the top of the pane, the title under it, the waveform at the foot', async () => {
+    const screen = fakeScreen()
+    const { lines } = await show(100, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(lines().filter(l => l.includes(sgr(1)))).toHaveLength(1))
+    const all = lines()
+    const artRows = [...Array(9).keys()].map(i => all.findIndex(l => l.includes(sgr(1 + i) + P.repeat(33))))
+    expect(artRows.every(r => r > 0)).toBe(true)
+    expect(all.findIndex(l => l.includes(sgr(10)))).toBe(-1)
+    const title = all.findIndex(l => l.includes('▶ Song three'))
+    expect(title).toBe(artRows[8] + 1)
+    // sent from an effect, just after the rows are drawn
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(9)))
+    expect(screen.sent()).toContain(placed(1))
+    await vi.waitFor(() => expect(lines().some(l => l.includes(sgr(201)))).toBe(true))
+    const wave = lines().findIndex(l => l.includes(sgr(201)))
+    expect(lines()[wave + 1]).toContain(sgr(202))
+    expect(lines()[wave - 1]).toMatch(/2:41\s+4:05/)
+    expect(screen.sent()).toContain(placed(201))
+  })
+
+  test('no art: a ♪ placeholder, and no picture sent', async () => {
+    const screen = fakeScreen()
+    const { lines } = await show(100, PLAYING, '', '', { media: pictureMedia(false), graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('♪'))
+    expect(screen.sent()).not.toContain(placed(1))
+  })
+
+  test('narrowing the pane refits the art and deletes the rows it no longer uses', async () => {
+    const screen = fakeScreen()
+    const { ui, lines } = await show(120, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })
+    // 120 columns: the pane is 40 wide, 11 rows of art
+    await vi.waitFor(() => expect(lines().some(l => l.includes(sgr(11)))).toBe(true))
+    screen.clear()
+    Object.defineProperty(ui.stdout, 'columns', { value: 100, configurable: true })
+    ui.stdout.emit('resize')
+    await vi.waitFor(() => expect(screen.sent()).toContain(deleted(11)))
+    expect(screen.sent()).toContain(deleted(10))
+    expect(screen.sent()).toContain(placed(9))
+    expect(lines().some(l => l.includes(sgr(10)))).toBe(false)
+  })
+
+  test('narrow: no pictures, the bar as before, and what was shown is deleted', async () => {
+    const screen = fakeScreen()
+    const { ui, lines } = await show(100, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(1)))
+    Object.defineProperty(ui.stdout, 'columns', { value: 60, configurable: true })
+    ui.stdout.emit('resize')
+    await vi.waitFor(() => expect(screen.sent()).toContain(deleted(1)))
+    expect(lines().join('\n')).not.toContain(P)
+    expect(lines().join('\n')).toMatch(/2:41 ━+─* 4:05/)
   })
 })
 

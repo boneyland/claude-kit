@@ -4,6 +4,9 @@ import { formatTime } from '../../../../plugins/stream-radio/core/nowplaying'
 import { resumable } from '../../../../plugins/stream-radio/core/player'
 import type { View } from './hooks'
 import { Waveform, WAVEFORM_ROWS } from './Waveform'
+import { Art } from './Art'
+import type { ArtState } from './hooks'
+import type { Graphics } from '../gfx/screen'
 
 // The lines it takes, for the layout to plan around.
 export const NOW_PLAYING_ROWS = 5
@@ -19,7 +22,13 @@ export function progress(elapsed: number, duration: number, width: number): stri
 
 // The wide layout's pane, a column of its own: its height, the song's tags,
 // and its waveform when there is one.
-export type Full = { height: number; tags: { artist: string; album: string }; peaks?: Uint8Array }
+// With `pixels`, the art at the top and the waveform in pixels.
+export type Full = { height: number; tags: { artist: string; album: string }; peaks?: Uint8Array; pixels?: { graphics: Graphics; art: ArtState } }
+
+// Title, second line, tags, settings: what the art leaves room for.
+const DETAIL_ROWS = 4
+// Less room than this and the art is left out.
+const MIN_ART_ROWS = 4
 
 type Props = { view: View; duration: number; width: number; full?: Full }
 
@@ -53,8 +62,11 @@ function Column({ view, duration, width, full, second, time }: ColumnProps) {
   const { playing, isPaused, elapsed } = view
   const tags = [full.tags.artist, full.tags.album].filter(Boolean).join(' · ')
   const hasWave = !!full.peaks && full.peaks.length > 0 && duration > 0 && elapsed >= 0
+  const pixels = full.pixels
+  const artRows = full.height - DETAIL_ROWS - WAVEFORM_ROWS
   return (
     <Box flexDirection="column" width={width} height={full.height}>
+      {pixels && artRows >= MIN_ART_ROWS ? <Art art={pixels.art} cols={width} rows={artRows} graphics={pixels.graphics} /> : null}
       <Text bold wrap="truncate-end">
         {playing ? `${isPaused ? '⏸' : '▶'} ${playing}` : 'Nothing playing.'}
       </Text>
@@ -66,7 +78,7 @@ function Column({ view, duration, width, full, second, time }: ColumnProps) {
       <Box flexGrow={1} />
       {hasWave ? (
         <Box height={WAVEFORM_ROWS}>
-          <Waveform peaks={full.peaks!} elapsed={elapsed} duration={duration} width={width} />
+          <Waveform peaks={full.peaks!} elapsed={elapsed} duration={duration} width={width} graphics={pixels?.graphics} />
         </Box>
       ) : (
         <Text>{time || ' '}</Text>

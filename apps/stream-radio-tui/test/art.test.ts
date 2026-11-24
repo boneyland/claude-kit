@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { artSources, cutRows, fitArt, loadArt, youtubeId } from '../src/media/art'
+import { artSources, cropToCells, cutRows, fitArt, loadArt, youtubeId } from '../src/media/art'
 import { fakeSpawn } from './fake-spawn'
 
 describe('youtubeId', () => {
@@ -55,6 +55,31 @@ describe('cutRows', () => {
     expect(strips.map(s => s.height)).toEqual([2, 3])
     expect([...strips[0].rgba]).toEqual([...rgba.subarray(0, 16)])
     expect([...strips[1].rgba]).toEqual([...rgba.subarray(16)])
+  })
+})
+
+describe('cropToCells', () => {
+  // pixel (x, y) of a w-wide picture holds x in red and y in green
+  const grid = (w: number, h: number) => ({
+    width: w,
+    height: h,
+    rgba: new Uint8Array(w * h * 4).map((_, i) => (i % 4 === 0 ? (i / 4) % w : i % 4 === 1 ? Math.floor(i / 4 / w) : 255)),
+  })
+  const cell = { width: 8, height: 16 }
+  test('a picture a little too tall loses rows evenly from top and bottom', () => {
+    // 10 cols × 2 rows of 8×16 cells is 80×32 px: 5:2
+    const out = cropToCells(grid(100, 44), 10, 2, cell)
+    expect([out.width, out.height]).toEqual([100, 40])
+    expect(out.rgba[1]).toBe(2) // first row kept is y = 2
+  })
+  test('a picture a little too wide loses columns evenly from both sides', () => {
+    const out = cropToCells(grid(110, 40), 10, 2, cell)
+    expect([out.width, out.height]).toEqual([100, 40])
+    expect(out.rgba[0]).toBe(5) // first column kept is x = 5
+  })
+  test('an exact fit is left alone', () => {
+    const art = grid(80, 32)
+    expect(cropToCells(art, 10, 2, cell)).toBe(art)
   })
 })
 
