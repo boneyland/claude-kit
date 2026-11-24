@@ -303,7 +303,7 @@ describe('pane', () => {
 
   test('the controls and the volume bar share a line; repeat and shuffle the next', async () => {
     const { lines } = await show(100)
-    const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
+    const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.stop} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
     expect(at).toBeGreaterThan(0)
     expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
   })
@@ -1186,11 +1186,12 @@ describe('mouse controls', () => {
   }
 
   for (const columns of [100, 60, 40]) {
-    test(`at ${columns} columns: previous, pause and next; repeat and shuffle`, async () => {
+    test(`at ${columns} columns: previous, pause, stop and next; repeat and shuffle`, async () => {
       const { click, where, host } = await show(columns)
       for (const [text, called] of [
         [ICONS.prev, () => expect(player.step).toHaveBeenLastCalledWith(host, -1)],
         [ICONS.pause, () => expect(player.togglePause).toHaveBeenCalledTimes(1)],
+        [ICONS.stop, () => expect(player.stopPlaying).toHaveBeenCalledTimes(1)],
         [ICONS.next, () => expect(player.step).toHaveBeenLastCalledWith(host, 1)],
         ['repeat all', () => expect(player.setRepeat).toHaveBeenCalledTimes(1)],
         ['shuffle off', () => expect(player.toggleShuffle).toHaveBeenCalledTimes(1)],
@@ -1214,7 +1215,7 @@ describe('mouse controls', () => {
   test('narrow: the controls and the volume bar keep to one line; repeat and shuffle the next', async () => {
     for (const columns of [60, 40]) {
       const { lines } = await show(columns)
-      const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
+      const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.stop} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
       expect(at, `${columns} columns`).toBeGreaterThan(0)
       expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
       cleanup()
@@ -1230,7 +1231,7 @@ describe('mouse controls', () => {
 
   test('paused, the middle control shows play', async () => {
     const { lines } = await show(100, { ...PLAYING, isPaused: true })
-    expect(lines().some(l => l.includes(`${ICONS.prev}  ${ICONS.play}  ${ICONS.next}`))).toBe(true)
+    expect(lines().some(l => l.includes(`${ICONS.prev}  ${ICONS.play}  ${ICONS.stop}  ${ICONS.next}`))).toBe(true)
   })
 })
 
@@ -1308,7 +1309,7 @@ describe('the key list', () => {
   test('every description starts in the same column, the icons row too', async () => {
     const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
     await press('?')
-    const starts = ['move', 'pause or resume', 'scroll the list', 'previous, pause or play, next', 'seek there'].map(text => {
+    const starts = ['move', 'pause or resume', 'scroll the list', 'previous, pause or play, stop, next', 'seek there'].map(text => {
       const line = lines().find(l => l.includes(text)) ?? ''
       return columnOf(line, line.indexOf(text))
     })

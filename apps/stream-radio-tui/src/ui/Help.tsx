@@ -49,7 +49,7 @@ export const MOUSE_HELP: [string, string][] = [
   ['right-click, ⋯', "the row's menu"],
   ['drag', 'Playlist: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
-  [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}`, 'previous, pause or play, next'],
+  [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.stop}  ${ICONS.next}`, 'previous, pause or play, stop, next'],
   ['volume bar', 'set the volume there'],
   ['repeat, shuffle', 'switch them'],
   ['waveform, bar', 'seek there'],

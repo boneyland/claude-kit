@@ -91,7 +91,7 @@ Everything the keys do, the mouse can do too:
 - **Drag:** in the Playlist, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
 - **Tabs:** a click on `Files` or `Playlist` switches; a click on `sort: …` sorts by the next field.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
-- **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused), 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
+- **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
 
