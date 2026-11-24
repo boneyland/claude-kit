@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import React from 'react'
 import { Box, Text } from 'ink'
 import { render } from 'ink-testing-library'
-import { volumeAt, VolumeBar } from '../src/ui/Controls'
+import { ICONS, volumeAt, VolumeBar } from '../src/ui/Controls'
 
 describe('volumeAt', () => {
   test('the ends give 0 and 100; between, the nearest 5', () => {
@@ -24,15 +24,16 @@ describe('VolumeBar', () => {
     expect(render(<VolumeBar level={0} width={12} />).lastFrame()).toBe('|  vol 0%  |')
     expect(render(<VolumeBar level={100} width={12} />).lastFrame()).toBe('|█vol 100%█|')
   })
-  test('the controls take one column per character, so the line ends where it should', () => {
+  test('the icons take one column each, so the line ends where it should', () => {
     const { lastFrame } = render(
       <Box>
         <Box width={12}>
-          <Text>|◂ ❚❚ ▸ ▸|</Text>
+          <Text>{`${ICONS.prev} ${ICONS.pause} ${ICONS.play} ${ICONS.next}`}</Text>
         </Box>
         <Text>|</Text>
       </Box>,
     )
-    expect(lastFrame()).toBe('|◂ ❚❚ ▸ ▸|  |')
+    expect(lastFrame()).toBe(`${ICONS.prev} ${ICONS.pause} ${ICONS.play} ${ICONS.next}     |`)
   })
+
 })

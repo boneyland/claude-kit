@@ -63,7 +63,7 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
         {second || ' '}
       </Text>
       {time}
-      <Controls isPaused={isPaused} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} isNarrow onAction={onAction} onVolume={onVolume} />
+      <Controls isPaused={isPaused} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} onAction={onAction} onVolume={onVolume} />
       <Box>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
         <Text>{'   '}</Text>

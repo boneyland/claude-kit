@@ -48,27 +48,30 @@ export function VolumeBar({ level, width, onSet }: BarProps) {
   )
 }
 
-type Props = { isPaused: boolean; volume: number; width: number; isNarrow?: boolean; onAction?(a: Action): void; onVolume?(level: number): void }
+type Props = { isPaused: boolean; volume: number; width: number; onAction?(a: Action): void; onVolume?(level: number): void }
 
-// |◂ ❚❚ ▸| then the volume bar over the rest of `width`; ▸ for ❚❚ while
-// paused. Each does what its key does. Glyphs string-width calls one column
-// (Ink lays text out by it; it calls ◀ and ▶ two).
-export function Controls({ isPaused, volume, width, isNarrow, onAction, onVolume }: Props) {
-  const gap = isNarrow ? ' ' : '  '
-  const button = (text: string, a: Action) => (
+// Nerd Font Material icons (kitty and Ghostty bundle the font): previous,
+// pause, play, next. Each takes one column; kitty may draw it over the space
+// after it, so each button is the icon and a space.
+export const ICONS = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: '\u{F040A}', next: '\u{F04AD}' }
+
+// 󰒮 󰏤 󰒭 then the volume bar over the rest of `width`; the play icon for
+// pause while paused. Each does what its key does.
+export function Controls({ isPaused, volume, width, onAction, onVolume }: Props) {
+  const button = (icon: string, a: Action) => (
     <Clickable flexShrink={0} onClick={() => onAction?.(a)}>
-      <Text>{text}</Text>
+      <Text>{`${icon} `}</Text>
     </Clickable>
   )
-  const used = 2 + gap.length + 2 + gap.length + 2 + 2
+  const used = 3 * 3 + 1
   // nothing shrinks: a squeezed button or bar would wrap and misplace clicks
   return (
     <Box width={width} flexShrink={0}>
-      {button('|◂', { kind: 'prev' })}
-      <Text>{gap}</Text>
-      {button(isPaused ? ' ▸' : '❚❚', { kind: 'pause' })}
-      <Text>{gap}</Text>
-      {button('▸|', { kind: 'next' })}
+      {button(ICONS.prev, { kind: 'prev' })}
+      <Text> </Text>
+      {button(isPaused ? ICONS.play : ICONS.pause, { kind: 'pause' })}
+      <Text> </Text>
+      {button(ICONS.next, { kind: 'next' })}
       <Text>{'  '}</Text>
       <VolumeBar level={volume} width={Math.max(10, width - used)} onSet={onVolume} />
     </Box>

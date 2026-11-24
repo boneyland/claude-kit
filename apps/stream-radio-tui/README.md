@@ -48,7 +48,7 @@ Everything the keys do, the mouse can do too:
 
 - **Rows:** a click selects a song or folder, a double-click plays the song or opens or shuts the folder, and a click on a folder's `▸`/`▾` opens or shuts it at once.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
-- **Controls:** `|◂` previous, `❚❚` pause (`▸` while paused), `▸|` next; `repeat …` and `shuffle …` switch when clicked.
+- **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused), 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
 

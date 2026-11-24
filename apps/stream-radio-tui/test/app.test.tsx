@@ -12,6 +12,7 @@ import type { Media } from '../src/media'
 import type { Wave } from '../src/media/peaks'
 import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
+import { ICONS } from '../src/ui/Controls'
 import type { MouseEvent, MouseSource } from '../src/mouse/sgr'
 
 // What the mocked mpv answers, unless a test says otherwise (and afterEach
@@ -127,9 +128,12 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 // The screen column of `line[index]`: an emoji such as 📁 takes two; the
-// image placeholder, one.
+// private-use characters (Nerd Font icons, the image placeholder), one.
 const columnOf = (line: string, index: number) =>
-  [...line.slice(0, index)].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) > 0xffff && ch !== '\u{10EEEE}' ? 2 : 1), 0)
+  [...line.slice(0, index)].reduce((n, ch) => {
+    const cp = ch.codePointAt(0) ?? 0
+    return n + (cp > 0xffff && cp < 0xf0000 ? 2 : 1)
+  }, 0)
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
 
@@ -158,7 +162,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
     expect(lineOf(all, /o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
-    expect(all.every(l => l.length <= 100)).toBe(true)
+    expect(all.every(l => [...l].length <= 100)).toBe(true)
   })
 
   test('under 80 columns now playing stacks above the list', async () => {
@@ -270,7 +274,7 @@ describe('pane', () => {
 
   test('the controls and the volume bar share a line; repeat and shuffle the next', async () => {
     const { lines } = await show(100)
-    const at = lineOf(lines(), /\|◂ +❚❚ +▸\| +\|.*vol 60%.*\|/)
+    const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
     expect(at).toBeGreaterThan(0)
     expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
   })
@@ -596,9 +600,9 @@ describe('mouse controls', () => {
     test(`at ${columns} columns: previous, pause and next; repeat and shuffle`, async () => {
       const { click, where, host } = await show(columns)
       for (const [text, called] of [
-        ['|◂', () => expect(player.step).toHaveBeenLastCalledWith(host, -1)],
-        ['❚❚', () => expect(player.togglePause).toHaveBeenCalledTimes(1)],
-        ['▸|', () => expect(player.step).toHaveBeenLastCalledWith(host, 1)],
+        [ICONS.prev, () => expect(player.step).toHaveBeenLastCalledWith(host, -1)],
+        [ICONS.pause, () => expect(player.togglePause).toHaveBeenCalledTimes(1)],
+        [ICONS.next, () => expect(player.step).toHaveBeenLastCalledWith(host, 1)],
         ['repeat all', () => expect(player.setRepeat).toHaveBeenCalledTimes(1)],
         ['shuffle off', () => expect(player.toggleShuffle).toHaveBeenCalledTimes(1)],
       ] as const) {
@@ -621,7 +625,7 @@ describe('mouse controls', () => {
   test('narrow: the controls and the volume bar keep to one line; repeat and shuffle the next', async () => {
     for (const columns of [60, 40]) {
       const { lines } = await show(columns)
-      const at = lineOf(lines(), /\|◂ +❚❚ +▸\| +\|.*vol 60%.*\|/)
+      const at = lineOf(lines(), new RegExp(`${ICONS.prev} +${ICONS.pause} +${ICONS.next} +\\|.*vol 60%.*\\|`, 'u'))
       expect(at, `${columns} columns`).toBeGreaterThan(0)
       expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
       cleanup()
@@ -635,9 +639,9 @@ describe('mouse controls', () => {
     expect(player.setVolume).not.toHaveBeenCalled()
   })
 
-  test('paused, the middle control shows ▸', async () => {
+  test('paused, the middle control shows play', async () => {
     const { lines } = await show(100, { ...PLAYING, isPaused: true })
-    expect(lines().some(l => /\|◂ +▸ +▸\|/.test(l))).toBe(true)
+    expect(lines().some(l => l.includes(`${ICONS.prev}  ${ICONS.play}  ${ICONS.next}`))).toBe(true)
   })
 })
 
