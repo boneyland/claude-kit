@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vitest.config.ts", "../../plugins/stream-radio/core"],
+  "exclude": ["../../plugins/stream-radio/core/**/*.test.ts", "node_modules"]
+}

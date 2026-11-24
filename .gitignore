@@ -3,6 +3,8 @@ node_modules/
 # Generated per machine by /plugin-types
 .claude-plugin/types/
 tsconfig.json
+# ...but the standalone player's is source
+!apps/stream-radio-tui/tsconfig.json
 
 # Built locally by plugins/turn-gauge/notifier/build.sh
 notifier/*.app/
@@ -12,5 +14,5 @@ CLAUDE.md
 .claude/
 superpowers/
 
-
+# Built by apps/stream-radio-tui/build.mjs
 apps/stream-radio-tui/dist/
