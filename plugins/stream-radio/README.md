@@ -8,7 +8,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream            # plays the default stream, once you set one
 /stream pause      # pause or resume
 /stream next       # next song in a playlist (or chapter); /stream prev goes back
-/stream vol 40     # volume 0-100, or vol up / vol down by 5
+/stream vol 40     # volume 0-100, or vol up / vol down by a step, the same change in loudness at any level
 /stream shuffle    # shuffle the playlist, or put it back in order
 /stream repeat     # cycle repeat: all (default), one song, off; or repeat all | one | off
 /stream panel      # open or close the panel

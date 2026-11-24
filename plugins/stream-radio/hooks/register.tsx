@@ -8,7 +8,7 @@ import {
   marquee,
   nextRepeat,
   type Repeat,
-  VOLUME_STEP,
+  stepVolume,
   filterRows,
   playlistRows,
   type TreeRow,
@@ -271,8 +271,8 @@ export const register: Register = (on, options) => {
       if (parsed.kind === 'repeat') return { text: await setRepeat(hostFor($, config), parsed.mode ?? nextRepeat(await read($, repeatMode))) }
       if (parsed.kind === 'volume') {
         const now = await read($, volumeLevel)
-        if (parsed.to === undefined && parsed.by === undefined) return { text: `Volume ${now}%.` }
-        return { text: await setVolume(hostFor($, config), config.volume, parsed.to ?? now + (parsed.by ?? 0)) }
+        if (parsed.to === undefined && parsed.step === undefined) return { text: `Volume ${now}%.` }
+        return { text: await setVolume(hostFor($, config), config.volume, parsed.to ?? stepVolume(now, parsed.step ?? 1)) }
       }
       if (parsed.kind === 'next' || parsed.kind === 'prev') {
         if (!isFollowing()) return { text: 'Nothing is playing.' }
@@ -444,9 +444,9 @@ export const register: Register = (on, options) => {
               <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying(hostFor($, config), config), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
-              <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, level - VOLUME_STEP), ''))} />
+              <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, -1)), ''))} />
               <Text>{`Volume ${level}%`}</Text>
-              <Button key="vol-up" label="🔊 +" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, level + VOLUME_STEP), ''))} />
+              <Button key="vol-up" label="🔊 +" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, 1)), ''))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               {q.kind === 'playlist' ? (
