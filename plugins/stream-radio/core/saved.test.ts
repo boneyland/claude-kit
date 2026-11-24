@@ -5,7 +5,7 @@ import { checkDefault, loadVolume, NO_RESUME } from './player'
 import { migrateFromStore, readSaved, updateSaved, type SavedState } from './saved'
 
 const STATE = '/data/state.json'
-const EMPTY: SavedState = { version: 1, last: null, knownDefault: {}, volume: null, repeat: null }
+const EMPTY: SavedState = { version: 1, last: null, knownDefault: {}, migrated: {}, volume: null, repeat: null }
 const AT = { url: '/m', index: 2, seconds: 80, title: 'Song' }
 
 // A Host over files in memory: only what the saved state reaches. run makes
@@ -76,13 +76,14 @@ test("the mod's store moves into state.json once", async () => {
     version: 1,
     last: { url: '/m', resumeAt: AT },
     knownDefault: { mod: 'https://example.com/d' },
+    migrated: { mod: true },
     volume: { value: 35, configured: { mod: 60 } },
     repeat: 'off',
   })
 })
 
-test('once the mod has run on state.json, the store is left alone', async () => {
-  const before = JSON.stringify({ version: 1, knownDefault: { mod: '' } })
+test('once the mod has migrated, the store is left alone', async () => {
+  const before = JSON.stringify({ version: 1, knownDefault: { mod: '' }, migrated: { mod: true } })
   const { h, files } = hostOf('mod', { [STATE]: before })
   expect(await migrateFromStore(h, { get: async () => 'all' })).toBe(false)
   expect(files[STATE]).toBe(before)
@@ -100,6 +101,7 @@ test('a state.json the TUI wrote first still takes the store, keeping what the T
     version: 1,
     last: { url: '/m', resumeAt: AT },
     knownDefault: { mod: 'https://example.com/d', tui: 'B' },
+    migrated: { mod: true },
     volume: { value: 35, configured: { mod: 60 } },
     repeat: 'one',
   })
@@ -112,10 +114,42 @@ test("a value the TUI saved is not overwritten by the store's", async () => {
   expect((await readSaved(h)).repeat).toBe('off')
 })
 
-test('an empty store writes nothing', async () => {
+test('an empty store still writes the marker, and nothing else', async () => {
   const { h, files } = hostOf('mod')
   expect(await migrateFromStore(h, { get: async () => undefined })).toBe(false)
-  expect(files).toEqual({})
+  expect(JSON.parse(files[STATE]!)).toEqual({ ...EMPTY, migrated: { mod: true } })
+  expect(await migrateFromStore(h, { get: async () => 'all' })).toBe(false)
+  expect((await readSaved(h)).repeat).toBeNull()
+})
+
+test("knownDefault.mod without the marker (an earlier build's state.json) still migrates, filling only what is missing", async () => {
+  const { h } = hostOf('mod', { [STATE]: JSON.stringify({ version: 1, knownDefault: { mod: 'A' }, repeat: 'off' }) })
+  expect(await migrateFromStore(h, { get: async k => (k === 'repeat' ? 'one' : k === 'volume' ? { value: 20, configured: 60 } : undefined) })).toBe(true)
+  expect(await readSaved(h)).toMatchObject({ repeat: 'off', volume: { value: 20 }, migrated: { mod: true } })
+})
+
+test("a TUI write that lost the mod's migration does not lose it for good", async () => {
+  const store: Record<string, unknown> = {
+    last: { url: '/m', resumeAt: AT, knownDefault: 'https://example.com/d' },
+    volume: { value: 35, configured: 60 },
+    repeat: 'one',
+  }
+  const get = async (k: string) => store[k]
+  const mod = hostOf('mod')
+  expect(await migrateFromStore(mod.h, { get })).toBe(true)
+  // the TUI had read state.json before that write and renames after it
+  mod.files[STATE] = JSON.stringify({ version: 1, knownDefault: { tui: 'B' } })
+  await checkDefault(mod.h, 'https://example.com/d')
+  expect((await readSaved(mod.h)).repeat).toBeNull()
+  // the marker went with it: the next start migrates again
+  expect(await migrateFromStore(mod.h, { get })).toBe(true)
+  expect(await readSaved(mod.h)).toMatchObject({
+    last: { url: '/m' },
+    volume: { value: 35 },
+    repeat: 'one',
+    knownDefault: { tui: 'B' },
+    migrated: { mod: true },
+  })
 })
 
 test("each program keeps the saved volume while its own setting is unchanged", async () => {

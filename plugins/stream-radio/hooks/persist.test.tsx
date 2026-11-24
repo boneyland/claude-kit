@@ -68,6 +68,7 @@ test('the first start without state.json brings over what the store held', { opt
     version: 1,
     last: { url: URL, resumeAt: { url: URL, index: 2, seconds: 80, title: 'Winter Wonderland' } },
     knownDefault: { mod: URL },
+    migrated: { mod: true },
     volume: { value: 35, configured: { mod: 60 } },
     repeat: 'one',
   })
