@@ -74,9 +74,25 @@ export function formatTime(total: number): string {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`
 }
 
-// How far the panel's − and + and /stream vol up and down move the volume.
+// The terminal player's click rounding on its volume bar.
 export const VOLUME_STEP = 5
 export const clampVolume = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+
+// mpv's volume is cubic (loudness in dB is 60·log10(volume / 100)), so steps
+// of a fixed size are 1 dB apart near the top and 18 dB near the bottom.
+// One step multiplies or divides the volume by this, 3 dB either way.
+const STEP_RATIO = 10 ** (3 / 60)
+// The quietest step above silence (−78 dB): below it, a step down is silence.
+const LOWEST = 5
+
+// The volume one step up (dir 1) or down (-1) from `level`, each step the same
+// change in loudness: the panel's − and +, /stream vol up and down, the
+// terminal player's keys. The number stays mpv's own volume.
+export function stepVolume(level: number, dir: 1 | -1): number {
+  const at = clampVolume(level)
+  if (dir > 0) return at < LOWEST ? LOWEST : Math.min(100, Math.max(at + 1, Math.round(at * STEP_RATIO)))
+  return at <= LOWEST ? 0 : Math.max(LOWEST, Math.min(at - 1, Math.round(at / STEP_RATIO)))
+}
 
 // Whether the playlist starts over at its end (all), the song plays again (one),
 // or playback ends (off).
@@ -95,8 +111,8 @@ export type Command =
   | { kind: 'shuffle' }
   // mode: absent cycles all → one → off
   | { kind: 'repeat'; mode?: Repeat }
-  // to: a level from 0 to 100; by: a step up or down from where it is
-  | { kind: 'volume'; to?: number; by?: number }
+  // to: a level from 0 to 100; step: one step up or down from where it is
+  | { kind: 'volume'; to?: number; step?: 1 | -1 }
   // url: an http(s) URL, or an absolute path when isLocal
   | { kind: 'play'; url: string; isLocal?: true }
   | { kind: 'error'; text: string }
@@ -156,8 +172,8 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (vol) {
     const arg = (vol[1] ?? '').trim()
     if (arg === '' ) return { kind: 'volume' }
-    if (arg === 'up' || arg === '+') return { kind: 'volume', by: VOLUME_STEP }
-    if (arg === 'down' || arg === '-') return { kind: 'volume', by: -VOLUME_STEP }
+    if (arg === 'up' || arg === '+') return { kind: 'volume', step: 1 }
+    if (arg === 'down' || arg === '-') return { kind: 'volume', step: -1 }
     const n = Number(arg.replace(/%$/, ''))
     if (arg !== '' && Number.isFinite(n)) return { kind: 'volume', to: clampVolume(n) }
     return { kind: 'error', text: 'Usage: /stream vol <0-100 | up | down>' }
