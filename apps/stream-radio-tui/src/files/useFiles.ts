@@ -25,6 +25,8 @@ export type Files = {
   // the tree's top folder; remembered for the next run
   setRoot(path: string): void
   goUp(): void
+  // the folder holding `file`, the cursor on it once the folder is read
+  reveal(file: string): void
   // isOpen: undefined flips it
   setOpen(path: string, isOpen?: boolean): void
   // a typed path or URL: '' when it became the root, else why not.
@@ -54,6 +56,8 @@ export function useFiles(h: Host, book: TagBook): Files {
   const playlists = useRef(new Map<string, { title: string; videos: Video[] }>()).current
   // the folder before a YouTube playlist, for ../
   const lastLocal = useRef('')
+  // a file to put the cursor on once its row shows (see reveal)
+  const revealing = useRef('')
   const isLive = useRef(true)
   useEffect(() => () => void (isLive.current = false), [])
 
@@ -107,6 +111,13 @@ export function useFiles(h: Host, book: TagBook): Files {
     return v ? { title: v.title, artist: v.channel, albumArtist: '', album: '' } : book.get(path)
   }
   const rows = rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []
+  const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
+  useEffect(() => {
+    if (revealAt < 0) return
+    revealing.current = ''
+    setSel({ cursor: revealAt, anchor: revealAt, picked: [] })
+    setTop(undefined)
+  }, [revealAt])
   return {
     root: rootRef.current,
     rootLabel: home => {
@@ -137,6 +148,10 @@ export function useFiles(h: Host, book: TagBook): Files {
       // from a YouTube playlist, back to the folder before it
       if (root.startsWith(YT)) return showRoot(lastLocal.current || '/')
       setRoot(parentOf(root))
+    },
+    reveal: file => {
+      revealing.current = file
+      setRoot(parentOf(file))
     },
     setOpen: (path, isOpen) => {
       const open = new Set(openRef.current)

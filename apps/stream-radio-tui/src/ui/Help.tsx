@@ -19,6 +19,7 @@ export const KEY_HELP: [string, string][] = [
   ['s', 'shuffle on or off'],
   ['r', 'repeat: all, one, off'],
   ['o', 'go to a folder, or a YouTube playlist URL, in Files'],
+  ['G', "Files: the folder of the song playing, the cursor on it"],
   ['l', 'resume the last URL from where it got to'],
   ['x', 'stop the player'],
   ['?', 'this list'],
@@ -37,6 +38,7 @@ export const PLAYLIST_KEY_HELP: [string, string][] = [
 export const FILES_KEY_HELP: [string, string][] = [
   ['Enter', 'open or shut a folder; on ../ go up; on a file, add to queue'],
   ['← →', 'shut or open a folder'],
+  ['U', 'the folder above (../)'],
   ['a', 'add to queue: the picked rows, or this one'],
   ['A', 'play next: the same, after the song playing'],
 ]

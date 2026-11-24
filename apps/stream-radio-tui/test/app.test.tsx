@@ -758,6 +758,36 @@ describe('files', () => {
     expect(JSON.parse(saved['/state/tui-files.json'])).toEqual({ folder: '/h' })
   })
 
+  test('U goes up a folder, as ../ does', async () => {
+    const { lines, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await press('U')
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+  })
+
+  test("G opens Files at the playing song's folder, the cursor on it", async () => {
+    const song = '/h/Music/Album/02 Two.flac'
+    const playing: Partial<PlayerKeys> = {
+      ...PLAYING,
+      queue: { kind: 'playlist', items: ['One', 'Two'], paths: ['/h/Music/Album/01 One.flac', song], root: '/h/Music/Album', current: 1 },
+    }
+    const { lines, press, host, session } = await show(100, playing, '', '/h', { fs: fsOf(TREE) })
+    await press('G')
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music/Album'))
+    await vi.waitFor(async () => {
+      await press('a')
+      expect(player.addToQueue).toHaveBeenLastCalledWith(host, session.config, [{ path: song }], 'end')
+    })
+  })
+
+  test('G with nothing playing says so and stays', async () => {
+    const { lines, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await press('G')
+    expect(lines().join('\n')).toContain('Nothing is playing.')
+    expect(heading(lines())).toContain('Files · ~/Music')
+  })
+
   test('a click on a folder opens it in place; Enter on it shuts it', async () => {
     const { lines, click, where, press } = await showFiles()
     await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))

@@ -322,6 +322,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return isPl() ? undefined : addFiles(a.where)
       case 'menu':
         return openMenu(at)
+      case 'folderUp':
+        return isPl() ? undefined : files.goUp()
+      case 'goPlaying': {
+        const file = trackOf(view).file
+        if (!file) return setNotice(view.playing ? "What's playing isn't a file here." : 'Nothing is playing.')
+        setTab('files')
+        return files.reveal(file)
+      }
       case 'shutFolder':
       case 'openFolder':
         if (!isPl() && fileRow?.kind === 'dir') files.setOpen(fileRow.path, a.kind === 'openFolder')

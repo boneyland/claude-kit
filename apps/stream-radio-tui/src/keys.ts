@@ -52,6 +52,10 @@ export type Action =
   | { kind: 'sortReverse' }
   // Files: the picked rows (or the cursor's) to the queue's end, or to play next
   | { kind: 'add'; where: 'end' | 'next' }
+  // Files: the folder above
+  | { kind: 'folderUp' }
+  // Files, at the folder of the song playing
+  | { kind: 'goPlaying' }
   // the cursor's row's menu
   | { kind: 'menu' }
 
@@ -121,6 +125,8 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   const isPlain = !key.ctrl && !key.meta
   if (isPlain && !isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
   if (isPlain && input === 'm') return { kind: 'menu' }
+  if (isPlain && !isPlaylist && input === 'U') return { kind: 'folderUp' }
+  if (isPlain && input === 'G') return { kind: 'goPlaying' }
   if (isPlain && input === 'S') return { kind: 'sortNext' }
   if (isPlain && input === 'R') return { kind: 'sortReverse' }
   if (isPlain && isPlaylist && input === 'C') return { kind: 'clearPlaylist' }

@@ -43,6 +43,7 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | `s` | shuffle |
 | `r` | repeat: all, one, off |
 | `o` | go to a folder, or a YouTube playlist URL, in Files |
+| `G` | Files at the folder of the song playing, the cursor on it |
 | `l` | resume the last URL from where it got to (after `x`, or on a fresh start); while it plays, does nothing |
 | `x` | stop the player |
 | `?` | every key of the tab showing, and what the mouse does; `?`, `Esc` or `q` closes it |
@@ -58,6 +59,7 @@ Opens at the last folder browsed, else `~/Music`, else the home folder. It lists
 | --- | --- |
 | `Enter` | open or shut a folder; on `../`, go up; on a file, add it to the queue |
 | `←` `→` | shut or open a folder |
+| `U` | the folder above (`../`) |
 | `a` | add to the queue |
 | `A` | play next: add after the song playing |
 | `S` | sort files by name, date modified, artist or album artist (folders stay first, by name) |
