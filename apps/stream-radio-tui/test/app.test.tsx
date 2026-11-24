@@ -95,6 +95,8 @@ afterEach(() => {
 describe('drawing', () => {
   test('at 100 columns: the list on the left, now playing beside it, both hint lines', async () => {
     const { lines } = await show(100)
+    // the length comes from mpv after the first draw; a cold first test can outlast the tick
+    await vi.waitFor(() => expect(lines().join('\n')).toMatch(/2:41 ━+─* 4:05/))
     const all = lines()
     expect(all[0]).toContain('stream-radio')
     // the current song's row carries the mark

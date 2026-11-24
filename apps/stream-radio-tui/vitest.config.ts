@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     pool: 'forks',
-    poolOptions: { forks: { maxForks: 2 } },
+    maxWorkers: 2,
     testTimeout: 10_000,
     include: ['test/**/*.test.{ts,tsx}'],
   },
