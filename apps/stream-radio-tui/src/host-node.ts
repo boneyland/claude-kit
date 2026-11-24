@@ -179,10 +179,21 @@ function run(argv: readonly string[], opts?: { timeoutMs?: number }) {
   })
 }
 
-export function nodeHost(events: Host['events'], state: StateStore): Host {
+export type HostOptions = {
+  // read for the home and data folders; default process.env
+  env?: Record<string, string | undefined>
+  // replaces running real processes (tests)
+  run?: Host['run']
+  // where the player's messages go: the screen belongs to the UI, so by default nowhere
+  onToast?(text: string): void
+  onLog?(text: string, to?: 'debug'): void
+}
+
+export function nodeHost(events: Host['events'], state: StateStore, opts: HostOptions = {}): Host {
+  const env = opts.env ?? process.env
   return {
     program: 'tui',
-    run,
+    run: opts.run ?? run,
     ipc,
     watch,
     now: async () => Date.now(),
@@ -202,13 +213,12 @@ export function nodeHost(events: Host['events'], state: StateStore): Host {
         return { kind: s.isFile() ? 'file' : s.isDirectory() ? 'dir' : 'other', mtimeMs: s.mtimeMs }
       },
     },
-    home: async () => process.env.HOME ?? '',
+    home: async () => env.HOME ?? '',
     cwd: async () => process.cwd(),
-    dataDir: () => stateDir(name => Promise.resolve(process.env[name])),
+    dataDir: () => stateDir(name => Promise.resolve(env[name])),
     vars: state,
-    // The screen belongs to the UI: nothing is printed here (Task 6 may route these).
-    log: () => undefined,
-    toast: () => undefined,
+    log: (text, to) => opts.onLog?.(text, to),
+    toast: text => opts.onToast?.(text),
     events,
   }
 }

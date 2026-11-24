@@ -16,8 +16,9 @@ export type Fake = {
   close(): Promise<void>
 }
 
-export async function fakeMpv(): Promise<Fake> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-fake-'))
+// `inDir`: put mpv.sock there (only the socket is removed on close); else a new temp folder.
+export async function fakeMpv(inDir?: string): Promise<Fake> {
+  const dir = inDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sr-fake-'))
   const sock = path.join(dir, 'mpv.sock')
   const clients = new Set<net.Socket>()
   const received: unknown[] = []
@@ -56,7 +57,8 @@ export async function fakeMpv(): Promise<Fake> {
     close: async () => {
       clients.forEach(c => c.destroy())
       await new Promise<void>(res => server.close(() => res()))
-      fs.rmSync(dir, { recursive: true, force: true })
+      if (inDir) fs.rmSync(sock, { force: true })
+      else fs.rmSync(dir, { recursive: true, force: true })
     },
   }
 }
