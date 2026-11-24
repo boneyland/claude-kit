@@ -33,9 +33,9 @@ describe('Clickable', () => {
     )
     await tick()
     s.press(1, 1)
-    expect(a).toHaveBeenCalledWith({ x: 1, y: 0, isDouble: false })
+    expect(a).toHaveBeenCalledWith({ x: 1, y: 0, isDouble: false, mods: { shift: false, alt: false, ctrl: false } })
     s.press(7, 1)
-    expect(b).toHaveBeenCalledWith({ x: 1, y: 0, isDouble: false })
+    expect(b).toHaveBeenCalledWith({ x: 1, y: 0, isDouble: false, mods: { shift: false, alt: false, ctrl: false } })
     s.press(4, 1)
     s.press(1, 0)
     expect(a).toHaveBeenCalledTimes(1)
@@ -110,6 +110,50 @@ describe('Clickable', () => {
     expect(click).not.toHaveBeenCalled()
     s.send({ kind: 'wheel', button: 'none', dir: 'down', x: 1, y: 0 })
     expect(wheel).toHaveBeenCalledWith('down')
+  })
+
+  test('Ctrl on a press reaches the hit', async () => {
+    const s = fakeSource()
+    const a = vi.fn()
+    render(
+      <MouseProvider source={s.source}>
+        <Clickable onClick={a}>
+          <Text>a</Text>
+        </Clickable>
+      </MouseProvider>,
+    )
+    await tick()
+    s.send({ kind: 'press', button: 'left', x: 0, y: 0, mods: { shift: false, alt: false, ctrl: true } })
+    expect(a.mock.calls[0][0].mods).toEqual({ shift: false, alt: false, ctrl: true })
+  })
+
+  test('a drag and its release go to the box pressed, wherever they land', async () => {
+    const s = fakeSource()
+    const a = { onClick: vi.fn(), onDrag: vi.fn(), onRelease: vi.fn() }
+    const b = { onClick: vi.fn(), onDrag: vi.fn(), onRelease: vi.fn() }
+    render(
+      <MouseProvider source={s.source}>
+        <Text>title</Text>
+        <Clickable {...a}>
+          <Text>aaaa</Text>
+        </Clickable>
+        <Clickable {...b}>
+          <Text>bbbb</Text>
+        </Clickable>
+      </MouseProvider>,
+    )
+    await tick()
+    s.press(1, 1)
+    s.send({ kind: 'drag', button: 'left', x: 2, y: 2 })
+    s.send({ kind: 'release', button: 'left', x: 3, y: 2 })
+    expect(a.onDrag).toHaveBeenCalledWith({ x: 2, y: 1 })
+    expect(a.onRelease).toHaveBeenCalledWith({ x: 3, y: 1 })
+    expect(b.onClick).not.toHaveBeenCalled()
+    expect(b.onDrag).not.toHaveBeenCalled()
+    expect(b.onRelease).not.toHaveBeenCalled()
+    // after the release, a drag reaches no one
+    s.send({ kind: 'drag', button: 'left', x: 2, y: 2 })
+    expect(a.onDrag).toHaveBeenCalledTimes(1)
   })
 
   test("rectOf reads Ink's layout: a box's place on screen", async () => {

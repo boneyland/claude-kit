@@ -103,3 +103,48 @@ describe('keyAction in the key list', () => {
     expect(keyAction(input, k, 'help')).toEqual(expected)
   })
 })
+
+describe('pick and move keys', () => {
+  const PL = { tab: 'playlist' as const, hasPick: false }
+  const PICKED = { tab: 'playlist' as const, hasPick: true }
+  const FILES = { tab: 'files' as const, hasPick: false }
+  test('Alt-↑/↓ and u/d move, in the Playlist', () => {
+    expect(keyAction('', key({ upArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: -1 })
+    expect(keyAction('', key({ downArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: 1 })
+    expect(keyAction('u', key(), 'list', PL)).toEqual({ kind: 'move', by: -1 })
+    expect(keyAction('d', key(), 'list', PL)).toEqual({ kind: 'move', by: 1 })
+    expect(keyAction('d', key(), 'list', FILES)).toBeNull()
+  })
+  test('Delete (and Backspace) removes, in the Playlist', () => {
+    expect(keyAction('', key({ delete: true }), 'list', PL)).toEqual({ kind: 'remove' })
+    expect(keyAction('', key({ backspace: true }), 'list', PL)).toEqual({ kind: 'remove' })
+    expect(keyAction('', key({ delete: true }), 'list', FILES)).toBeNull()
+  })
+  test('Shift-↑/↓ extend the pick, in either tab', () => {
+    expect(keyAction('', key({ upArrow: true, shift: true }), 'list', PL)).toEqual({ kind: 'extendPick', by: -1 })
+    expect(keyAction('', key({ downArrow: true, shift: true }), 'list', FILES)).toEqual({ kind: 'extendPick', by: 1 })
+  })
+  test('Space picks while any row is picked, else pauses; Esc clears a pick', () => {
+    expect(keyAction(' ', key(), 'list', PL)).toEqual({ kind: 'pause' })
+    expect(keyAction(' ', key(), 'list', PICKED)).toEqual({ kind: 'togglePick' })
+    expect(keyAction('', key({ escape: true, meta: true }), 'list', PICKED)).toEqual({ kind: 'clearPick' })
+    expect(keyAction('', key({ escape: true, meta: true }), 'list', PL)).toBeNull()
+  })
+  test('S and R sort', () => {
+    expect(keyAction('S', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortNext' })
+    expect(keyAction('R', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortReverse' })
+  })
+})
+
+describe('chords are not letters', () => {
+  test('Ctrl or Alt with a, A, S or R does nothing', () => {
+    const FILES = { tab: 'files' as const, hasPick: false }
+    const PL = { tab: 'playlist' as const, hasPick: false }
+    expect(keyAction('a', key({ ctrl: true }), 'list', FILES)).toBeNull()
+    expect(keyAction('A', key({ meta: true, shift: true }), 'list', FILES)).toBeNull()
+    expect(keyAction('S', key({ meta: true, shift: true }), 'list', PL)).toBeNull()
+    expect(keyAction('R', key({ meta: true, shift: true }), 'list', PL)).toBeNull()
+    expect(keyAction('s', key({ ctrl: true }), 'list', PL)).toBeNull()
+  })
+})
+

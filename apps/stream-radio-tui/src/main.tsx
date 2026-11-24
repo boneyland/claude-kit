@@ -20,18 +20,27 @@ A full-screen player for the stream-radio mod's shared mpv. With a URL, or a
 file, folder or playlist, it plays that; with none it follows the player that
 is running, or shows the last URL, ready to play with l.
 
-Keys:
-  ↑/↓ or k/j   move            Enter   play the song, or open/shut a folder
-  ←/→          shut/open folder
-  space        pause           n/p     next/previous
-  b/f          10 s back/ahead
-  +/-          volume a step   s       shuffle      r   repeat all/one/off
-  /            filter (Enter plays the first match, Esc clears)
-  o            open a URL or path
+Two tabs: Files, to browse folders and add songs, and Playlist, the queue.
+
+Keys (both tabs):
+  Tab          switch tabs     ↑/↓ or k/j   move
+  Shift-↑/↓    pick rows       Esc          clear the pick
+  space        pause (picks or unpicks a row while rows are picked)
+  m            the row's menu  S            sort by the next field
+  n/p          next/previous   b/f          10 s back/ahead
+  +/-          volume a step   s shuffle    r repeat all/one/off
+  o            go to a folder or YouTube playlist URL in Files
   l            resume the last URL from where it got to
   x            stop the player
   ?            every key and what the mouse does
   q, Ctrl-C ×2 quit (the music keeps playing)
+Files:
+  Enter        open/shut a folder, ../ goes up, a file is added
+  a / A        add to the queue / play next
+Playlist:
+  Enter        play the song
+  Alt-↑/↓, u/d move the picked songs     Delete   remove them
+  R            sort the other way round   /        filter
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json
         (~/.config/stream-radio/config.json without XDG_CONFIG_HOME)
@@ -39,7 +48,9 @@ Config: $XDG_CONFIG_HOME/stream-radio/config.json
         graphics ("auto", "on" or "off": album art and a pixel waveform),
         mouse ("on" or "off": clicks and the wheel; Shift-drag selects text)
 
-Mouse: click selects, double-click plays; click the controls, the volume
+Mouse: click selects, double-click plays (Playlist) or adds (Files);
+Ctrl-click picks a row, Shift- or Alt-click a range; right-click opens the
+row's menu; drag moves songs in the Playlist; click the controls, the volume
 bar and the waveform; the wheel scrolls the list.
 
   --help       this text

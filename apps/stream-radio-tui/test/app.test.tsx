@@ -3,6 +3,7 @@ import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
 import * as player from '../../../plugins/stream-radio/core/player'
+import { moveBy, moveTo } from '../../../plugins/stream-radio/core/queue'
 import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
@@ -13,6 +14,7 @@ import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
 import { ICONS } from '../src/ui/Controls'
 import type { MouseEvent, MouseSource } from '../src/mouse/sgr'
+import { tagReader, type TagReader } from '../src/media/tags'
 
 // What the mocked mpv answers, unless a test says otherwise (and afterEach
 // puts it back): the length, and the song's tags.
@@ -39,6 +41,13 @@ vi.mock('../../../plugins/stream-radio/core/player', async original => {
     start: vi.fn(),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
     mpv: vi.fn(defaultMpv),
+    // as the core does: the queue in the store follows the new order
+    reorderQueue: vi.fn(async (h: Host, order: readonly number[]) => {
+      await h.vars.change('queue', q => ({ ...q, items: order.map(i => q.items[i]!), paths: q.paths.length ? order.map(i => q.paths[i]!) : q.paths }))
+      return ''
+    }),
+    removeFromQueue: vi.fn(async () => ''),
+    addToQueue: vi.fn(async () => ''),
   }
 })
 
@@ -65,14 +74,14 @@ const ESC = '\x1b'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-type Extra = { media?: Media; graphics?: Graphics; rows?: number }
+type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']> }
 async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', extra: Extra = {}) {
-  const { media, graphics, rows } = extra
+  const { media, graphics, rows, tags, fs } = extra
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
-  const host = { program: 'tui', vars, home: async () => home } as unknown as Host
+  const host = { program: 'tui', vars, home: async () => home, fs, dataDir: async () => '/state' } as unknown as Host
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -87,7 +96,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
   const mouseFns = new Set<(e: MouseEvent) => void>()
   const mouse: MouseSource = fn => (mouseFns.add(fn), () => void mouseFns.delete(fn))
   const onMouse = (e: MouseEvent) => mouseFns.forEach(fn => fn(e))
-  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} />)
+  const ui = render(<App session={session} subscribe={subscribe} media={media} graphics={graphics} mouse={mouse} tags={tags} />)
   if (columns !== 100 || rows) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
     if (rows) Object.defineProperty(ui.stdout, 'rows', { value: rows, configurable: true })
@@ -112,6 +121,26 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     onMouse({ kind: 'press', button: 'left', x, y })
     await tick()
   }
+  const rightClick = async (x: number, y: number) => {
+    onMouse({ kind: 'press', button: 'right', x, y })
+    onMouse({ kind: 'release', button: 'right', x, y })
+    await tick()
+  }
+  const modClick = async (x: number, y: number, mod: 'shift' | 'alt' | 'ctrl') => {
+    const mods = { shift: mod === 'shift', alt: mod === 'alt', ctrl: mod === 'ctrl' }
+    onMouse({ kind: 'press', button: 'left', x, y, mods })
+    onMouse({ kind: 'release', button: 'left', x, y, mods })
+    await tick()
+  }
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    onMouse({ kind: 'press', button: 'left', ...from })
+    await tick()
+    onMouse({ kind: 'drag', button: 'left', x: to.x, y: Math.round((from.y + to.y) / 2) })
+    onMouse({ kind: 'drag', button: 'left', ...to })
+    await tick()
+    onMouse({ kind: 'release', button: 'left', ...to })
+    await tick()
+  }
   const wheel = async (x: number, y: number, dir: 'up' | 'down') => {
     onMouse({ kind: 'wheel', button: 'none', dir, x, y })
     await tick()
@@ -123,7 +152,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     const line = stripAnsi(lines()[y])
     return { x: columnOf(line, line.indexOf(text)), y }
   }
-  return { ui, session, host, vars, lines, press, say, click, dblclick, wheel, where }
+  return { ui, session, host, vars, lines, press, say, click, dblclick, rightClick, modClick, drag, wheel, where }
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -161,7 +190,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
-    expect(lineOf(all, /\? all keys.*o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
+    expect(lineOf(all, /\? all keys.*o go to.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => [...l].length <= 100)).toBe(true)
   })
 
@@ -424,18 +453,11 @@ describe('keys', () => {
   })
 
   test('a fast Enter after typing in open mode submits all of it', async () => {
-    const { ui, host } = await show(100)
-    for (const k of ['o', '/', 'm', ENTER]) ui.stdin.write(k)
+    const { ui, lines } = await show(100)
+    for (const k of ['o', '/', 'n', 'o', ENTER]) ui.stdin.write(k)
     await tick()
-    expect(player.locate).toHaveBeenCalledWith(host, '/m', '')
-  })
-
-  test("o with a path that won't play puts the reason on the status line", async () => {
-    vi.mocked(player.locate).mockResolvedValueOnce({ kind: 'error', text: 'No such file or folder: /nope' })
-    const { press, lines } = await show(100)
-    await press('o', '/nope', ENTER)
-    const all = lines()
-    expect(all[lineOf(all, /space pause/) - 1]).toContain('No such file or folder: /nope')
+    // no files in this host: the whole path typed is the one that isn't there
+    expect(lines().join('\n')).toContain('No such folder: /no')
   })
 
   test('space pauses through the core', async () => {
@@ -514,16 +536,10 @@ describe('keys', () => {
     expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([67, 75, 84])
   })
 
-  test('Enter on a folder shuts it (the mark moves to it); on a song, plays it', async () => {
-    const { press, host, vars, lines } = await show(100)
+  test('Enter on a song plays it', async () => {
+    const { press, host } = await show(100)
     await press(UP, ENTER)
     expect(player.pick).toHaveBeenCalledWith(host, 1)
-    await press(UP, UP, ENTER)
-    expect(await vars.read('openFolders')).toEqual([])
-    expect(lines().join('\n')).not.toContain('Song two')
-    expect(lines().join('\n')).toMatch(/▶ ▸ 📁 Disc 1\/ · 3/)
-    await press('\x1b[C')
-    expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
   })
 
   test('/ filters as you type; Enter plays the first match', async () => {
@@ -535,12 +551,6 @@ describe('keys', () => {
     expect(player.pick).toHaveBeenCalledWith(host, 3)
   })
 
-  test('o opens a URL or path', async () => {
-    const { press, host, session } = await show(100)
-    await press('o', '/m/x', ENTER)
-    expect(player.locate).toHaveBeenCalledWith(host, '/m/x', '')
-    expect(player.start).toHaveBeenCalledWith(host, session.config, '/m/x')
-  })
 })
 
 describe('mouse rows', () => {
@@ -556,7 +566,7 @@ describe('mouse rows', () => {
     openFolders: [],
   }
   // The number of the first track the list shows.
-  const firstShown = (all: string[]) => Number(/(\d+)\. Track/.exec(all[lineOf(all, /Playlist/) + 1])?.[1])
+  const firstShown = (all: string[]) => Number(/(\d+)\. Track/.exec(all[lineOf(all, /\d+\. Track/)])?.[1])
 
   test('a click selects a song; it does not play it', async () => {
     const { click, where, press, host } = await show(100)
@@ -572,33 +582,6 @@ describe('mouse rows', () => {
     const at = where('Song two')
     await dblclick(at.x, at.y)
     expect(player.pick).toHaveBeenCalledWith(host, 1)
-  })
-
-  test("a click on a folder's arrow shuts it; elsewhere on its row it only selects; a double-click shuts it", async () => {
-    const { click, dblclick, where, vars, press } = await show(100)
-    // a double-click on the arrow toggles it once, not twice
-    await dblclick(where('▾').x, where('▾').y)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    let at = where('Disc 1/')
-    await click(at.x + 3, at.y)
-    expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
-    // selected: Enter shuts it
-    await press(ENTER)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    // a click on another row first, or this one would make a double-click
-    await click(where('Intro').x, where('Intro').y)
-    at = where('▾')
-    await click(at.x, at.y)
-    expect(await vars.read('openFolders')).toEqual([])
-    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
-    await tick()
-    at = where('Disc 1/')
-    await dblclick(at.x, at.y)
-    expect(await vars.read('openFolders')).toEqual([])
   })
 
   test('the wheel scrolls the list, not the selection; a click then lands where it points; a key brings the view back', async () => {
@@ -630,6 +613,566 @@ describe('mouse rows', () => {
     expect(firstShown(lines())).toBe(last)
     for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'up')
     expect(firstShown(lines())).toBe(1)
+  })
+})
+
+describe('tabs', () => {
+  // Tests draw without colour, so which tab shows is read from the heading
+  // under the tab row.
+  const INV = /^\s*Playlist/
+  const INV_FILES = /^\s*Files/
+  const tabHeading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+  const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
+
+  test('starts on Playlist with a queue, on Files without', async () => {
+    const a = await show(100)
+    expect(tabHeading(a.lines())).toMatch(INV)
+    expect(a.lines().join('\n')).toContain('3. Song three')
+    cleanup()
+    const b = await show(100, EMPTY)
+    expect(tabHeading(b.lines())).toMatch(INV_FILES)
+  })
+
+  test('Tab and Shift-Tab switch; each tab keeps its own list', async () => {
+    const { press, lines } = await show(100)
+    await press('\t')
+    expect(tabHeading(lines())).toMatch(INV_FILES)
+    expect(lines().join('\n')).not.toContain('Song three ·')
+    expect(lines().join('\n')).not.toMatch(/\d+\. Song two/)
+    await press('\x1b[Z')
+    expect(tabHeading(lines())).toMatch(INV)
+    expect(lines().join('\n')).toContain('2. Song two')
+  })
+
+  test('a click on a tab name switches', async () => {
+    const { click, where, lines } = await show(100)
+    const at = where(' Files ')
+    await click(at.x + 2, at.y)
+    expect(tabHeading(lines())).toMatch(INV_FILES)
+    const back = where(' Playlist ')
+    await click(back.x + 2, back.y)
+    expect(tabHeading(lines())).toMatch(INV)
+  })
+
+  test('rows show the title from the file\'s tags once read', async () => {
+    const tags = tagReader(async p => ({ title: p.endsWith('02.mp3') ? 'Tagged Two' : '', artist: 'Tag Band', albumArtist: '', album: '' }))
+    const fs = { stat: async () => ({ kind: 'file' as const, mtimeMs: 5 }) }
+    const { lines } = await show(100, PLAYING, '', '', { tags, fs })
+    await vi.waitFor(() => expect(lines().join('\n')).toMatch(/2\. Tagged Two · Tag Band/))
+    expect(lines().join('\n')).toContain('1. Intro')
+  })
+
+  test('the playlist is flat: every song, no folders, shut or not', async () => {
+    const { lines } = await show(100, { ...PLAYING, openFolders: [] })
+    const all = lines().join('\n')
+    expect(all).not.toContain('📁')
+    for (const n of ['1. Intro', '2. Song two', '3. Song three', '4. Other']) expect(all).toContain(n)
+    // the folder, dimmed, after the title
+    expect(all).toMatch(/4\. Other.*Disc 2/)
+  })
+})
+
+// A small tree under /h, browsed in Files.
+const BASE_TREE: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+  '/h': [{ name: 'Music', kind: 'dir' }],
+  '/h/Music': [{ name: 'Album', kind: 'dir' }, { name: 'loose.mp3', kind: 'file' }, { name: 'cover.jpg', kind: 'file' }],
+  '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }, { name: '02 Two.flac', kind: 'file' }],
+  '/other': [{ name: 'x.mp3', kind: 'file' }],
+}
+function treeFs(tree: Record<string, { name: string; kind: 'file' | 'dir' }[]>, saved: Record<string, string> = {}) {
+  return {
+    list: async (p: string) => {
+      if (!tree[p]) throw new Error('ENOENT')
+      return tree[p]
+    },
+    stat: async (p: string) => {
+      if (tree[p]) return { kind: 'dir' as const, mtimeMs: 1 }
+      const slash = p.lastIndexOf('/')
+      if (tree[p.slice(0, slash)]?.some(e => e.name === p.slice(slash + 1))) return { kind: 'file' as const, mtimeMs: 1 }
+      throw new Error('ENOENT')
+    },
+    read: async (p: string) => {
+      if (!(p in saved)) throw new Error('ENOENT')
+      return saved[p]
+    },
+    write: async (p: string, text: string) => void (saved[p] = text),
+    exists: async (p: string) => p in saved || p in tree,
+  }
+}
+// Files showing ~/Music (nothing queued), with `over` replacing folders of the base tree.
+const fsTree = (over: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {}) =>
+  show(100, { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }, '', '/h', { fs: treeFs({ ...BASE_TREE, ...over }) })
+
+describe('files', () => {
+  // A small tree, and a stat that knows it.
+  const TREE: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+    '/h': [{ name: 'Music', kind: 'dir' }],
+    '/h/Music': [{ name: 'Album', kind: 'dir' }, { name: 'loose.mp3', kind: 'file' }, { name: 'cover.jpg', kind: 'file' }],
+    '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }, { name: '02 Two.flac', kind: 'file' }],
+    '/other': [{ name: 'x.mp3', kind: 'file' }],
+  }
+  const fsOf = (tree: Record<string, { name: string; kind: 'file' | 'dir' }[]>, saved: Record<string, string> = {}) => ({
+    list: async (p: string) => {
+      if (!tree[p]) throw new Error('ENOENT')
+      return tree[p]
+    },
+    stat: async (p: string) => {
+      if (tree[p]) return { kind: 'dir' as const, mtimeMs: 1 }
+      const slash = p.lastIndexOf('/')
+      if (tree[p.slice(0, slash)]?.some(e => e.name === p.slice(slash + 1))) return { kind: 'file' as const, mtimeMs: 1 }
+      throw new Error('ENOENT')
+    },
+    read: async (p: string) => {
+      if (!(p in saved)) throw new Error('ENOENT')
+      return saved[p]
+    },
+    write: async (p: string, text: string) => void (saved[p] = text),
+    exists: async (p: string) => p in saved || p in tree,
+  })
+  const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
+  const showFiles = async (saved: Record<string, string> = {}, tree = TREE, extra: Extra = {}) => {
+    return show(100, EMPTY, '', '/h', { fs: fsOf(tree, saved), ...extra })
+  }
+  const heading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+
+  test('with nothing remembered it opens ~/Music: ../ first, folders, then playable files', async () => {
+    const { lines } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music'))
+    const all = lines().join('\n')
+    expect(all).toMatch(/\.\.\/[\s\S]*📁 Album\/[\s\S]*loose\.mp3/)
+    expect(all).not.toContain('cover.jpg')
+  })
+
+  test('opens at the remembered folder', async () => {
+    const { lines } = await showFiles({ '/state/tui-files.json': JSON.stringify({ folder: '/other' }) })
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    expect(lines().join('\n')).toContain('x.mp3')
+  })
+
+  test('a click on ../ goes up, and the folder is remembered', async () => {
+    const saved: Record<string, string> = {}
+    const { lines, click, where } = await showFiles(saved)
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await click(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    expect(JSON.parse(saved['/state/tui-files.json'])).toEqual({ folder: '/h' })
+  })
+
+  test('a click on a folder opens it in place; Enter on it shuts it', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))
+    await click(where('Album/').x, where('Album/').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    expect(lines().join('\n')).toContain('▾ 📁 Album/')
+    await press(ENTER)
+    expect(lines().join('\n')).not.toContain('01 One.flac')
+  })
+
+  test('o, a path, Enter: the tree moves there; a bad path says so and leaves it', async () => {
+    const { lines, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await press('o')
+    expect(lines().join('\n')).toContain('o go to: _')
+    await press('/other', ENTER)
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    await press('o', '/nope', ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /nope'))
+    expect(heading(lines())).toContain('Files · /other')
+  })
+
+  test('o from the Playlist goes to Files', async () => {
+    const { lines, press } = await show(100, PLAYING, '', '/h', { fs: fsOf(TREE) })
+    await press('o')
+    expect(heading(lines())).toMatch(/^\s*Files/)
+  })
+
+  test('a big folder lists before its tags arrive, and j moves the cursor', async () => {
+    const big = { ...TREE, '/h/Music': [...Array(500).keys()].map(i => ({ name: `${String(i).padStart(3, '0')}.mp3`, kind: 'file' as const })) }
+    // tags that never come
+    const tags = tagReader(() => new Promise(() => {}))
+    const { lines, press } = await showFiles({}, big, { tags })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('000.mp3'))
+    // ../ is row 0: two rows down is 001.mp3
+    await press('j', 'j', 'a')
+    expect(player.addToQueue).toHaveBeenCalledWith(expect.anything(), expect.anything(), [{ path: '/h/Music/001.mp3' }], 'end')
+    await press('S')
+    expect(lines().join('\n')).toContain('sort: modified')
+  })
+})
+
+describe('files actions', () => {
+  const sp = fsTree
+  test('a double-click on a file adds it to the queue', async () => {
+    const { lines, dblclick, where, host, session } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await dblclick(where('loose.mp3').x, where('loose.mp3').y)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'end')
+    expect(player.pick).not.toHaveBeenCalled()
+    expect(player.start).not.toHaveBeenCalled()
+  })
+
+  test('A with three rows picked adds them in one call, to play next; the pick clears and the status says how many', async () => {
+    const { lines, press, host, session } = await sp({ '/h/Music': [...['a', 'b', 'c', 'd'].map(n => ({ name: `${n}.mp3`, kind: 'file' as const }))] })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('a.mp3'))
+    await press('j', '\x1b[1;2B', '\x1b[1;2B')
+    expect(lines().join('\n')).toContain('3 picked')
+    await press('A')
+    expect(player.addToQueue).toHaveBeenCalledTimes(1)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/a.mp3' }, { path: '/h/Music/b.mp3' }, { path: '/h/Music/c.mp3' }], 'next')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Added 3 songs to play next.'))
+    expect(lines().join('\n')).not.toContain('picked')
+  })
+
+  test('a double-click on a folder adds it, and leaves it shut as it was', async () => {
+    const { lines, dblclick, where, host, session } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Album/'))
+    await dblclick(where('Album/').x, where('Album/').y)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/Album' }], 'end')
+    await tick()
+    expect(lines().join('\n')).toContain('▸ 📁 Album/')
+    expect(lines().join('\n')).not.toContain('01 One.flac')
+  })
+
+  test('Enter on a file adds it', async () => {
+    const { lines, press, host, session } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await press('j', 'j', ENTER)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'end')
+  })
+
+  test('a right-click opens the menu at that row; Play next adds it next', async () => {
+    const { lines, rightClick, click, where, host, session } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await rightClick(where('loose.mp3').x, where('loose.mp3').y)
+    expect(lines().join('\n')).toContain('Add to queue')
+    await click(where('Play next').x + 1, where('Play next').y)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'next')
+    expect(lines().join('\n')).not.toContain('Play next')
+  })
+
+  test('m opens the menu at the cursor; ↓ Enter picks; Esc closes it without acting', async () => {
+    const { lines, press, host, session } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await press('j', 'j', 'm')
+    expect(lines().join('\n')).toContain('Play next')
+    await press(ESC)
+    expect(lines().join('\n')).not.toContain('Play next')
+    expect(player.addToQueue).not.toHaveBeenCalled()
+    await press('m', '\x1b[B', ENTER)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'next')
+  })
+
+  test('Space with no pick pauses; with a pick it picks', async () => {
+    const { lines, press } = await sp()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await press(' ')
+    expect(player.togglePause).toHaveBeenCalledTimes(1)
+    await press('j', '\x1b[1;2B', ' ')
+    expect(player.togglePause).toHaveBeenCalledTimes(1)
+    expect(lines().join('\n')).toContain('1 picked')
+  })
+
+  test('the Playlist menu removes a song', async () => {
+    const { rightClick, click, where, host, session, lines } = await show(100)
+    await rightClick(where('Song two').x, where('Song two').y)
+    expect(lines().join('\n')).toContain('Move up')
+    await click(where('Remove').x + 1, where('Remove').y)
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
+  })
+})
+
+describe('youtube in files', () => {
+  const LIST = 'https://www.youtube.com/playlist?list=PL1'
+  const MIX = { _type: 'playlist', title: 'Road Mix', entries: [
+    { url: 'https://www.youtube.com/watch?v=1', title: 'Drive One', channel: 'Chan' },
+    { url: 'https://www.youtube.com/watch?v=2', title: 'Drive Two', channel: 'Chan' },
+  ] }
+  const withRun = async (result: { exitCode: number; stdout: string; stderr: string }) => {
+    const shown = await fsTree()
+    ;(shown.host as unknown as { run: unknown }).run = vi.fn(async () => result)
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('loose.mp3'))
+    return shown
+  }
+
+  test('a playlist URL lists its videos under a folder of its title; adding the folder adds every video with its title', async () => {
+    const { press, lines, host, session } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    expect(lines().join('\n')).toContain('▾ 📁 Road Mix/')
+    expect(lines().join('\n')).toContain('Drive One · Chan')
+    await press('j', 'a')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [
+      { path: 'https://www.youtube.com/watch?v=1', title: 'Drive One' },
+      { path: 'https://www.youtube.com/watch?v=2', title: 'Drive Two' },
+    ], 'end')
+    expect(player.start).not.toHaveBeenCalled()
+    expect(player.pick).not.toHaveBeenCalled()
+  })
+
+  test('one video added from the list keeps its title', async () => {
+    const { press, host, session, lines } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    await press('j', 'j', 'j', 'A')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: 'https://www.youtube.com/watch?v=2', title: 'Drive Two' }], 'next')
+  })
+
+  test("yt-dlp's error shows on the status line; the tree stays; nothing plays", async () => {
+    const { press, lines } = await withRun({ exitCode: 1, stdout: '', stderr: 'ERROR: Private video' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Private video'))
+    expect(lines().join('\n')).toContain('Files · ~/Music')
+    expect(lines().join('\n')).toContain('loose.mp3')
+    expect(player.start).not.toHaveBeenCalled()
+    expect(player.addToQueue).not.toHaveBeenCalled()
+  })
+
+  test('../ from the playlist goes back to the folder before it', async () => {
+    const { press, lines, click, where } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
+    await press('o', LIST, ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
+    await click(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+  })
+})
+
+describe('pr review fixes', () => {
+  test('a double-click on ../ goes up one folder, not two', async () => {
+    const { lines, dblclick, where } = await show(100, { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }, '', '/h', {
+      fs: treeFs({ ...BASE_TREE, '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }] }, { '/state/tui-files.json': JSON.stringify({ folder: '/h/Music/Album' }) }),
+    })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    await dblclick(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    expect(lines().join('\n')).toContain('Files · ~/Music')
+  })
+
+  test('a YouTube playlist keeps its order, and a video in it twice shows twice', async () => {
+    const shown = await fsTree()
+    const mix = { _type: 'playlist', title: 'Mix', entries: [
+      { url: 'https://y/z', title: 'Zed', channel: 'C' },
+      { url: 'https://y/a', title: 'Alpha', channel: 'C' },
+      { url: 'https://y/z', title: 'Zed', channel: 'C' },
+    ] }
+    ;(shown.host as unknown as { run: unknown }).run = vi.fn(async () => ({ exitCode: 0, stdout: JSON.stringify(mix), stderr: '' }))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    onTestFinished(() => errors.mockRestore())
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('loose.mp3'))
+    await shown.press('o', 'https://www.youtube.com/playlist?list=x', ENTER)
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('Alpha'))
+    const all = shown.lines()
+    const at = (t: RegExp) => all.findIndex(l => t.test(l))
+    expect(at(/Zed/)).toBeLessThan(at(/Alpha/))
+    expect(all.filter(l => /Zed/.test(l))).toHaveLength(2)
+    expect(errors.mock.calls.some(c => String(c[0]).includes('same key'))).toBe(false)
+  })
+
+  test('the Playlist stats its songs a few at a time, and a folder in the queue only once', async () => {
+    let running = 0
+    let most = 0
+    const stats: string[] = []
+    const fs = {
+      stat: async (p: string) => {
+        stats.push(p)
+        running++
+        most = Math.max(most, running)
+        await new Promise(r => setTimeout(r, 1))
+        running--
+        return p.endsWith('/dir') ? { kind: 'dir' as const, mtimeMs: 1 } : { kind: 'file' as const, mtimeMs: 1 }
+      },
+    }
+    const n = 200
+    const big: Partial<PlayerKeys> = {
+      ...PLAYING,
+      queue: { kind: 'playlist', items: [...Array(n).keys()].map(i => `T${i}`), paths: [...[...Array(n - 1).keys()].map(i => `/m/${i}.mp3`), '/m/dir'], root: '/m', current: 0 },
+    }
+    const tags = tagReader(async () => ({ title: '', artist: '', albumArtist: '', album: '' }))
+    const { press } = await show(100, big, '', '', { fs, tags })
+    await vi.waitFor(() => expect(new Set(stats).size).toBe(n), { timeout: 3000 })
+    expect(most).toBeLessThanOrEqual(32)
+    // more needs (a redraw that scrolls) don't stat the folder again
+    await press('j', 'j', 'j')
+    await tick()
+    expect(stats.filter(p => p === '/m/dir')).toHaveLength(1)
+  })
+})
+
+describe('playlist editing', () => {
+  const FIVE: Partial<PlayerKeys> = {
+    ...PLAYING,
+    queue: {
+      kind: 'playlist',
+      items: ['Aa', 'Bb', 'Cc', 'Dd', 'Ee'].map(t => `${t} song`),
+      paths: ['Aa', 'Bb', 'Cc', 'Dd', 'Ee'].map(t => `/m/${t}.mp3`),
+      root: '/m',
+      current: 0,
+    },
+  }
+  const SHIFT_DOWN = '\x1b[1;2B'
+  const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+
+  test('Shift-↓ twice picks 3 rows; Space then unpicks one, not pausing; Esc clears and Space pauses', async () => {
+    const { press, lines } = await show(100, FIVE)
+    await press(SHIFT_DOWN, SHIFT_DOWN)
+    expect(status(lines())).toContain('3 picked · Space picks/unpicks · Esc clears')
+    await press(' ')
+    expect(status(lines())).toContain('2 picked')
+    expect(player.togglePause).not.toHaveBeenCalled()
+    await press(ESC)
+    expect(status(lines())).not.toContain('picked')
+    await press(' ')
+    expect(player.togglePause).toHaveBeenCalled()
+  })
+
+  test('d moves the picked rows down and the pick follows them', async () => {
+    const { press, host } = await show(100, FIVE)
+    await press(SHIFT_DOWN, 'd')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [0, 1], 1).order)
+    await press('d')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [1, 2], 1).order)
+  })
+
+  test('u and Alt-↑ move up; with no pick, the cursor\'s row', async () => {
+    const { press, host } = await show(100, FIVE)
+    await press('j', 'j', 'u')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [2], -1).order)
+    await press('\x1b[1;3A')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, moveBy(5, [1], -1).order)
+  })
+
+  test('Delete removes the picked rows, and the pick clears', async () => {
+    const { press, host, session, lines } = await show(100, FIVE)
+    await press('j', SHIFT_DOWN, '\x1b[3~')
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1, 2])
+    expect(status(lines())).not.toContain('picked')
+  })
+
+  test('Ctrl-click picks one row; Alt-click and Shift-click pick a range', async () => {
+    const { modClick, where, lines } = await show(100, FIVE)
+    await modClick(where('Dd song').x, where('Dd song').y, 'ctrl')
+    expect(status(lines())).toContain('1 picked')
+    await modClick(where('Bb song').x, where('Bb song').y, 'alt')
+    expect(status(lines())).toContain('3 picked')
+    await modClick(where('Ee song').x, where('Ee song').y, 'shift')
+    expect(status(lines())).toContain('2 picked')
+  })
+
+  test('a drag moves the row to where it is let go', async () => {
+    const { drag, where, host } = await show(100, FIVE)
+    await drag(where('Bb song'), where('Ee song'))
+    expect(player.reorderQueue).toHaveBeenCalledWith(host, moveTo(5, [1], 4).order)
+  })
+
+  test('a drag of picked rows moves them all; the pick stays', async () => {
+    const { drag, modClick, where, host, lines } = await show(100, FIVE)
+    await modClick(where('Aa song').x, where('Aa song').y, 'ctrl')
+    await modClick(where('Bb song').x, where('Bb song').y, 'ctrl')
+    // from the other picked row: a press on Bb this soon would be a double-click
+    await drag(where('Aa song'), where('Dd song'))
+    expect(player.reorderQueue).toHaveBeenCalledWith(host, moveTo(5, [0, 1], 3).order)
+    expect(status(lines())).toContain('2 picked')
+  })
+
+  test('S sorts the queue by title; R the other way', async () => {
+    const { press, host, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
+    await press('S')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [2, 0, 4, 1, 3])
+    expect(lines().join('\n')).toContain('sort: title')
+    await press('R')
+    // the queue is in title order now, so the other way round is its reverse
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [4, 3, 2, 1, 0])
+  })
+
+  test('a song in the queue twice: only the picked copy moves', async () => {
+    const twice = { ...FIVE, queue: { ...FIVE.queue!, items: ['a', 'b', 'a', 'c', 'd'], paths: ['/m/a', '/m/b', '/m/a', '/m/c', '/m/d'] } }
+    const { press, host } = await show(100, twice)
+    await press('j', 'j', 'u')
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [0, 2, 1, 3, 4])
+  })
+})
+
+describe('review fixes', () => {
+  const LONG5: Partial<PlayerKeys> = {
+    ...PLAYING,
+    queue: {
+      kind: 'playlist',
+      items: [...Array(12).keys()].map(i => `Track ${i + 1}`),
+      paths: [...Array(12).keys()].map(i => `/m/${String(i + 1).padStart(2, '0')}.mp3`),
+      root: '/m',
+      current: 0,
+    },
+  }
+  const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+
+  test('a menu item drawn over a row takes the click, not the row', async () => {
+    const { rightClick, click, where, host, session, lines } = await show(100, LONG5)
+    await rightClick(where('Track 2 ').x, where('Track 2 ').y)
+    // the menu covers Track 3 and below; Remove sits over a row
+    const remove = where('Remove')
+    expect(lines()[remove.y]).not.toMatch(/Track/)
+    await click(remove.x + 1, remove.y)
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
+    expect(player.pick).not.toHaveBeenCalled()
+  })
+
+  test('a click outside the open menu closes it and does nothing else', async () => {
+    const { rightClick, click, where, press, lines } = await show(100, LONG5)
+    await rightClick(where('Track 2 ').x, where('Track 2 ').y)
+    await click(where(' Files ').x + 2, where(' Files ').y)
+    expect(lines().join('\n')).not.toContain('Move up')
+    // the click only closed the menu: still on the Playlist, where Enter plays the row
+    expect(lines()[lineOf(lines(), /Files\s+Playlist/) + 1]).toMatch(/^\s*Playlist/)
+    await press(ENTER)
+    expect(player.pick).toHaveBeenCalledWith(expect.anything(), 1)
+    expect(player.addToQueue).not.toHaveBeenCalled()
+  })
+
+  test('chapters are not edited: Delete, u/d and S leave the queue alone; the menu only plays', async () => {
+    const chapters: Partial<PlayerKeys> = { ...PLAYING, queue: { kind: 'chapters', items: ['One', 'Two', 'Three'], paths: [], root: '', current: 0 } }
+    const { press, rightClick, where, lines } = await show(100, chapters)
+    await press('\x1b[3~', 'd', 'u', 'S', 'R')
+    expect(player.removeFromQueue).not.toHaveBeenCalled()
+    expect(player.reorderQueue).not.toHaveBeenCalled()
+    await rightClick(where('Two').x, where('Two').y)
+    expect(lines().join('\n')).toContain('Play')
+    expect(lines().join('\n')).not.toContain('Remove')
+  })
+
+  test('d then Delete before a redraw removes the song the cursor is on after the move', async () => {
+    const { ui, host, session } = await show(100, LONG5)
+    ui.stdin.write('d')
+    ui.stdin.write('\x1b[3~')
+    await tick()
+    await tick()
+    // Track 1 moved to place 1; the Delete is for it, not for Track 2
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
+  })
+
+  test('a pick lapses when the queue changes under it (a shuffle, another session)', async () => {
+    const { press, vars, lines, host, session } = await show(100, LONG5)
+    await press('\x1b[1;2B', '\x1b[1;2B')
+    expect(status(lines())).toContain('3 picked')
+    await vars.change('queue', q => ({ ...q, items: [...q.items].reverse(), paths: [...q.paths].reverse() }))
+    await tick()
+    expect(status(lines())).not.toContain('picked')
+    await press('\x1b[3~')
+    expect(vi.mocked(player.removeFromQueue).mock.calls[0]![2]).toHaveLength(1)
+    void host
+    void session
+  })
+
+  test('in Files, a pick lapses when the rows above it change', async () => {
+    const { press, lines } = await fsTree()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    // ../, Album/, loose.mp3: pick loose.mp3
+    await press('j', 'j', '\x1b[1;2A', '\x1b[1;2B')
+    expect(status(lines())).toContain('1 picked')
+    // up to Album (the arrows keep the pick) and open it: the rows under it shift
+    await press('k', '\x1b[C')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    expect(status(lines())).not.toContain('picked')
+    await press('a')
+    expect(player.addToQueue).toHaveBeenCalledWith(expect.anything(), expect.anything(), [{ path: '/h/Music/Album' }], 'end')
   })
 })
 
@@ -750,12 +1293,13 @@ describe('the key list', () => {
     for (const close of [ESC, '?', 'q']) {
       await press('?')
       const all = lines().join('\n')
-      expect(all).not.toContain('Playlist')
+      // the list and pane give way to it
+      expect(all).not.toContain('2. Song two')
       for (const text of ['Keys', 'stop the player', 'resume the last URL', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
         expect(all).toContain(text)
       }
       await press(close)
-      expect(lines().join('\n')).toContain('Playlist')
+      expect(lines().join('\n')).toContain('2. Song two')
     }
     // q closed the list; it did not quit
     expect(player.stopPlaying).not.toHaveBeenCalled()
@@ -769,6 +1313,25 @@ describe('the key list', () => {
       return columnOf(line, line.indexOf(text))
     })
     expect(new Set(starts).size).toBe(1)
+  })
+
+  test("? lists the keys of the tab showing, and both tabs' shared keys", async () => {
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    await press('?')
+    let all = lines().join('\n')
+    for (const text of ['Playlist tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
+    expect(all).not.toContain('Files tab')
+    await press(ESC, '\t', '?')
+    all = lines().join('\n')
+    for (const text of ['Files tab', 'add to queue', 'play next', 'go up', 'switch tabs']) expect(all).toContain(text)
+    expect(all).not.toContain('remove the picked songs')
+  })
+
+  test('the hints follow the tab', async () => {
+    const { press, lines } = await show(100)
+    expect(lines().join('\n')).toMatch(/u\/d move.*Del remove/)
+    await press('\t')
+    expect(lines().join('\n')).toMatch(/a add.*A play next/)
   })
 
   test('keys that act in the list do nothing while it shows', async () => {

@@ -2,58 +2,89 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import { textWidth } from '../../../../plugins/stream-radio/core/nowplaying'
 import { ICONS } from './Controls'
+import type { Tab } from './Tabs'
 
-// Every key, as the README's table has it.
+// Every key, as the README's tables have it: the keys of both tabs, then each tab's own.
 export const KEY_HELP: [string, string][] = [
+  ['Tab  Shift-Tab', 'switch tabs: Files and the queue'],
   ['↑ ↓  k j', 'move'],
-  ['Enter', 'play the song, or open or shut a folder'],
-  ['← →', 'shut or open a folder'],
-  ['space', 'pause or resume'],
+  ['Shift-↑ ↓', 'pick rows from the cursor'],
+  ['space', 'pause or resume; while rows are picked, pick or unpick this one'],
+  ['Esc', 'clear the pick'],
+  ['m', "the row's menu"],
+  ['S', 'sort by the next field'],
   ['n  p', 'next or previous song'],
   ['b  f', 'jump 10 seconds back or ahead'],
   ['+ =  -', 'volume up or down a step (3 dB)'],
   ['s', 'shuffle on or off'],
   ['r', 'repeat: all, one, off'],
-  ['/', 'filter the list; Enter plays the first match, Esc clears'],
-  ['o', 'type a URL or path to play'],
+  ['o', 'go to a folder, or a YouTube playlist URL, in Files'],
   ['l', 'resume the last URL from where it got to'],
   ['x', 'stop the player'],
   ['?', 'this list'],
   ['q, Ctrl-C twice', 'quit; the music keeps playing'],
 ]
 
+export const PLAYLIST_KEY_HELP: [string, string][] = [
+  ['Enter', 'play the song'],
+  ['Alt-↑ ↓  u d', 'move the picked songs (or this one)'],
+  ['Delete', 'remove the picked songs (or this one)'],
+  ['R', 'sort the other way round'],
+  ['/', 'filter the list; Enter plays the first match, Esc clears'],
+]
+
+export const FILES_KEY_HELP: [string, string][] = [
+  ['Enter', 'open or shut a folder; on ../ go up; on a file, add to queue'],
+  ['← →', 'shut or open a folder'],
+  ['a', 'add to queue: the picked rows, or this one'],
+  ['A', 'play next: the same, after the song playing'],
+]
+
 // What the mouse does.
 export const MOUSE_HELP: [string, string][] = [
-  ['click', "select a row; on a folder's ▸/▾, open or shut it"],
-  ['double-click', 'play the song, or open or shut the folder'],
+  ['click', 'select a row; on a folder, open or shut it; on ../, go up'],
+  ['Ctrl-click', 'pick or unpick a row'],
+  ['Shift-, Alt-click', 'pick the rows from the cursor to there'],
+  ['double-click', 'Playlist: play the song; Files: add to queue'],
+  ['right-click, ⋯', "the row's menu"],
+  ['drag', 'Playlist: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}`, 'previous, pause or play, next'],
   ['volume bar', 'set the volume there'],
   ['repeat, shuffle', 'switch them'],
   ['waveform, bar', 'seek there'],
-  ['Shift-drag', 'select text, as the terminal does'],
+  ['Shift-drag', 'select text, as the terminal does (see the README for kitty)'],
 ]
 
-const COLUMN = 18
+const COLUMN = 20
 
 // Padded by screen columns: a Nerd Font icon is two UTF-16 units but one column.
 const pad = (text: string) => text + ' '.repeat(Math.max(0, COLUMN - textWidth(text)))
 
 // The lines of the list, headings and all.
-export function helpLines(): { text: string; isHeading?: boolean }[] {
+export function helpLines(tab: Tab = 'playlist'): { text: string; isHeading?: boolean }[] {
   const rows = (list: [string, string][]) => list.map(([k, what]) => ({ text: `  ${pad(k)}${what}` }))
-  return [{ text: 'Keys', isHeading: true }, ...rows(KEY_HELP), { text: '' }, { text: 'Mouse', isHeading: true }, ...rows(MOUSE_HELP)]
+  return [
+    { text: 'Keys', isHeading: true },
+    ...rows(KEY_HELP),
+    { text: '' },
+    { text: tab === 'playlist' ? 'Playlist tab' : 'Files tab', isHeading: true },
+    ...rows(tab === 'playlist' ? PLAYLIST_KEY_HELP : FILES_KEY_HELP),
+    { text: '' },
+    { text: 'Mouse', isHeading: true },
+    ...rows(MOUSE_HELP),
+  ]
 }
 
 // The first line shown, kept so the last line can reach the foot and no further.
-export const helpTop = (top: number, height: number) => Math.max(0, Math.min(top, helpLines().length - height))
+export const helpTop = (top: number, height: number, tab?: Tab) => Math.max(0, Math.min(top, helpLines(tab).length - height))
 
 // The key list in `height` lines from line `top`.
-export function Help({ top, height, width }: { top: number; height: number; width: number }) {
+export function Help({ top, height, width, tab }: { top: number; height: number; width: number; tab?: Tab }) {
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {helpLines()
-        .slice(helpTop(top, height), helpTop(top, height) + height)
+      {helpLines(tab)
+        .slice(helpTop(top, height, tab), helpTop(top, height, tab) + height)
         .map((line, i) => (
           <Text key={i} bold={line.isHeading} wrap="truncate-end">
             {line.text || ' '}
