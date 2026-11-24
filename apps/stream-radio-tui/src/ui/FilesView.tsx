@@ -37,6 +37,13 @@ function label(row: FileRow): string {
 
 // The Files tab: a tree from the root folder, ../ first.
 export function FilesView({ heading, rows, selected, picked, height, width, first, tags, onRow, onMenu, onWheel }: Props) {
+  // how many times each path has been drawn so far, for keys
+  const seen = new Map<string, number>()
+  const copies = (path: string) => {
+    const n = seen.get(path) ?? 0
+    seen.set(path, n + 1)
+    return n
+  }
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Text dimColor wrap="truncate-end">
@@ -44,10 +51,12 @@ export function FilesView({ heading, rows, selected, picked, height, width, firs
       </Text>
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
+        // a video can be in a playlist twice: each copy is its own row
+        const key = row.kind === 'up' ? 'up' : row.kind === 'note' ? `note-${at}` : `${row.kind}-${row.path}#${copies(row.path)}`
         const isPicked = !!picked?.has(at)
         const artist = row.kind === 'file' ? tags(row.path)?.artist : ''
         return (
-          <Clickable key={row.kind === 'up' ? 'up' : row.kind === 'note' ? `note-${at}` : `${row.kind}-${row.path}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)}>
+          <Clickable key={key} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)}>
             <Box flexGrow={1}>
               <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
                 {` ${isPicked ? '+' : ' '}${label(row)}`}

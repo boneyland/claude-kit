@@ -136,3 +136,15 @@ describe('pick and move keys', () => {
   })
 })
 
+describe('chords are not letters', () => {
+  test('Ctrl or Alt with a, A, S or R does nothing', () => {
+    const FILES = { tab: 'files' as const, hasPick: false }
+    const PL = { tab: 'playlist' as const, hasPick: false }
+    expect(keyAction('a', key({ ctrl: true }), 'list', FILES)).toBeNull()
+    expect(keyAction('A', key({ meta: true, shift: true }), 'list', FILES)).toBeNull()
+    expect(keyAction('S', key({ meta: true, shift: true }), 'list', PL)).toBeNull()
+    expect(keyAction('R', key({ meta: true, shift: true }), 'list', PL)).toBeNull()
+    expect(keyAction('s', key({ ctrl: true }), 'list', PL)).toBeNull()
+  })
+})
+

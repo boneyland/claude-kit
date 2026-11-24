@@ -82,6 +82,37 @@ describe('loadFolder', () => {
   })
 })
 
+describe('loadFolder and links', () => {
+  test('a symlink is kept as what it points to: a folder, or a playable file; a broken one is dropped', async () => {
+    const h = {
+      fs: {
+        list: async () => [
+          { name: 'Linked', kind: 'other' },
+          { name: 'song.mp3', kind: 'other' },
+          { name: 'notes.txt', kind: 'other' },
+          { name: 'broken.mp3', kind: 'other' },
+        ],
+        stat: async (p: string) => {
+          if (p === '/m/Linked') return { kind: 'dir', mtimeMs: 3 }
+          if (p === '/m/song.mp3' || p === '/m/notes.txt') return { kind: 'file', mtimeMs: 4 }
+          throw new Error('ENOENT')
+        },
+      },
+    } as unknown as Host
+    const got = await loadFolder(h, '/m')
+    expect(got.map(e => [e.name, e.kind])).toEqual([['Linked', 'dir'], ['song.mp3', 'file']])
+  })
+})
+
+describe('fileRows keeps a playlist in its order', () => {
+  test('files of a folder in `ordered` keep the listing order, whatever the sort', () => {
+    const listings = new Map<string, Listing>([['/p', [file('/p/zed'), file('/p/alpha'), file('/p/mid')]]])
+    const names = (sort: 'name' | 'modified') => fileRows('/p', listings, new Set(), sort, none, new Set(['/p'])).map(r => ('name' in r ? r.name : r.kind))
+    expect(names('name')).toEqual(['up', 'zed', 'alpha', 'mid'])
+    expect(names('modified')).toEqual(['up', 'zed', 'alpha', 'mid'])
+  })
+})
+
 describe('remember', () => {
   test('the last folder is kept in the data folder', async () => {
     const files: Record<string, string> = {}

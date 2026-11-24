@@ -115,10 +115,12 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   if (key.delete || key.backspace) return isPlaylist ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
   if (isPlaylist && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
-  if (!isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
-  if (input === 'm' && !key.ctrl && !key.meta) return { kind: 'menu' }
-  if (input === 'S') return { kind: 'sortNext' }
-  if (input === 'R') return { kind: 'sortReverse' }
+  // plain letters only: Ctrl-A or Alt-S are someone else's chords
+  const isPlain = !key.ctrl && !key.meta
+  if (isPlain && !isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
+  if (isPlain && input === 'm') return { kind: 'menu' }
+  if (isPlain && input === 'S') return { kind: 'sortNext' }
+  if (isPlain && input === 'R') return { kind: 'sortReverse' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
   if (key.leftArrow) return { kind: 'shutFolder' }

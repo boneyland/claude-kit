@@ -451,7 +451,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     if (hit.mods.ctrl) return setF(toggle(sel, index))
     if (hit.mods.shift || hit.mods.alt) return setF(extend(sel, index))
     const row = fRows[index]
-    if (row?.kind === 'up') return files.goUp()
+    // the second press of a double-click on ../ lands on the new folder's ../: one level is enough
+    if (row?.kind === 'up') return hit.isDouble ? undefined : files.goUp()
     setF(select(sel, index))
     if (hit.isDouble && (row?.kind === 'file' || row?.kind === 'dir')) {
       // the first click of the two opened or shut it: put that back

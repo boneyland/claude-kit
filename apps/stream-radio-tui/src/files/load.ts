@@ -9,19 +9,25 @@ const STATS_AT_ONCE = 32
 // modification times; dotfiles and dot-folders never.
 export async function loadFolder(h: Host, path: string): Promise<FileEntry[]> {
   const base = path.replace(/\/+$/, '') || '/'
-  const entries = (await h.fs.list(base)).filter(e => !e.name.startsWith('.') && (e.kind === 'dir' || (e.kind === 'file' && isPlayable(e.name))))
+  const pathOf = (name: string) => `${base === '/' ? '' : base}/${name}`
+  // 'other': a symlink (or a device); kept as what it points to, if that is a folder or a playable file
+  const entries = (await h.fs.list(base)).filter(e => !e.name.startsWith('.') && (e.kind === 'dir' || e.kind === 'other' || (e.kind === 'file' && isPlayable(e.name))))
   const out: FileEntry[] = []
   for (let i = 0; i < entries.length; i += STATS_AT_ONCE) {
     const chunk = entries.slice(i, i + STATS_AT_ONCE)
     const stats = await Promise.all(
       chunk.map(e =>
-        h.fs.stat(`${base === '/' ? '' : base}/${e.name}`).then(
-          s => s.mtimeMs,
-          () => 0,
+        h.fs.stat(pathOf(e.name)).then(
+          s => s,
+          () => undefined,
         ),
       ),
     )
-    chunk.forEach((e, k) => out.push({ path: `${base === '/' ? '' : base}/${e.name}`, name: e.name, kind: e.kind as 'dir' | 'file', mtimeMs: stats[k]! }))
+    chunk.forEach((e, k) => {
+      const stat = stats[k]
+      const kind = e.kind === 'other' ? stat?.kind : e.kind
+      if (kind === 'dir' || (kind === 'file' && isPlayable(e.name))) out.push({ path: pathOf(e.name), name: e.name, kind, mtimeMs: stat?.mtimeMs ?? 0 })
+    })
   }
   return out
 }

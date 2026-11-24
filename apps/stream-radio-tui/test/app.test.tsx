@@ -936,6 +936,67 @@ describe('youtube in files', () => {
   })
 })
 
+describe('pr review fixes', () => {
+  test('a double-click on ../ goes up one folder, not two', async () => {
+    const { lines, dblclick, where } = await show(100, { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }, '', '/h', {
+      fs: treeFs({ ...BASE_TREE, '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }] }, { '/state/tui-files.json': JSON.stringify({ folder: '/h/Music/Album' }) }),
+    })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    await dblclick(where('../').x, where('../').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    expect(lines().join('\n')).toContain('Files · ~/Music')
+  })
+
+  test('a YouTube playlist keeps its order, and a video in it twice shows twice', async () => {
+    const shown = await fsTree()
+    const mix = { _type: 'playlist', title: 'Mix', entries: [
+      { url: 'https://y/z', title: 'Zed', channel: 'C' },
+      { url: 'https://y/a', title: 'Alpha', channel: 'C' },
+      { url: 'https://y/z', title: 'Zed', channel: 'C' },
+    ] }
+    ;(shown.host as unknown as { run: unknown }).run = vi.fn(async () => ({ exitCode: 0, stdout: JSON.stringify(mix), stderr: '' }))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    onTestFinished(() => errors.mockRestore())
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('loose.mp3'))
+    await shown.press('o', 'https://www.youtube.com/playlist?list=x', ENTER)
+    await vi.waitFor(() => expect(shown.lines().join('\n')).toContain('Alpha'))
+    const all = shown.lines()
+    const at = (t: RegExp) => all.findIndex(l => t.test(l))
+    expect(at(/Zed/)).toBeLessThan(at(/Alpha/))
+    expect(all.filter(l => /Zed/.test(l))).toHaveLength(2)
+    expect(errors.mock.calls.some(c => String(c[0]).includes('same key'))).toBe(false)
+  })
+
+  test('the Playlist stats its songs a few at a time, and a folder in the queue only once', async () => {
+    let running = 0
+    let most = 0
+    const stats: string[] = []
+    const fs = {
+      stat: async (p: string) => {
+        stats.push(p)
+        running++
+        most = Math.max(most, running)
+        await new Promise(r => setTimeout(r, 1))
+        running--
+        return p.endsWith('/dir') ? { kind: 'dir' as const, mtimeMs: 1 } : { kind: 'file' as const, mtimeMs: 1 }
+      },
+    }
+    const n = 200
+    const big: Partial<PlayerKeys> = {
+      ...PLAYING,
+      queue: { kind: 'playlist', items: [...Array(n).keys()].map(i => `T${i}`), paths: [...[...Array(n - 1).keys()].map(i => `/m/${i}.mp3`), '/m/dir'], root: '/m', current: 0 },
+    }
+    const tags = tagReader(async () => ({ title: '', artist: '', albumArtist: '', album: '' }))
+    const { press } = await show(100, big, '', '', { fs, tags })
+    await vi.waitFor(() => expect(new Set(stats).size).toBe(n), { timeout: 3000 })
+    expect(most).toBeLessThanOrEqual(32)
+    // more needs (a redraw that scrolls) don't stat the folder again
+    await press('j', 'j', 'j')
+    await tick()
+    expect(stats.filter(p => p === '/m/dir')).toHaveLength(1)
+  })
+})
+
 describe('playlist editing', () => {
   const FIVE: Partial<PlayerKeys> = {
     ...PLAYING,

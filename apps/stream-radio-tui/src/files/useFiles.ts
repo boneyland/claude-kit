@@ -106,7 +106,7 @@ export function useFiles(h: Host, book: TagBook): Files {
     const v = videos.get(path)
     return v ? { title: v.title, artist: v.channel, albumArtist: '', album: '' } : book.get(path)
   }
-  const rows = rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags) : []
+  const rows = rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []
   return {
     root: rootRef.current,
     rootLabel: home => {
