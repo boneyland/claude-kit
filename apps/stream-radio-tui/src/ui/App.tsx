@@ -16,6 +16,8 @@ import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
 
 // Rows the wheel moves the list by.
 const WHEEL_ROWS = 3
+// How soon a second Ctrl-C must come to quit.
+const INTERRUPT_MS = 2000
 
 // Lines besides the list and now playing: title, list heading, the text line,
 // the rule, the status line, two hint lines; and one left free, as Ink clears
@@ -56,6 +58,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
   // the key list's first line shown
   const [helpTopRef, setHelpTop] = useRefState(0)
+  // when Ctrl-C was last pressed; 0 for not lately
+  const interruptAt = useRef(0)
   const mode = modeRef.current
   const [notice, setNotice] = useState('')
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
@@ -146,6 +150,15 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         return setMode('help')
       case 'closeHelp':
         return setMode('list')
+      case 'interrupt': {
+        // a lone Ctrl-C (copy habit, say) only warns; a second soon after quits
+        const at = Date.now()
+        const isAgain = at - interruptAt.current <= INTERRUPT_MS
+        interruptAt.current = isAgain ? 0 : at
+        if (!isAgain) return setNotice('Press Ctrl+C again to quit.')
+        session.close()
+        return exit()
+      }
       case 'quit':
         session.close()
         return exit()

@@ -23,6 +23,8 @@ export type Action =
   | { kind: 'last' }
   | { kind: 'stop' }
   | { kind: 'quit' }
+  // Ctrl-C: quits only when pressed twice in a row
+  | { kind: 'interrupt' }
   | { kind: 'help' }
   | { kind: 'closeHelp' }
   // in a text mode
@@ -52,7 +54,7 @@ const LETTERS: Record<string, Action> = {
 
 // What a key press means in `mode`; null for a key that means nothing there.
 export function keyAction(input: string, key: Key, mode: Mode): Action | null {
-  if (key.ctrl && input === 'c') return { kind: 'quit' }
+  if (key.ctrl && input === 'c') return { kind: 'interrupt' }
   if (mode === 'help') {
     if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
     if (key.upArrow || input === 'k') return { kind: 'up' }

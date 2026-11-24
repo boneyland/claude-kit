@@ -17,7 +17,7 @@ export const KEY_HELP: [string, string][] = [
   ['l', 'resume the last URL from where it got to'],
   ['x', 'stop the player'],
   ['?', 'this list'],
-  ['q  Ctrl-C', 'quit; the music keeps playing'],
+  ['q, Ctrl-C twice', 'quit; the music keeps playing'],
 ]
 
 // What the mouse does.

@@ -30,7 +30,7 @@ Keys:
   l            resume the last URL from where it got to
   x            stop the player
   ?            every key and what the mouse does
-  q, Ctrl-C    quit (the music keeps playing)
+  q, Ctrl-C ×2 quit (the music keeps playing)
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json
         (~/.config/stream-radio/config.json without XDG_CONFIG_HOME)

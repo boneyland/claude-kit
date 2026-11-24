@@ -43,7 +43,7 @@ const listCases: Case[] = [
   ['l', 'l', key(), { kind: 'last' }],
   ['x', 'x', key(), { kind: 'stop' }],
   ['q', 'q', key(), { kind: 'quit' }],
-  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'quit' }],
+  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
   ['?', '?', key({ shift: true }), { kind: 'help' }],
   ['an unbound letter', 'z', key(), null],
   ['Esc', '', key({ escape: true }), null],
@@ -62,7 +62,7 @@ const textCases: Case[] = [
   ['Esc', '', key({ escape: true }), { kind: 'cancel' }],
   ['Backspace', '', key({ backspace: true }), { kind: 'erase' }],
   ['Delete (most terminals send it for Backspace)', '', key({ delete: true }), { kind: 'erase' }],
-  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'quit' }],
+  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
   ['↑', '', key({ upArrow: true }), null],
   ['←', '', key({ leftArrow: true }), null],
   ['Tab', '\t', key({ tab: true }), null],
@@ -82,7 +82,7 @@ describe.each(['filter', 'open'] as Mode[])('keyAction in %s mode', mode => {
   })
 })
 
-// The key list: it closes, scrolls, or lets Ctrl-C quit; nothing else acts.
+// The key list: it closes, scrolls, or takes Ctrl-C; nothing else acts.
 const helpCases: Case[] = [
   ['?', '?', key({ shift: true }), { kind: 'closeHelp' }],
   ['Esc', '', key({ escape: true }), { kind: 'closeHelp' }],
@@ -91,7 +91,7 @@ const helpCases: Case[] = [
   ['k', 'k', key(), { kind: 'up' }],
   ['↓', '', key({ downArrow: true }), { kind: 'down' }],
   ['j', 'j', key(), { kind: 'down' }],
-  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'quit' }],
+  ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
   ['x does nothing here', 'x', key(), null],
   ['space does nothing here', ' ', key(), null],
 ]

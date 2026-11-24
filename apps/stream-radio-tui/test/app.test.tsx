@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest'
 import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
@@ -447,6 +447,24 @@ describe('keys', () => {
   test('q lets go of the player and never stops it', async () => {
     const { press, session } = await show(100)
     await press('q')
+    expect(session.close).toHaveBeenCalledTimes(1)
+    expect(player.stopPlaying).not.toHaveBeenCalled()
+  })
+
+  test('Ctrl-C once only says how to quit; again within 2 seconds quits', async () => {
+    let now = 10_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    onTestFinished(() => clock.mockRestore())
+    const { press, session, lines } = await show(100)
+    await press('\x03')
+    expect(session.close).not.toHaveBeenCalled()
+    expect(lines().join('\n')).toContain('Press Ctrl+C again to quit.')
+    // too late: the first press has lapsed, this one only warns again
+    now += 2500
+    await press('\x03')
+    expect(session.close).not.toHaveBeenCalled()
+    now += 1500
+    await press('\x03')
     expect(session.close).toHaveBeenCalledTimes(1)
     expect(player.stopPlaying).not.toHaveBeenCalled()
   })
