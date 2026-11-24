@@ -27,14 +27,18 @@ Keys:
   +/-          volume by 5     s       shuffle      r   repeat all/one/off
   /            filter (Enter plays the first match, Esc clears)
   o            open a URL or path
-  l            play the last URL from where it got to
+  l            resume the last URL from where it got to
   x            stop the player
   q, Ctrl-C    quit (the music keeps playing)
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json
         (~/.config/stream-radio/config.json without XDG_CONFIG_HOME)
         volume, player, androidClient, defaultUrl,
-        graphics ("auto", "on" or "off": album art and a pixel waveform)
+        graphics ("auto", "on" or "off": album art and a pixel waveform),
+        mouse ("on" or "off": clicks and the wheel; Shift-drag selects text)
+
+Mouse: click selects, double-click plays; click the controls, the volume
+bar and the waveform; the wheel scrolls the list.
 
   --help       this text
   --version    the version`

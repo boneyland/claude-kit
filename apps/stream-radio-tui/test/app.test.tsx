@@ -35,6 +35,7 @@ vi.mock('../../../plugins/stream-radio/core/player', async original => {
     setRepeat: vi.fn(async () => 'Repeat: this song.'),
     stopPlaying: vi.fn(async () => undefined),
     resume: vi.fn(),
+    seek: vi.fn(async () => ''),
     start: vi.fn(),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
     mpv: vi.fn(defaultMpv),
@@ -620,5 +621,50 @@ describe('mouse controls', () => {
   test('paused, the middle control shows ▸', async () => {
     const { lines } = await show(100, { ...PLAYING, isPaused: true })
     expect(lines().some(l => /\|◂ +▸ +▸\|/.test(l))).toBe(true)
+  })
+})
+
+describe('mouse seek', () => {
+  const near = (v: number) => expect.closeTo(v, 5)
+
+  test('a click on the braille waveform seeks to that column; on the times, nothing', async () => {
+    const { media, pending } = fakeMedia()
+    const { lines, click, where, host } = await show(100, PLAYING, '', '', { media })
+    await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
+    pending.get(SONG3)!.resolve(flat(128))
+    await vi.waitFor(() => expect(lines().filter(l => BRAILLE.test(l))).toHaveLength(4))
+    const times = where('2:41')
+    await click(times.x + 16, times.y + 2)
+    expect(player.seek).toHaveBeenCalledWith(host, near((16.5 / 33) * 245))
+    await click(times.x + 16, times.y)
+    expect(player.seek).toHaveBeenCalledTimes(1)
+  })
+
+  test('a click on the pixel waveform seeks the same way', async () => {
+    const screen = fakeScreen()
+    const { lines, click, where, host } = await show(100, PLAYING, '', '', { media: pictureMedia(), graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(lines().some(l => l.includes(sgr(201)))).toBe(true))
+    const times = where('2:41')
+    await click(times.x, times.y + 4)
+    expect(player.seek).toHaveBeenCalledWith(host, near((0.5 / 33) * 245))
+  })
+
+  test('narrow: a click on the bar seeks there; on its times, nothing', async () => {
+    const { click, where, host } = await show(60)
+    const at = where('2:41 ')
+    // the bar starts after "2:41 "; 60 - 4 - 4 - 2 = 50 cells
+    await click(at.x + 5, at.y)
+    expect(player.seek).toHaveBeenCalledWith(host, near((0.5 / 50) * 245))
+    await click(at.x + 1, at.y)
+    await click(at.x + 57, at.y)
+    expect(player.seek).toHaveBeenCalledTimes(1)
+  })
+
+  test('a live stream has no bar, and nothing seeks', async () => {
+    const { click, where } = await show(60, { ...PLAYING, elapsed: -1 })
+    const at = where('♪ live')
+    await click(at.x, at.y)
+    await click(at.x + 10, at.y)
+    expect(player.seek).not.toHaveBeenCalled()
   })
 })

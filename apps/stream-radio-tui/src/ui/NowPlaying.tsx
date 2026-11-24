@@ -10,15 +10,21 @@ import type { Graphics } from '../gfx/screen'
 import type { Wave } from '../media/peaks'
 import type { Action } from '../keys'
 import { Controls, Toggle } from './Controls'
+import { Clickable, type Hit } from '../mouse/Clickable'
 
 // The lines it takes, for the layout to plan around.
 export const NOW_PLAYING_ROWS = 5
 
-// `2:41 ━━━━━━━━━──── 4:05` in `width` cells.
-export function progress(elapsed: number, duration: number, width: number): string {
+// The bar's cells in progress(): where they start, and how many.
+function barSpan(elapsed: number, duration: number, width: number) {
   const from = formatTime(elapsed)
   const to = formatTime(duration)
-  const bar = Math.max(4, width - from.length - to.length - 2)
+  return { from, to, start: from.length + 1, bar: Math.max(4, width - from.length - to.length - 2) }
+}
+
+// `2:41 ━━━━━━━━━──── 4:05` in `width` cells.
+export function progress(elapsed: number, duration: number, width: number): string {
+  const { from, to, bar } = barSpan(elapsed, duration, width)
   const filled = Math.round(bar * Math.min(1, Math.max(0, elapsed / duration)))
   return `${from} ${'━'.repeat(filled)}${'─'.repeat(bar - filled)} ${to}`
 }
@@ -36,15 +42,18 @@ const NARROW_BAR = 16
 const MIN_ART_ROWS = 4
 
 // onAction: a control clicked, as its key; onVolume: the volume bar clicked.
-type Props = { view: View; duration: number; width: number; full?: Full; onAction?(a: Action): void; onVolume?(level: number): void }
+// onSeek: the waveform or the bar clicked, at this share of the song.
+type Props = { view: View; duration: number; width: number; full?: Full; onAction?(a: Action): void; onVolume?(level: number): void; onSeek?(share: number): void }
 
 // What plays, how far it is, and the volume, repeat and shuffle. Narrow, in
 // five lines; with `full`, down the whole column.
-export function NowPlaying({ view, duration, width, full, onAction, onVolume }: Props) {
+export function NowPlaying({ view, duration, width, full, onAction, onVolume, onSeek }: Props) {
   const { playing, isPaused, chapter, elapsed, lastUrl, resumeAt } = view
   const second = playing ? chapter : lastUrl ? `l plays ${resumable(resumeAt, lastUrl) || lastUrl}` : ''
-  const time = !playing ? '' : elapsed < 0 || duration <= 0 ? '♪ live' : progress(elapsed, duration, width)
-  if (full) return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} onAction={onAction} onVolume={onVolume} />
+  const isLive = elapsed < 0 || duration <= 0
+  const time = !playing ? <Text> </Text> : isLive ? <Text>♪ live</Text> : <Progress elapsed={elapsed} duration={duration} width={width} onSeek={onSeek} />
+  if (full)
+    return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} onAction={onAction} onVolume={onVolume} onSeek={onSeek} />
   return (
     <Box flexDirection="column" width={width}>
       <Text bold wrap="truncate-end">
@@ -53,7 +62,7 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume }: 
       <Text dimColor wrap="truncate-end">
         {second || ' '}
       </Text>
-      <Text>{time || ' '}</Text>
+      {time}
       <Box>
         <Controls isPaused={isPaused} volume={view.volume} width={NARROW_BAR + 14} isNarrow onAction={onAction} onVolume={onVolume} />
         <Text>{'  '}</Text>
@@ -66,11 +75,11 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume }: 
   )
 }
 
-type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: string } & Pick<Props, 'onAction' | 'onVolume'>
+type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: React.ReactNode } & Pick<Props, 'onAction' | 'onVolume' | 'onSeek'>
 
 // Title, second line, tags and settings at the top; the waveform, or the bar,
 // at the foot.
-function Column({ view, duration, width, full, second, time, onAction, onVolume }: ColumnProps) {
+function Column({ view, duration, width, full, second, time, onAction, onVolume, onSeek }: ColumnProps) {
   const { playing, isPaused, elapsed } = view
   const tags = [full.tags.artist, full.tags.album].filter(Boolean).join(' · ')
   const hasWave = !!full.peaks && full.peaks.peak.length > 0 && duration > 0 && elapsed >= 0
@@ -95,11 +104,25 @@ function Column({ view, duration, width, full, second, time, onAction, onVolume 
       <Box flexGrow={1} />
       {hasWave ? (
         <Box height={WAVEFORM_ROWS}>
-          <Waveform wave={full.peaks!} elapsed={elapsed} duration={duration} width={width} graphics={pixels?.graphics} />
+          <Waveform wave={full.peaks!} elapsed={elapsed} duration={duration} width={width} graphics={pixels?.graphics} onSeek={onSeek} />
         </Box>
       ) : (
-        <Text>{time || ' '}</Text>
+        time
       )}
     </Box>
+  )
+}
+
+// The bar from progress(); a click on its cells (not the times) seeks there.
+function Progress({ elapsed, duration, width, onSeek }: { elapsed: number; duration: number; width: number; onSeek?(share: number): void }) {
+  const { start, bar } = barSpan(elapsed, duration, width)
+  const onClick = (hit: Hit) => {
+    const i = hit.x - start
+    if (i >= 0 && i < bar) onSeek?.((i + 0.5) / bar)
+  }
+  return (
+    <Clickable onClick={onClick}>
+      <Text>{progress(elapsed, duration, width)}</Text>
+    </Clickable>
   )
 }

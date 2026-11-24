@@ -42,6 +42,18 @@ With no argument it attaches to the player that is already running, or shows the
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 
+## Mouse
+
+Everything the keys do, the mouse can do too:
+
+- **Rows:** a click selects a song or folder, a double-click plays the song or opens or shuts the folder, and a click on a folder's `▸`/`▾` opens or shuts it at once.
+- **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
+- **Controls:** `|◂` previous, `❚❚` pause (`▸` while paused), `▸|` next; `repeat …` and `shuffle …` switch when clicked.
+- **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
+- **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
+
+While the mouse is on, the terminal leaves clicks to the TUI: hold Shift to select text (in kitty, Shift-drag). Set `mouse` to `off` to keep the terminal's own selection.
+
 ## Pictures
 
 In a window 80 or more columns wide, the right-hand column shows what plays from top to bottom:
@@ -59,7 +71,7 @@ Waveforms and art are decoded by mpv and kept in `${XDG_CACHE_HOME:-~/.cache}/st
 Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 
 ```json
-{ "volume": 60, "player": "mpv", "androidClient": false, "defaultUrl": "", "graphics": "auto" }
+{ "volume": 60, "player": "mpv", "androidClient": false, "defaultUrl": "", "graphics": "auto", "mouse": "on" }
 ```
 
 | Field | Default | |
@@ -69,6 +81,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md)) |
 | `defaultUrl` | empty | the URL shown at start when nothing else is known |
 | `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |
+| `mouse` | `on` | clicks and the wheel (see Mouse); `off` leaves text selection to the terminal |
 
 A missing file, or a field of the wrong type, gives that field's default. The mod has its own settings with the same names; they are separate.
 

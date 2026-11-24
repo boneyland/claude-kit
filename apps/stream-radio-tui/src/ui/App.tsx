@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { filterRows, nextRepeat, playlistRows } from '../../../../plugins/stream-radio/core/nowplaying'
-import { locate, pick, resume, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
+import { locate, pick, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Hints } from './Hints'
@@ -180,6 +180,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         ? 'Chapters'
         : 'No playlist or chapters.'
   const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o open: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
+  // Only with a known length: a live stream has no bar to click.
+  const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
   const first = firstRow(selected, rows.length, listHeight, topRef.current)
   // A click selects and holds the view where it is; a double-click does what
@@ -203,13 +205,13 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
         <Box flexDirection="row" height={listHeight + 1}>
           {list}
           <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-            <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+            <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 1, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
           </Box>
         </Box>
       ) : (
         <Box flexDirection="column">
           <Box marginBottom={1}>
-            <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} />
+            <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
           </Box>
           <Box height={listHeight + 1}>{list}</Box>
         </Box>
