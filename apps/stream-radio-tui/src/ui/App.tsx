@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
 import { nextRepeat, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
-import { pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
+import { addToQueue, pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { moveBy, moveTo, type Moved } from '../../../../plugins/stream-radio/core/queue'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
@@ -15,6 +15,7 @@ import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { PlaylistView } from './PlaylistView'
 import { FilesView } from './FilesView'
+import { FILES_MENU, Menu, PLAYLIST_MENU, type MenuItem } from './Menu'
 import { useFiles } from '../files/useFiles'
 import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { Tabs, type Tab } from './Tabs'
@@ -76,6 +77,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [sortRef, setSort] = useRefState<{ field?: SortField; isReversed: boolean }>({ isReversed: false })
   // a drag in the Playlist: the row pressed and where the rows would land
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
+  // a row's menu, open: its items, the row (a place in the tab's rows), the item chosen
+  const [menuRef, setMenu] = useRefState<{ items: readonly MenuItem[]; at: number; choice: number } | undefined>(undefined)
   // a press on a picked row selects it only when let go without a drag
   const pendingSelect = useRef<number | undefined>(undefined)
   // the list's first row once the wheel or a click has placed it; undefined
@@ -173,6 +176,39 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     )
   }
 
+  // Adds the picked Files rows (or the cursor's), folders whole, in row order.
+  const addFiles = (where: 'end' | 'next') => {
+    const sel = filesSel()
+    const chosen = targets(sel).flatMap(i => {
+      const r = fRows[i]
+      return r && (r.kind === 'file' || r.kind === 'dir') ? [r] : []
+    })
+    if (!chosen.length) return
+    files.setSel(clear(sel))
+    const songs = chosen.filter(r => r.kind === 'file').length
+    const folders = chosen.length - songs
+    const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+    const said = `Added ${[songs ? plural(songs, 'song') : '', folders ? plural(folders, 'folder') : ''].filter(Boolean).join(' and ')}${where === 'next' ? ' to play next' : ''}.`
+    act(() => inTurn(async () => (await addToQueue(h, session.config, chosen.map(r => ({ path: r.path })), where)) || said))
+  }
+  // The menu of row `at` of the tab showing; the cursor moves there unless it is picked.
+  const openMenu = (at: number) => {
+    const sel = curSel()
+    if (isPl() ? !rows[at] : fRows[at]?.kind !== 'file' && fRows[at]?.kind !== 'dir') return
+    setCurSel(sel.picked.includes(at) ? { ...sel, cursor: at } : select(sel, at))
+    setMenu({ items: isPl() ? PLAYLIST_MENU : FILES_MENU, at, choice: 0 })
+    setMode('menu')
+  }
+  const closeMenu = () => {
+    setMenu(undefined)
+    setMode('list')
+  }
+  const pickMenu = (i: number) => {
+    const item = menuRef.current?.items[i]
+    closeMenu()
+    if (item) handle(item.action)
+  }
+
   const handle = (a: Action) => {
     const at = curSel().cursor
     const row = rows[at]
@@ -182,6 +218,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     switch (a.kind) {
       case 'up':
       case 'down':
+        if (mode === 'menu' && menuRef.current) {
+          const m = menuRef.current
+          return setMenu({ ...m, choice: (m.choice + (a.kind === 'up' ? -1 : 1) + m.items.length) % m.items.length })
+        }
         if (mode === 'help') return setHelpTop(helpTop(helpTopRef.current + (a.kind === 'up' ? -1 : 1), bodyHeight))
         setCurTop(undefined)
         {
@@ -215,7 +255,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         if (isPl()) return row ? act(() => pick(h, row.index)) : undefined
         if (fileRow?.kind === 'up') return files.goUp()
         if (fileRow?.kind === 'dir') return files.setOpen(fileRow.path)
+        if (fileRow?.kind === 'file') addFiles('end')
         return
+      case 'add':
+        return isPl() ? undefined : addFiles(a.where)
+      case 'menu':
+        return openMenu(at)
       case 'shutFolder':
       case 'openFolder':
         if (!isPl() && fileRow?.kind === 'dir') files.setOpen(fileRow.path, a.kind === 'openFolder')
@@ -277,6 +322,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return mode === 'filter' ? setFilter(edit) : setTyped(edit(typedRef.current))
       }
       case 'submit':
+        if (mode === 'menu') return pickMenu(menuRef.current?.choice ?? 0)
         setMode('list')
         if (mode === 'filter') {
           // The store, not the last render: typing may not have redrawn yet.
@@ -292,6 +338,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           return files.goTo(text.trim())
         })
       case 'cancel':
+        if (mode === 'menu') return closeMenu()
         if (mode === 'filter') setFilter(() => '')
         return setMode('list')
     }
@@ -366,6 +413,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const row = fRows[index]
     if (row?.kind === 'up') return files.goUp()
     files.setSel(select(sel, index))
+    if (hit.isDouble && (row?.kind === 'file' || row?.kind === 'dir')) {
+      // the first click of the two opened or shut it: put that back
+      if (row.kind === 'dir') files.setOpen(row.path)
+      return addFiles('end')
+    }
     if (row?.kind === 'dir') files.setOpen(row.path)
   }
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
@@ -380,6 +432,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const allKey = tab === 'playlist' ? q.paths.join('\n') : ''
   useEffect(() => book.need(allKey ? allKey.split('\n') : []), [book, allKey])
   useEffect(() => book.need(shownKey ? shownKey.split('\n') : []), [book, shownKey])
+  const menu = menuRef.current
+  const menuTop = (() => {
+    if (!menu) return 0
+    const rowY = 2 + menu.at - (tab === 'playlist' ? first : fFirst)
+    const height = menu.items.length + 2
+    // below the row, or above it when that would run past the list
+    return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
+  })()
   const list = (
     <Box flexDirection="column" width={listWidth}>
       <Tabs
@@ -411,6 +471,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           onRow={onRow}
           onRowDrag={onRowDrag}
           onRowRelease={onRowRelease}
+          onMenu={openMenu}
           onWheel={onWheel}
         />
       ) : (
@@ -424,9 +485,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           first={fFirst}
           tags={book.get}
           onRow={onFileRow}
+          onMenu={openMenu}
           onWheel={onFilesWheel}
         />
       )}
+      {/* last, so it is drawn over the rows */}
+      {menu && mode === 'menu' ? <Menu items={menu.items} selected={menu.choice} x={4} y={menuTop} onPick={pickMenu} /> : null}
     </Box>
   )
 

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Text } from 'ink'
+import { Box, Text } from 'ink'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import type { FlatRow } from '../playlist/rows'
 
@@ -18,12 +18,14 @@ type Props = {
   // a drag from row `at`, `dy` rows down (up when negative); its release
   onRowDrag?(at: number, dy: number): void
   onRowRelease?(): void
+  // a row's menu: right-click, or the ⋯ at the end of the cursor's row
+  onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
 }
 
 // The Playlist tab: one row per song, the window of rows from `first`.
 // at: a row's place in `rows` (not its queue index).
-export function PlaylistView({ heading, rows, selected, picked, dropAt, current, height, width, first, onRow, onRowDrag, onRowRelease, onWheel }: Props) {
+export function PlaylistView({ heading, rows, selected, picked, dropAt, current, height, width, first, onRow, onRowDrag, onRowRelease, onMenu, onWheel }: Props) {
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Text dimColor wrap="truncate-end">
@@ -35,11 +37,18 @@ export function PlaylistView({ heading, rows, selected, picked, dropAt, current,
         const isPicked = !!picked?.has(at)
         const extra = [row.artist, row.where].filter(Boolean).join(' · ')
         return (
-          <Clickable key={`row-${row.index}`} onClick={hit => onRow?.(at, hit)} onDrag={p => onRowDrag?.(at, p.y)} onRelease={() => onRowRelease?.()}>
+          <Clickable key={`row-${row.index}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)} onDrag={p => onRowDrag?.(at, p.y)} onRelease={() => onRowRelease?.()}>
+            <Box flexGrow={1}>
             <Text inverse={at === selected} bold={isPlaying} color={isPicked ? 'cyan' : undefined} underline={dropAt === at + 1 && dropAt !== undefined} wrap="truncate-end">
               {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${row.title}`}
               {extra ? <Text dimColor>{` · ${extra}`}</Text> : null}
             </Text>
+            </Box>
+            {at === selected ? (
+              <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>
+                <Text>{' ⋯'}</Text>
+              </Clickable>
+            ) : null}
           </Clickable>
         )
       })}

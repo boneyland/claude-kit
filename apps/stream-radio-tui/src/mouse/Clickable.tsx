@@ -12,7 +12,8 @@ export type Point = { x: number; y: number }
 // onDrag and onRelease: after a left press on this box, the pointer moving
 // with the button held, and the button let go, wherever on screen (the point
 // is still from this box's top left, so it may be outside it).
-type Handlers = { onClick?(hit: Hit): void; onWheel?(dir: 'up' | 'down'): void; onDrag?(at: Point): void; onRelease?(at: Point): void }
+// onRightClick: a press of the right button.
+type Handlers = { onClick?(hit: Hit): void; onRightClick?(hit: Hit): void; onWheel?(dir: 'up' | 'down'): void; onDrag?(at: Point): void; onRelease?(at: Point): void }
 type Entry = { node: React.RefObject<DOMElement>; handlers: React.MutableRefObject<Handlers> }
 
 // A box's place on screen, from the layout Ink computed for it (the same data
@@ -57,11 +58,13 @@ export function MouseProvider({ source, now = Date.now, children }: { source?: M
           return e.kind === 'drag' ? entry.handlers.current.onDrag?.(at) : entry.handlers.current.onRelease?.(at)
         }
         const isWheel = e.kind === 'wheel'
-        if (!isWheel && (e.kind !== 'press' || e.button !== 'left')) return
+        const isRight = e.kind === 'press' && e.button === 'right'
+        if (!isWheel && !isRight && (e.kind !== 'press' || e.button !== 'left')) return
         let best: { id: number; entry: Entry; rect: Rect; depth: number } | undefined
         for (const [id, entry] of entries) {
           const node = entry.node.current
-          if (!node || !(isWheel ? entry.handlers.current.onWheel : entry.handlers.current.onClick)) continue
+          const takes = isWheel ? entry.handlers.current.onWheel : isRight ? entry.handlers.current.onRightClick : entry.handlers.current.onClick
+          if (!node || !takes) continue
           const rect = rectOf(node)
           if (e.x < rect.x || e.y < rect.y || e.x >= rect.x + rect.width || e.y >= rect.y + rect.height) continue
           const d = depth(node)
@@ -70,6 +73,7 @@ export function MouseProvider({ source, now = Date.now, children }: { source?: M
         if (!isWheel) pressed.current = undefined
         if (!best) return
         if (isWheel) return best.entry.handlers.current.onWheel?.(e.dir ?? 'down')
+        if (isRight) return best.entry.handlers.current.onRightClick?.({ x: e.x - best.rect.x, y: e.y - best.rect.y, isDouble: false, mods: e.mods ?? NO_MODS })
         const at = clock.current()
         const isDouble = last.current?.id === best.id && at - last.current.at <= DOUBLE_MS
         last.current = isDouble ? undefined : { id: best.id, at }
@@ -84,11 +88,11 @@ export function MouseProvider({ source, now = Date.now, children }: { source?: M
 let nextId = 1
 
 // A Box that takes clicks, drags and the wheel. Outside a MouseProvider, a plain Box.
-export function Clickable({ onClick, onWheel, onDrag, onRelease, children, ...box }: BoxProps & Handlers & { children?: React.ReactNode }) {
+export function Clickable({ onClick, onRightClick, onWheel, onDrag, onRelease, children, ...box }: BoxProps & Handlers & { children?: React.ReactNode }) {
   const entries = useContext(Registry)
   const node = useRef<DOMElement>(null)
   const handlers = useRef<Handlers>({})
-  handlers.current = { onClick, onWheel, onDrag, onRelease }
+  handlers.current = { onClick, onRightClick, onWheel, onDrag, onRelease }
   const id = useRef(0)
   if (!id.current) id.current = nextId++
   // At commit, with the rows: a click right after a redraw finds the box.

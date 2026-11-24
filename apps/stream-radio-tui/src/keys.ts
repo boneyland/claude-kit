@@ -2,8 +2,9 @@ import type { Key } from 'ink'
 import type { Tab } from './ui/Tabs'
 
 // list: keys are commands; filter and open: keys edit a line of text; help:
-// the key list shows, and keys scroll or close it.
-export type Mode = 'list' | 'filter' | 'open' | 'help'
+// the key list shows, and keys scroll or close it; menu: a row's menu is
+// open, and keys choose from it.
+export type Mode = 'list' | 'filter' | 'open' | 'help' | 'menu'
 
 export type Action =
   | { kind: 'up' }
@@ -47,6 +48,10 @@ export type Action =
   // sort by the next field; by this one, the other way round
   | { kind: 'sortNext' }
   | { kind: 'sortReverse' }
+  // Files: the picked rows (or the cursor's) to the queue's end, or to play next
+  | { kind: 'add'; where: 'end' | 'next' }
+  // the cursor's row's menu
+  | { kind: 'menu' }
 
 // How far b and f jump, as the mod's panel does.
 export const SEEK_SECONDS = 10
@@ -84,6 +89,13 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
     if (key.downArrow || input === 'j') return { kind: 'down' }
     return null
   }
+  if (mode === 'menu') {
+    if (key.escape || input === 'm' || input === 'q') return { kind: 'cancel' }
+    if (key.upArrow || input === 'k') return { kind: 'up' }
+    if (key.downArrow || input === 'j') return { kind: 'down' }
+    if (key.return) return { kind: 'submit' }
+    return null
+  }
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
@@ -103,6 +115,8 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   if (key.delete || key.backspace) return isPlaylist ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
   if (isPlaylist && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
+  if (!isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
+  if (input === 'm' && !key.ctrl && !key.meta) return { kind: 'menu' }
   if (input === 'S') return { kind: 'sortNext' }
   if (input === 'R') return { kind: 'sortReverse' }
   if (key.upArrow) return { kind: 'up' }

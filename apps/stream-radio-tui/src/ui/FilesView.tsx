@@ -1,5 +1,5 @@
 import React from 'react'
-import { Text } from 'ink'
+import { Box, Text } from 'ink'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import type { FileRow } from '../files/tree'
 import type { Tags } from '../media/tags'
@@ -14,6 +14,8 @@ type Props = {
   first: number
   tags(path: string): Tags | undefined
   onRow?(at: number, hit: Hit): void
+  // a row's menu: right-click, or the ⋯ at the end of the cursor's row
+  onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
 }
 
@@ -34,7 +36,7 @@ function label(row: FileRow): string {
 }
 
 // The Files tab: a tree from the root folder, ../ first.
-export function FilesView({ heading, rows, selected, picked, height, width, first, tags, onRow, onWheel }: Props) {
+export function FilesView({ heading, rows, selected, picked, height, width, first, tags, onRow, onMenu, onWheel }: Props) {
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Text dimColor wrap="truncate-end">
@@ -45,11 +47,18 @@ export function FilesView({ heading, rows, selected, picked, height, width, firs
         const isPicked = !!picked?.has(at)
         const artist = row.kind === 'file' ? tags(row.path)?.artist : ''
         return (
-          <Clickable key={row.kind === 'up' ? 'up' : row.kind === 'note' ? `note-${at}` : `${row.kind}-${row.path}`} onClick={hit => onRow?.(at, hit)}>
-            <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
-              {` ${isPicked ? '+' : ' '}${label(row)}`}
-              {artist ? <Text dimColor>{` · ${artist}`}</Text> : null}
-            </Text>
+          <Clickable key={row.kind === 'up' ? 'up' : row.kind === 'note' ? `note-${at}` : `${row.kind}-${row.path}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)}>
+            <Box flexGrow={1}>
+              <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
+                {` ${isPicked ? '+' : ' '}${label(row)}`}
+                {artist ? <Text dimColor>{` · ${artist}`}</Text> : null}
+              </Text>
+            </Box>
+            {at === selected && (row.kind === 'file' || row.kind === 'dir') ? (
+              <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>
+                <Text>{' ⋯'}</Text>
+              </Clickable>
+            ) : null}
           </Clickable>
         )
       })}

@@ -7,6 +7,7 @@ const FIRST = {
   filter: ['type to narrow the list  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
   open: ['type a URL or a file or folder path  Enter plays it  Esc cancels', 'type a URL or path  Enter plays  Esc cancels'],
   help: ['↑/↓ or j/k scroll  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
+  menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],
 }
 const SECOND = ['? all keys  o open url/path  l resume last  x stop  q quit (music keeps playing)', '? keys  / filter  o open  l resume  x stop  q quit']
 
