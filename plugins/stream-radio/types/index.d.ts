@@ -22,8 +22,6 @@ declare module 'claude-code' {
       chapter: string
       // The last URL that actually played; the idle button plays it again.
       lastUrl: string
-      // The default stream the last load saw; a change clears lastUrl.
-      knownDefault: string
       // How far a title too long for the footer has scrolled, in ticks.
       scroll: number
       // What the panel lists to pick from: the playlist, else the file's chapters.

@@ -32,8 +32,6 @@ export type PlayerKeys = {
   chapter: string
   // the last URL that actually played
   lastUrl: string
-  // the default stream the last load saw; a change clears lastUrl
-  knownDefault: string
   // what there is to pick from: the playlist, else the file's chapters
   queue: Queue
   // the folders the playlist shows open

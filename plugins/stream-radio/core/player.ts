@@ -97,8 +97,6 @@ export async function loadLast(h: Host) {
   if (!saved.last) return
   const { url, resumeAt: at } = saved.last
   await h.vars.change('lastUrl', () => url)
-  const known = saved.knownDefault[h.program]
-  if (known !== undefined) await h.vars.change('knownDefault', () => known)
   if (at.url === url) await h.vars.change('resumeAt', () => at)
 }
 
@@ -108,7 +106,6 @@ export async function checkDefault(h: Host, defaultUrl: string) {
   const known = (await readSaved(h)).knownDefault[h.program]
   if (known === defaultUrl) return
   const isChanged = known !== undefined
-  await h.vars.change('knownDefault', () => defaultUrl)
   if (isChanged) {
     await h.vars.change('lastUrl', () => '')
     await h.vars.change('resumeAt', () => NO_RESUME)

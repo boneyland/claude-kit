@@ -16,7 +16,6 @@ const defaults = (): PlayerKeys => ({
   elapsed: -1,
   chapter: '',
   lastUrl: '',
-  knownDefault: '',
   queue: NO_QUEUE,
   openFolders: [],
   filter: '',

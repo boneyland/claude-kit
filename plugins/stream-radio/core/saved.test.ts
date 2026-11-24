@@ -10,14 +10,18 @@ const AT = { url: '/m', index: 2, seconds: 80, title: 'Song' }
 
 // A Host over files in memory: only what the saved state reaches. run makes
 // folders and moves files; every argv is kept.
-function hostOf(program: 'mod' | 'tui', files: Record<string, string> = {}) {
+function hostOf(program: 'mod' | 'tui', files: Record<string, string> = {}, isMoveRefused = false) {
   const ran: string[][] = []
-  const vars: Partial<PlayerKeys> = { lastUrl: '', resumeAt: NO_RESUME, knownDefault: '', volume: 0 }
+  const logged: string[] = []
+  const vars: Partial<PlayerKeys> = { lastUrl: '', resumeAt: NO_RESUME, volume: 0 }
   const h = {
     program,
     dataDir: async () => '/data',
+    log: (text: string) => void logged.push(text),
     run: async (argv: readonly string[]) => {
       ran.push([...argv])
+      if (argv[0] === 'mv' && isMoveRefused) return { exitCode: 1, stdout: '', stderr: 'mv: Permission denied' }
+      if (argv[0] === 'rm' && argv[1] === '-f') delete files[argv[2]!]
       if (argv[0] === 'mv' && argv[1] === '-f') {
         files[argv[3]!] = files[argv[2]!]!
         delete files[argv[2]!]
@@ -37,7 +41,7 @@ function hostOf(program: 'mod' | 'tui', files: Record<string, string> = {}) {
       change: async (key: keyof PlayerKeys, fn: (prev: unknown) => unknown) => ((vars as Record<string, unknown>)[key] = fn(vars[key])),
     },
   } as unknown as Host
-  return { h, files, ran, vars }
+  return { h, files, ran, vars, logged }
 }
 
 test('a missing, broken or empty state.json reads as the empty state', async () => {
@@ -50,6 +54,13 @@ test('a missing, broken or empty state.json reads as the empty state', async () 
 test('a field of the wrong shape is dropped on its own', async () => {
   const text = JSON.stringify({ version: 1, last: 'x', knownDefault: { mod: 3, tui: 'B' }, volume: { value: 40, configured: { mod: 60 } }, repeat: 'sometimes' })
   expect(await readSaved(hostOf('mod', { [STATE]: text }).h)).toEqual({ ...EMPTY, knownDefault: { tui: 'B' }, volume: { value: 40, configured: { mod: 60 } } })
+})
+
+test('a save that cannot be moved into place says why in the log and leaves no temp file', async () => {
+  const { h, files, logged } = hostOf('mod', {}, true)
+  await updateSaved(h, s => ({ ...s, repeat: 'one' }))
+  expect(logged.join('\n')).toMatch(/could not save \/data\/state\.json: mv: Permission denied/)
+  expect(Object.keys(files)).toEqual([])
 })
 
 test('an update writes a temp file beside state.json, then moves it over', async () => {

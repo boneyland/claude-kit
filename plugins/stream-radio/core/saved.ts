@@ -79,7 +79,10 @@ export function updateSaved(h: Host, fn: (s: SavedState) => SavedState): Promise
       await h.fs.write(tmp, `${JSON.stringify(next)}\n`)
       const moved = await h.run(['mv', '-f', tmp, path], { timeoutMs: 3000 })
       if (moved.exitCode !== 0) throw new Error(moved.stderr)
-    } catch {
+    } catch (error) {
+      // Not shown: a save is retried at the next one. Logged, so a state
+      // folder that can't be written is findable.
+      h.log(`stream-radio: could not save ${path}: ${error instanceof Error ? error.message : String(error)}`, 'debug')
       await h.run(['rm', '-f', tmp], { timeoutMs: 3000 }).catch(() => undefined)
     }
   })
