@@ -39,6 +39,7 @@ import {
   step,
   stopPlaying,
   stopPoller,
+  seek,
   togglePause,
   toggleShuffle,
 } from '../core/player'
@@ -61,6 +62,8 @@ const lastUrl = atom({ plugin: 'stream-radio', key: 'lastUrl' } as const, '')
 const queue = atom(QUEUE, NO_QUEUE)
 const openFolders = atom(OPEN_FOLDERS, [] as string[])
 const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_RESUME)
+// How far the panel's ⏪ and ⏩ jump.
+const SEEK_SECONDS = 10
 const volumeLevel = atom({ plugin: 'stream-radio', key: 'volume' } as const, 60)
 const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
 // The playing playlist's shuffle, off again when something new starts.
@@ -191,6 +194,11 @@ function hostFor($: EngineInterface, config: Config): Host {
   })
 }
 
+// To `seconds` into the playing file, or that far from where it is; '' when done.
+async function seekBy($: EngineInterface, config: Config, seconds: number, isRelative?: boolean): Promise<string> {
+  return seek(hostFor($, config), isRelative ? Math.max(0, await read($, elapsed)) + seconds : seconds)
+}
+
 export const register: Register = (on, options) => {
   const {
     defaultUrl = '',
@@ -231,7 +239,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",
-      argumentHint: '[url | last | pause | next | prev | vol N | shuffle | repeat | panel | stop]',
+      argumentHint: '[url | last | pause | next | prev | vol N | seek m:ss | shuffle | repeat | panel | stop]',
     })
     // A player another session started (or this one, before a reload) plays on:
     // follow it. In the background: a slow answer must not hold up the session.
@@ -273,6 +281,12 @@ export const register: Register = (on, options) => {
         const now = await read($, volumeLevel)
         if (parsed.to === undefined && parsed.step === undefined) return { text: `Volume ${now}%.` }
         return { text: await setVolume(hostFor($, config), config.volume, parsed.to ?? stepVolume(now, parsed.step ?? 1)) }
+      }
+      if (parsed.kind === 'seek') {
+        if (!isFollowing()) return { text: 'Nothing is playing.' }
+        const said = await seekBy($, config, parsed.seconds, parsed.isRelative)
+
+        return { text: said || `At ${formatTime(await read($, elapsed))}.` }
       }
       if (parsed.kind === 'next' || parsed.kind === 'prev') {
         if (!isFollowing()) return { text: 'Nothing is playing.' }
@@ -442,6 +456,10 @@ export const register: Register = (on, options) => {
                 <Button key="next" label="Next ⏭" onPress={() => act(() => step(hostFor($, config), 1))} />
               ) : null}
               <Button key="stop" label="⏹ Stop" onPress={() => act(async () => (await stopPlaying(hostFor($, config), config), ''))} />
+            </Box>
+            <Box flexDirection="row" gap={1}>
+              <Button key="seek-back" label="⏪ 10s" onPress={() => act(() => seekBy($, config, -SEEK_SECONDS, true))} />
+              <Button key="seek-ahead" label="10s ⏩" onPress={() => act(() => seekBy($, config, SEEK_SECONDS, true))} />
             </Box>
             <Box flexDirection="row" gap={1}>
               <Button key="vol-down" label="🔉 −" onPress={() => act(async () => (await setVolume(hostFor($, config), config.volume, stepVolume(level, -1)), ''))} />
