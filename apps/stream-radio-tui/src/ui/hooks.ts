@@ -2,6 +2,8 @@ import { useEffect, useReducer, useRef, useState, type MutableRefObject } from '
 import { useStdout } from 'ink'
 import type { Host, PlayerKeys } from '../../../../plugins/stream-radio/core/host'
 import { mpv } from '../../../../plugins/stream-radio/core/player'
+import { metaValue } from '../../../../plugins/stream-radio/core/nowplaying'
+import type { Media } from '../media'
 import type { Session } from '../session'
 
 const DRAWN = ['playing', 'isPaused', 'elapsed', 'chapter', 'lastUrl', 'queue', 'openFolders', 'filter', 'resumeAt', 'volume', 'repeat', 'isShuffled'] as const
@@ -101,4 +103,52 @@ export function useDuration(h: Host, playing: string, elapsed: number): number {
     }
   }, [h, playing, elapsed, duration])
   return duration
+}
+
+// What is playing, as the files and art see it: a playlist's current entry,
+// else the last URL or path played. A path is a file, anything else a URL.
+export function trackOf(view: Pick<View, 'queue' | 'lastUrl'>): { file?: string; url?: string } {
+  const q = view.queue
+  const target = q.kind === 'playlist' ? (q.paths[q.current] ?? '') : view.lastUrl
+  if (!target) return {}
+  return target.startsWith('/') ? { file: target } : { url: target }
+}
+
+// The playing song's artist and album, asked of mpv once per title; '' when
+// it has none.
+export function useTags(h: Host, playing: string): { artist: string; album: string } {
+  const [known, setKnown] = useState({ title: '', artist: '', album: '' })
+  useEffect(() => {
+    if (!playing) return
+    let isLive = true
+    mpv(h, ['get_property', 'metadata'])
+      .then(reply => {
+        if (isLive) setKnown({ title: playing, artist: metaValue(reply?.data, 'artist'), album: metaValue(reply?.data, 'album') })
+      })
+      .catch(() => undefined)
+    return () => {
+      isLive = false
+    }
+  }, [h, playing])
+  return known.title === playing ? known : { artist: '', album: '' }
+}
+
+// A local file's waveform peaks; undefined while decoding, for anything not a
+// local file, or when mpv can't decode it. A new file stops the old decode,
+// and a late answer for a file no longer playing is dropped.
+export function usePeaks(media: Media | undefined, file: string | undefined): Uint8Array | undefined {
+  const [known, setKnown] = useState<{ file: string; peaks?: Uint8Array }>({ file: '' })
+  useEffect(() => {
+    if (!media || !file) return
+    const ac = new AbortController()
+    media
+      .isLocalFile(file)
+      .then(isLocal => (isLocal && !ac.signal.aborted ? media.peaks(file, ac.signal) : undefined))
+      .then(peaks => {
+        if (!ac.signal.aborted) setKnown({ file, peaks })
+      })
+      .catch(() => undefined)
+    return () => ac.abort()
+  }, [media, file])
+  return file && known.file === file ? known.peaks : undefined
 }

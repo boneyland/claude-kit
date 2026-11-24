@@ -3,6 +3,7 @@ import { render } from 'ink'
 import { openSession } from './session'
 import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe'
 import { App } from './ui/App'
+import { nodeMedia } from './media'
 
 // Set by build.mjs; absent under vitest or tsx.
 declare const __VERSION__: string | undefined
@@ -63,7 +64,7 @@ async function main(argv: string[]) {
     isOnAlt = false
   }
   process.stdout.write(ENTER_ALT)
-  const app = render(<App session={session} subscribe={subscribe} />, { exitOnCtrlC: false })
+  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} />, { exitOnCtrlC: false })
   // Lets go of the player (it plays on), puts the terminal back, and goes.
   const bail = (code: number, error?: unknown) => {
     session.close()

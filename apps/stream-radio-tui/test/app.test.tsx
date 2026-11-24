@@ -8,7 +8,15 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
 import { App } from '../src/ui/App'
+import type { Media } from '../src/media'
 import { tilde } from '../src/ui/hooks'
+
+// What the mocked mpv answers, unless a test says otherwise (and afterEach
+// puts it back): the length, and the song's tags.
+const { defaultMpv } = vi.hoisted(() => ({
+  defaultMpv: async (_h: unknown, command: readonly unknown[]) =>
+    command[1] === 'duration' ? { data: 245 } : command[1] === 'metadata' ? { data: { ARTIST: 'The Band', Album: 'The Album' } } : undefined,
+}))
 
 // The actions that would talk to mpv are spies; everything else in the core
 // (the rows, the times) is the real thing.
@@ -26,7 +34,7 @@ vi.mock('../../../plugins/stream-radio/core/player', async original => {
     resume: vi.fn(),
     start: vi.fn(),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
-    mpv: vi.fn(async (_h: Host, command: readonly unknown[]) => (command[1] === 'duration' ? { data: 245 } : undefined)),
+    mpv: vi.fn(defaultMpv),
   }
 })
 
@@ -52,7 +60,7 @@ const ENTER = '\r'
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '') {
+async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', media?: Media) {
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
@@ -69,7 +77,7 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     listeners.add(fn)
     return () => void listeners.delete(fn)
   }
-  const ui = render(<App session={session} subscribe={subscribe} />)
+  const ui = render(<App session={session} subscribe={subscribe} media={media} />)
   if (columns !== 100) {
     Object.defineProperty(ui.stdout, 'columns', { value: columns, configurable: true })
     ui.stdout.emit('resize')
@@ -90,6 +98,7 @@ const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.mocked(player.mpv).mockImplementation(defaultMpv as typeof player.mpv)
 })
 
 describe('drawing', () => {
@@ -163,6 +172,66 @@ describe('drawing', () => {
     const all = lines()
     const hint = lineOf(all, /space pause/)
     expect(all[hint - 1]).toContain('mpv: not found')
+  })
+})
+
+// A Media whose decodes the test resolves by hand, one per file.
+function fakeMedia() {
+  const pending = new Map<string, { resolve: (p: Uint8Array | undefined) => void; signal: AbortSignal }>()
+  const media: Media = {
+    isLocalFile: async () => true,
+    peaks: (file, signal) => new Promise(resolve => pending.set(file, { resolve, signal })),
+    sources: async () => [],
+    art: async () => undefined,
+  }
+  return { media, pending }
+}
+const BRAILLE = /[\u2800-\u28FF]{20,}/
+const SONG3 = `${ALBUM}/Disc 1/03.mp3`
+
+describe('pane', () => {
+  test('a local song shows its waveform at the foot of the pane, with the times above it', async () => {
+    const { media, pending } = fakeMedia()
+    const { lines } = await show(100, PLAYING, '', '', media)
+    await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
+    pending.get(SONG3)!.resolve(new Uint8Array(2048).fill(128))
+    await vi.waitFor(() => expect(lines().filter(l => BRAILLE.test(l))).toHaveLength(2))
+    const all = lines()
+    const wave = all.findIndex(l => BRAILLE.test(l))
+    expect(all[wave - 1]).toMatch(/2:41\s+4:05/)
+    expect(all.join('\n')).not.toContain('━')
+    // the pane runs down to the line above the text line
+    expect(all[wave + 2]).not.toContain('│')
+  })
+
+  test('until the waveform is ready the bar shows', async () => {
+    const { media } = fakeMedia()
+    const { lines } = await show(100, PLAYING, '', '', media)
+    await vi.waitFor(() => expect(lines().join('\n')).toMatch(/2:41 ━+─* 4:05/))
+    expect(lines().some(l => BRAILLE.test(l))).toBe(false)
+  })
+
+  test("a song changed before its waveform came back never shows the old one, and the old decode is stopped", async () => {
+    const { media, pending } = fakeMedia()
+    const { lines, vars } = await show(100, PLAYING, '', '', media)
+    await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
+    await vars.change('queue', q => ({ ...q, current: 1 }))
+    await vars.change('playing', () => 'Song two')
+    await vi.waitFor(() => expect(pending.has(`${ALBUM}/Disc 1/02.mp3`)).toBe(true))
+    expect(pending.get(SONG3)!.signal.aborted).toBe(true)
+    pending.get(SONG3)!.resolve(new Uint8Array(2048).fill(255))
+    await tick()
+    expect(lines().some(l => BRAILLE.test(l))).toBe(false)
+  })
+
+  test("the artist and album show under the title", async () => {
+    const { lines } = await show(100)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('The Band · The Album'))
+  })
+
+  test('volume, repeat and shuffle share one line', async () => {
+    const { lines } = await show(100)
+    expect(lines().some(l => /vol 60\s+repeat all\s+shuffle off/.test(l))).toBe(true)
   })
 })
 
