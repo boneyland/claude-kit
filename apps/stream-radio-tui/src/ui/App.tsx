@@ -7,6 +7,7 @@ import type { Session } from '../session'
 import { Hints } from './Hints'
 import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSize, useTags, type View } from './hooks'
 import type { Media } from '../media'
+import type { MouseSource } from '../mouse/sgr'
 import type { Graphics } from '../gfx/screen'
 import { isCurrent, List } from './List'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
@@ -19,7 +20,7 @@ const WIDE_COLUMNS = 80
 
 // media: the files and mpv the pane draws pictures from; graphics: where the
 // pictures go, when the terminal can show them. Neither in most tests.
-type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics }
+type Props = { session: Session; subscribe: (fn: () => void) => () => void; media?: Media; graphics?: Graphics; mouse?: MouseSource }
 
 export function App({ session, subscribe, media, graphics }: Props) {
   const view = usePlayer(session, subscribe)

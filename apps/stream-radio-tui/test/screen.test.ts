@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { deleteImage, placeVirtual } from '../src/gfx/kitty'
 import { kittyGraphics, leaveScreen } from '../src/gfx/screen'
+import { MOUSE_OFF } from '../src/mouse/sgr'
 import type { Art } from '../src/media/art'
 
 const strip = (): Art => ({ width: 2, height: 1, rgba: new Uint8Array(8) })
@@ -49,11 +50,11 @@ describe('leaveScreen', () => {
     g.show(1, [strip()], 20)
     c.out.length = 0
     leaveScreen(g, c.write)
-    expect(c.text()).toBe(deleteImage(1) + '\x1b[?1049l')
+    expect(c.text()).toBe(deleteImage(1) + MOUSE_OFF + '\x1b[?1049l')
   })
-  test('without pictures it only leaves', () => {
+  test('without pictures it turns the mouse off and leaves', () => {
     const c = capture()
     leaveScreen(undefined, c.write)
-    expect(c.text()).toBe('\x1b[?1049l')
+    expect(c.text()).toBe(MOUSE_OFF + '\x1b[?1049l')
   })
 })

@@ -5,9 +5,12 @@ import { clampVolume } from '../../../plugins/stream-radio/core/nowplaying'
 // Pictures (art, a pixel waveform): asked of the terminal, or forced.
 export type GraphicsSetting = 'auto' | 'on' | 'off'
 
-export type TuiConfig = PlayerConfig & { defaultUrl: string; graphics: GraphicsSetting }
+// Clicks and the wheel; off leaves the terminal's own text selection as it is.
+export type MouseSetting = 'on' | 'off'
 
-export const DEFAULT_CONFIG: TuiConfig = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto' }
+export type TuiConfig = PlayerConfig & { defaultUrl: string; graphics: GraphicsSetting; mouse: MouseSetting }
+
+export const DEFAULT_CONFIG: TuiConfig = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on' }
 
 // ${XDG_CONFIG_HOME or HOME/.config}/stream-radio/config.json. A missing or
 // unreadable file, or a field of the wrong type, gives that field's default.
@@ -28,5 +31,6 @@ export async function loadConfig(env: Record<string, string | undefined>): Promi
     androidClient: typeof o.androidClient === 'boolean' ? o.androidClient : d.androidClient,
     defaultUrl: typeof o.defaultUrl === 'string' ? o.defaultUrl : d.defaultUrl,
     graphics: o.graphics === 'on' || o.graphics === 'off' ? o.graphics : d.graphics,
+    mouse: o.mouse === 'off' ? 'off' : d.mouse,
   }
 }

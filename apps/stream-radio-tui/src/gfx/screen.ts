@@ -1,6 +1,7 @@
 import type { Art } from '../media/art'
 import { deleteImage, placeVirtual, transmitRgba } from './kitty'
 import type { Cell } from './probe'
+import { MOUSE_OFF } from '../mouse/sgr'
 
 // The pictures on screen: each part (the art, the waveform) owns a run of
 // image ids from `firstId`, one image per row of cells.
@@ -42,8 +43,9 @@ export function kittyGraphics(write: (s: string) => void, cell: Cell): Graphics 
 
 const LEAVE_ALT = '\x1b[?1049l'
 
-// Back to the normal screen, the pictures deleted first so none stay behind.
+// Back to the normal screen, the pictures deleted first so none stay behind,
+// and the mouse reports off (harmless when they were never on).
 export function leaveScreen(graphics: Graphics | undefined, write: (s: string) => void): void {
   graphics?.dropAll()
-  write(LEAVE_ALT)
+  write(MOUSE_OFF + LEAVE_ALT)
 }

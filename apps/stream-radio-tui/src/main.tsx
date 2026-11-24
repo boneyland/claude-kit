@@ -5,6 +5,8 @@ import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe
 import { App } from './ui/App'
 import { nodeMedia } from './media'
 import { kittyGraphics, leaveScreen, type Graphics } from './gfx/screen'
+import { mouseInput } from './mouse/input'
+import { MOUSE_ON } from './mouse/sgr'
 
 // Set by build.mjs; absent under vitest or tsx.
 declare const __VERSION__: string | undefined
@@ -70,7 +72,13 @@ async function main(argv: string[]) {
     isOnAlt = false
   }
   process.stdout.write(ENTER_ALT)
-  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} graphics={graphics} />, { exitOnCtrlC: false })
+  // Clicks come out of stdin before Ink reads it; Ink gets the keys.
+  const input = session.config.mouse === 'on' ? mouseInput(process.stdin) : undefined
+  if (input) write(MOUSE_ON)
+  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} graphics={graphics} mouse={input?.subscribe} />, {
+    exitOnCtrlC: false,
+    stdin: input?.stdin ?? process.stdin,
+  })
   // Lets go of the player (it plays on), puts the terminal back, and goes.
   const bail = (code: number, error?: unknown) => {
     session.close()
@@ -91,6 +99,7 @@ async function main(argv: string[]) {
 
   await app.waitUntilExit()
   leave()
+  input?.close()
 }
 
 main(process.argv.slice(2)).catch(error => {

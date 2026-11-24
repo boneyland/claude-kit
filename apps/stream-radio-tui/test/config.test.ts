@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadConfig } from '../src/config'
 
-const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto' }
+const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on' }
 let dir: string
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-cfg-'))
@@ -18,6 +18,12 @@ const write = (text: string) => {
 const env = () => ({ XDG_CONFIG_HOME: dir })
 
 describe('loadConfig', () => {
+  test('the mouse is on unless set off', async () => {
+    write('{"mouse": "off"}')
+    expect((await loadConfig(env())).mouse).toBe('off')
+    write('{"mouse": false}')
+    expect((await loadConfig(env())).mouse).toBe('on')
+  })
   test('graphics can be forced on or off; anything else is auto', async () => {
     write('{"graphics": "on"}')
     expect((await loadConfig(env())).graphics).toBe('on')
