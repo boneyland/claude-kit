@@ -13,6 +13,7 @@ notifier/*.app/
 CLAUDE.md
 .claude/
 superpowers/
+.superpowers/
 
 # Built by apps/stream-radio-tui/build.mjs
 apps/stream-radio-tui/dist/
