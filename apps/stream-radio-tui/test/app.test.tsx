@@ -41,7 +41,11 @@ vi.mock('../../../plugins/stream-radio/core/player', async original => {
     start: vi.fn(),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
     mpv: vi.fn(defaultMpv),
-    reorderQueue: vi.fn(async () => ''),
+    // as the core does: the queue in the store follows the new order
+    reorderQueue: vi.fn(async (h: Host, order: readonly number[]) => {
+      await h.vars.change('queue', q => ({ ...q, items: order.map(i => q.items[i]!), paths: q.paths.length ? order.map(i => q.paths[i]!) : q.paths }))
+      return ''
+    }),
     removeFromQueue: vi.fn(async () => ''),
     addToQueue: vi.fn(async () => ''),
   }
@@ -1014,7 +1018,8 @@ describe('playlist editing', () => {
     expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [2, 0, 4, 1, 3])
     expect(lines().join('\n')).toContain('sort: title')
     await press('R')
-    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [3, 1, 4, 0, 2])
+    // the queue is in title order now, so the other way round is its reverse
+    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [4, 3, 2, 1, 0])
   })
 
   test('a song in the queue twice: only the picked copy moves', async () => {
@@ -1022,6 +1027,91 @@ describe('playlist editing', () => {
     const { press, host } = await show(100, twice)
     await press('j', 'j', 'u')
     expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [0, 2, 1, 3, 4])
+  })
+})
+
+describe('review fixes', () => {
+  const LONG5: Partial<PlayerKeys> = {
+    ...PLAYING,
+    queue: {
+      kind: 'playlist',
+      items: [...Array(12).keys()].map(i => `Track ${i + 1}`),
+      paths: [...Array(12).keys()].map(i => `/m/${String(i + 1).padStart(2, '0')}.mp3`),
+      root: '/m',
+      current: 0,
+    },
+  }
+  const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+
+  test('a menu item drawn over a row takes the click, not the row', async () => {
+    const { rightClick, click, where, host, session, lines } = await show(100, LONG5)
+    await rightClick(where('Track 2 ').x, where('Track 2 ').y)
+    // the menu covers Track 3 and below; Remove sits over a row
+    const remove = where('Remove')
+    expect(lines()[remove.y]).not.toMatch(/Track/)
+    await click(remove.x + 1, remove.y)
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
+    expect(player.pick).not.toHaveBeenCalled()
+  })
+
+  test('a click outside the open menu closes it and does nothing else', async () => {
+    const { rightClick, click, where, press, lines } = await show(100, LONG5)
+    await rightClick(where('Track 2 ').x, where('Track 2 ').y)
+    await click(where(' Files ').x + 2, where(' Files ').y)
+    expect(lines().join('\n')).not.toContain('Move up')
+    // the click only closed the menu: still on the Playlist, where Enter plays the row
+    expect(lines()[lineOf(lines(), /Files\s+Playlist/) + 1]).toMatch(/^\s*Playlist/)
+    await press(ENTER)
+    expect(player.pick).toHaveBeenCalledWith(expect.anything(), 1)
+    expect(player.addToQueue).not.toHaveBeenCalled()
+  })
+
+  test('chapters are not edited: Delete, u/d and S leave the queue alone; the menu only plays', async () => {
+    const chapters: Partial<PlayerKeys> = { ...PLAYING, queue: { kind: 'chapters', items: ['One', 'Two', 'Three'], paths: [], root: '', current: 0 } }
+    const { press, rightClick, where, lines } = await show(100, chapters)
+    await press('\x1b[3~', 'd', 'u', 'S', 'R')
+    expect(player.removeFromQueue).not.toHaveBeenCalled()
+    expect(player.reorderQueue).not.toHaveBeenCalled()
+    await rightClick(where('Two').x, where('Two').y)
+    expect(lines().join('\n')).toContain('Play')
+    expect(lines().join('\n')).not.toContain('Remove')
+  })
+
+  test('d then Delete before a redraw removes the song the cursor is on after the move', async () => {
+    const { ui, host, session } = await show(100, LONG5)
+    ui.stdin.write('d')
+    ui.stdin.write('\x1b[3~')
+    await tick()
+    await tick()
+    // Track 1 moved to place 1; the Delete is for it, not for Track 2
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
+  })
+
+  test('a pick lapses when the queue changes under it (a shuffle, another session)', async () => {
+    const { press, vars, lines, host, session } = await show(100, LONG5)
+    await press('\x1b[1;2B', '\x1b[1;2B')
+    expect(status(lines())).toContain('3 picked')
+    await vars.change('queue', q => ({ ...q, items: [...q.items].reverse(), paths: [...q.paths].reverse() }))
+    await tick()
+    expect(status(lines())).not.toContain('picked')
+    await press('\x1b[3~')
+    expect(vi.mocked(player.removeFromQueue).mock.calls[0]![2]).toHaveLength(1)
+    void host
+    void session
+  })
+
+  test('in Files, a pick lapses when the rows above it change', async () => {
+    const { press, lines } = await fsTree()
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    // ../, Album/, loose.mp3: pick loose.mp3
+    await press('j', 'j', '\x1b[1;2A', '\x1b[1;2B')
+    expect(status(lines())).toContain('1 picked')
+    // up to Album (the arrows keep the pick) and open it: the rows under it shift
+    await press('k', '\x1b[C')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    expect(status(lines())).not.toContain('picked')
+    await press('a')
+    expect(player.addToQueue).toHaveBeenCalledWith(expect.anything(), expect.anything(), [{ path: '/h/Music/Album' }], 'end')
   })
 })
 

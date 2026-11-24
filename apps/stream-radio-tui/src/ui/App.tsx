@@ -15,16 +15,25 @@ import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { PlaylistView } from './PlaylistView'
 import { FilesView } from './FilesView'
-import { FILES_MENU, Menu, PLAYLIST_MENU, type MenuItem } from './Menu'
+import { CHAPTER_MENU, FILES_MENU, Menu, PLAYLIST_MENU, type MenuItem } from './Menu'
 import { useFiles } from '../files/useFiles'
 import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { Tabs, type Tab } from './Tabs'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
-import { filterFlat, flatRows } from '../playlist/rows'
+import { filterFlat, flatRows, type FlatRow } from '../playlist/rows'
+import type { Queue } from '../../../../plugins/stream-radio/core/host'
 import { nextSortField, SORT_LABEL, sortOrder, type SortField } from '../playlist/sort'
-import { clamp, clear, extend, remap, select, targets, toggle, type Selection } from './selection'
+import { clamp, clear, extend, NO_SELECTION, remap, select, targets, toggle, type Selection } from './selection'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
+
+// A selection and the rows it was made against (see plKeyOf).
+type Held = Selection & { forKey?: string }
+// The Playlist's rows as a key: each one's file or URL (a chapter's name), in order.
+const plKeyOf = (queue: Queue, rows: readonly FlatRow[]) => rows.map(r => queue.paths[r.index] || queue.items[r.index]).join('\n')
+// The selection, its pick dropped when the rows are no longer those it was made against.
+const current = (held: Held | undefined, key: string): Held | undefined =>
+  held && held.forKey !== undefined && held.forKey !== key ? { ...held, picked: [] } : held
 
 // Rows the wheel moves the list by.
 const WHEEL_ROWS = 3
@@ -72,7 +81,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [typedRef, setTyped] = useRefState('')
   // the Playlist's cursor and picked rows (places in its rows); undefined
   // follows the playing song
-  const [plSelRef, setPlSel] = useRefState<Selection | undefined>(undefined)
+  const [plSelRef, setPlSel] = useRefState<Held | undefined>(undefined)
   // the Playlist's last sort, for R and the tab row
   const [sortRef, setSort] = useRefState<{ field?: SortField; isReversed: boolean }>({ isReversed: false })
   // a drag in the Playlist: the row pressed and where the rows would land
@@ -97,16 +106,26 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const allRows = flatRows(q, book.get, home)
   const rows = filter ? filterFlat(allRows, filter) : allRows
   const playingRow = rows.findIndex(r => r.index === q.current)
+  // What the rows are, in order: a pick made against other rows has lapsed
+  // (a shuffle, another session's edit, tags changing what a filter matches,
+  // a folder opened above it), so it never acts on rows nobody picked.
+  const plKey = plKeyOf(q, rows)
+  const fKey = fRows.map(r => (r.kind === 'file' || r.kind === 'dir' ? r.path : r.kind)).join('\n')
   // The Playlist's selection as it is now, within its rows.
   const plSel = (): Selection => {
     const at = Math.max(0, playingRow)
-    return clamp(plSelRef.current ?? { cursor: at, anchor: at, picked: [] }, rows.length)
+    return clamp(current(plSelRef.current, plKey) ?? { cursor: at, anchor: at, picked: [] }, rows.length)
   }
-  const filesSel = (): Selection => clamp(files.sel(), fRows.length)
+  // key: the rows it is made against; the ones showing unless said
+  const setPl = (sel: Selection | undefined, key = plKey) => setPlSel(sel && { ...sel, forKey: key })
+  const filesSel = (): Selection => clamp(current(files.sel(), fKey) ?? NO_SELECTION, fRows.length)
+  const setF = (sel: Selection) => files.setSel({ ...sel, forKey: fKey } as Held)
+  // whether the Playlist holds queue entries (not a video's chapters) to edit
+  const isEditable = () => view.queue.kind === 'playlist'
   // The tab showing: its selection, rows and scroll.
   const isPl = () => tabRef.current === 'playlist'
   const curSel = () => (isPl() ? plSel() : filesSel())
-  const setCurSel = (sel: Selection) => (isPl() ? setPlSel(sel) : files.setSel(sel))
+  const setCurSel = (sel: Selection) => (isPl() ? setPl(sel) : setF(sel))
   const curCount = () => (isPl() ? rows.length : fRows.length)
   const setCurTop = (top: number | undefined) => (isPl() ? setTop(top) : files.setTop(top))
   const selectedNow = () => plSel().cursor
@@ -128,7 +147,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     )
   }
   const setFilter = (fn: (text: string) => string) => {
-    setPlSel(undefined)
+    setPl(undefined)
     setTop(undefined)
     void h.vars.change('filter', fn)
   }
@@ -145,7 +164,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     act(() =>
       inTurn(async () => {
         const { queue, rows } = await freshRows()
-        const sel = clamp(plSelRef.current ?? plSel(), rows.length)
+        const sel = clamp(current(plSelRef.current, plKeyOf(queue, rows)) ?? plSel(), rows.length)
         const from = targets(sel).flatMap(at => (rows[at] ? [rows[at].index] : []))
         if (!from.length) return
         const moved = make(queue.items.length, from)
@@ -153,7 +172,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         // the rows shown after the move, by their new indexes
         const shownOld = new Set(rows.map(r => r.index))
         const shownNew = moved.order.flatMap((old, i) => (shownOld.has(old) ? [i] : []))
-        setPlSel(remap(sel, moved.picked.map(n => shownNew.indexOf(n))))
+        // the rows as they will be once the move is in the store
+        const nameOf = (i: number) => queue.paths[i] || queue.items[i]
+        setPl(remap(sel, moved.picked.map(n => shownNew.indexOf(n))), shownNew.map(i => nameOf(moved.order[i]!)).join('\n'))
         setTop(undefined)
         return reorderQueue(h, moved.order)
       }),
@@ -169,7 +190,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           return { path, title: tags?.title || item, tags }
         })
         const unread = field === 'title' || field === 'folder' ? 0 : sortRows.filter(r => r.path.startsWith('/') && !r.tags).length
-        if (plSelRef.current) setPlSel(clear(plSelRef.current))
+        // the cursor follows the playing song again, not a place now holding another
+        setPl(undefined)
         const reply = await reorderQueue(h, sortOrder(sortRows, field, isReversed))
         return reply || (unread ? `Sorted; ${unread} songs' tags weren't read yet, so they went last.` : '')
       }),
@@ -184,7 +206,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       return r && (r.kind === 'file' || r.kind === 'dir') ? [r] : []
     })
     if (!chosen.length) return
-    files.setSel(clear(sel))
+    setF(clear(sel))
     const songs = chosen.filter(r => r.kind === 'file').length
     const folders = chosen.length - songs
     const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
@@ -196,12 +218,18 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const sel = curSel()
     if (isPl() ? !rows[at] : fRows[at]?.kind !== 'file' && fRows[at]?.kind !== 'dir') return
     setCurSel(sel.picked.includes(at) ? { ...sel, cursor: at } : select(sel, at))
-    setMenu({ items: isPl() ? PLAYLIST_MENU : FILES_MENU, at, choice: 0 })
+    setMenu({ items: isPl() ? (isEditable() ? PLAYLIST_MENU : CHAPTER_MENU) : FILES_MENU, at, choice: 0 })
     setMode('menu')
   }
   const closeMenu = () => {
     setMenu(undefined)
     setMode('list')
+  }
+  // A click outside the open menu only closes it.
+  const dismissMenu = () => {
+    if (modeRef.current !== 'menu') return false
+    closeMenu()
+    return true
   }
   const pickMenu = (i: number) => {
     const item = menuRef.current?.items[i]
@@ -237,19 +265,28 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'clearPick':
         return setCurSel(clear(curSel()))
       case 'move':
+        if (!isEditable()) return
         return moveRows((count, from) => moveBy(count, from, a.by))
-      case 'remove': {
-        const sel = plSel()
-        const indexes = targets(sel).flatMap(i => (rows[i] ? [rows[i].index] : []))
-        if (!indexes.length) return
-        setPlSel(clear(sel))
-        return act(() => inTurn(() => removeFromQueue(h, session.config, indexes)))
-      }
+      case 'remove':
+        if (!isEditable()) return
+        // in its turn, from the queue as it is then: an earlier move or add may change it
+        return act(() =>
+          inTurn(async () => {
+            const { queue, rows } = await freshRows()
+            const key = plKeyOf(queue, rows)
+            const sel = clamp(current(plSelRef.current, key) ?? plSel(), rows.length)
+            const indexes = targets(sel).flatMap(i => (rows[i] ? [rows[i].index] : []))
+            if (!indexes.length) return
+            setPl(clear(sel), key)
+            return removeFromQueue(h, session.config, indexes)
+          }),
+        )
       case 'sortNext':
         if (!isPl()) return files.setSort(FILES_SORTS[(FILES_SORTS.indexOf(files.sort) + 1) % FILES_SORTS.length])
+        if (!isEditable()) return
         return sortBy(nextSortField(sortRef.current.field), false)
       case 'sortReverse':
-        if (!isPl()) return
+        if (!isPl() || !isEditable()) return
         return sortBy(sortRef.current.field ?? 'title', !sortRef.current.isReversed)
       case 'enter':
         if (isPl()) return row ? act(() => pick(h, row.index)) : undefined
@@ -368,32 +405,34 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // A click selects and holds the view where it is; a double-click does what
   // Enter does. Ctrl-click picks one row; Shift- or Alt-click a range.
   const onRow = (index: number, hit: Hit) => {
+    if (dismissMenu()) return
     setTop(first)
     pendingSelect.current = undefined
     const sel = plSel()
-    if (hit.mods.ctrl) return setPlSel(toggle(sel, index))
-    if (hit.mods.shift || hit.mods.alt) return setPlSel(extend(sel, index))
+    if (hit.mods.ctrl) return setPl(toggle(sel, index))
+    if (hit.mods.shift || hit.mods.alt) return setPl(extend(sel, index))
     if (hit.isDouble) {
-      setPlSel(select(sel, index))
+      setPl(select(sel, index))
       return handle({ kind: 'enter' })
     }
     // a picked row may be about to be dragged with the rest
     if (sel.picked.includes(index)) {
       pendingSelect.current = index
-      return setPlSel({ ...sel, cursor: index })
+      return setPl({ ...sel, cursor: index })
     }
-    setPlSel(select(sel, index))
+    setPl(select(sel, index))
   }
   // dy: rows from the row pressed
   const onRowDrag = (index: number, dy: number) => {
     pendingSelect.current = undefined
+    if (!isEditable()) return
     setDrag({ from: index, to: Math.max(0, Math.min(index + dy, rows.length)) })
   }
   const onRowRelease = () => {
     const drag = dragRef.current
     setDrag(undefined)
     if (pendingSelect.current !== undefined) {
-      setPlSel(select(plSel(), pendingSelect.current))
+      setPl(select(plSel(), pendingSelect.current))
       pendingSelect.current = undefined
     }
     if (!drag || drag.to === drag.from) return
@@ -406,13 +445,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   // ../ goes up and a folder opens or shuts, at a click; a file only selects.
   const onFileRow = (index: number, hit: Hit) => {
+    if (dismissMenu()) return
     files.setTop(fFirst)
     const sel = filesSel()
-    if (hit.mods.ctrl) return files.setSel(toggle(sel, index))
-    if (hit.mods.shift || hit.mods.alt) return files.setSel(extend(sel, index))
+    if (hit.mods.ctrl) return setF(toggle(sel, index))
+    if (hit.mods.shift || hit.mods.alt) return setF(extend(sel, index))
     const row = fRows[index]
     if (row?.kind === 'up') return files.goUp()
-    files.setSel(select(sel, index))
+    setF(select(sel, index))
     if (hit.isDouble && (row?.kind === 'file' || row?.kind === 'dir')) {
       // the first click of the two opened or shut it: put that back
       if (row.kind === 'dir') files.setOpen(row.path)
@@ -445,7 +485,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       <Tabs
         tab={tab}
         width={listWidth}
-        onTab={setTab}
+        onTab={t => dismissMenu() || setTab(t)}
         sortLabel={
           tab === 'files'
             ? FILES_SORT_LABEL[files.sort]
@@ -455,7 +495,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
                 : 'as queued'
               : undefined
         }
-        onSort={() => handle({ kind: 'sortNext' })}
+        onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
       />
       {tab === 'playlist' ? (
         <PlaylistView
