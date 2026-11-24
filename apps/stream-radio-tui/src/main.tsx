@@ -1,6 +1,7 @@
 import React from 'react'
 import { render } from 'ink'
 import { openSession } from './session'
+import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe'
 import { App } from './ui/App'
 
 // Set by build.mjs; absent under vitest or tsx.
@@ -28,10 +29,18 @@ Keys:
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json
         (~/.config/stream-radio/config.json without XDG_CONFIG_HOME)
-        volume, player, androidClient, defaultUrl
+        volume, player, androidClient, defaultUrl,
+        graphics ("auto", "on" or "off": album art and a pixel waveform)
 
   --help       this text
   --version    the version`
+
+// Whether to draw pictures, and the cell size to draw them at. The terminal is
+// asked only when the setting leaves it open, and before Ink takes stdin.
+async function pictures(setting: 'auto' | 'on' | 'off'): Promise<{ isOn: boolean; cell: Cell }> {
+  const probe = setting === 'auto' || setting === 'on' ? await probeTerminal(process.stdin, process.stdout) : { kitty: false }
+  return { isOn: graphicsOn(process.env, setting, probe), cell: probe.cell ?? FALLBACK_CELL }
+}
 
 const ENTER_ALT = '\x1b[?1049h'
 const LEAVE_ALT = '\x1b[?1049l'
@@ -46,6 +55,7 @@ async function main(argv: string[]) {
     return () => void listeners.delete(fn)
   }
   const session = await openSession(argv, { onChange: () => listeners.forEach(fn => fn()) })
+  const display = await pictures(session.config.graphics)
 
   let isOnAlt = true
   const leave = () => {

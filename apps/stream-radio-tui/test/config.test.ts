@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadConfig } from '../src/config'
 
-const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '' }
+const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto' }
 let dir: string
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-cfg-'))
@@ -18,6 +18,14 @@ const write = (text: string) => {
 const env = () => ({ XDG_CONFIG_HOME: dir })
 
 describe('loadConfig', () => {
+  test('graphics can be forced on or off; anything else is auto', async () => {
+    write('{"graphics": "on"}')
+    expect((await loadConfig(env())).graphics).toBe('on')
+    write('{"graphics": "off"}')
+    expect((await loadConfig(env())).graphics).toBe('off')
+    write('{"graphics": "yes"}')
+    expect((await loadConfig(env())).graphics).toBe('auto')
+  })
   test('a missing file gives the defaults', async () => {
     expect(await loadConfig(env())).toEqual(DEFAULTS)
   })
