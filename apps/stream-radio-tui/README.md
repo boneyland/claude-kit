@@ -36,7 +36,7 @@ With no argument it attaches to the player that is already running, or shows the
 | `r` | repeat: all, one, off |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
 | `o` | type a URL or path to play |
-| `l` | play the last URL from where it got to |
+| `l` | resume the last URL from where it got to (after `x`, or on a fresh start); while it plays, does nothing |
 | `x` | stop the player |
 | `q`, `Ctrl-C` | quit the TUI; the music keeps playing |
 

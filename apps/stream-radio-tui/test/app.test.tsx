@@ -124,7 +124,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
-    expect(lineOf(all, /o open url\/path.*l play last.*x stop.*q quit/)).toBeGreaterThan(heading)
+    expect(lineOf(all, /o open url\/path.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => l.length <= 100)).toBe(true)
   })
 
@@ -399,6 +399,19 @@ describe('keys', () => {
     await press('+')
     expect(player.setVolume).toHaveBeenCalledWith(host, DEFAULT_CONFIG.volume, 65)
     expect(lines().join('\n')).toContain('Volume 65%.')
+  })
+
+  test('l while the last URL plays leaves it be and says so', async () => {
+    const { press, lines } = await show(100)
+    await press('l')
+    expect(player.resume).not.toHaveBeenCalled()
+    expect(lines().join('\n')).toContain('Already playing Song three.')
+  })
+
+  test('l after a stop picks the last URL up again', async () => {
+    const { press, host } = await show(100, { ...PLAYING, playing: '', elapsed: -1 })
+    await press('l')
+    expect(player.resume).toHaveBeenCalledWith(host, expect.anything(), ALBUM, expect.anything())
   })
 
   test('keys that arrive together each step from the volume the one before set', async () => {

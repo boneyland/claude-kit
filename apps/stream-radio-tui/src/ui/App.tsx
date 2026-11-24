@@ -115,6 +115,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
       case 'last':
         return act(async () => {
           if (!view.lastUrl) return 'Nothing played yet: press o to open a URL or path.'
+          // lastUrl is what plays, so starting it again would only jump back
+          if (view.playing) return `Already playing ${view.playing}.`
           resume(h, session.config, view.lastUrl, view.resumeAt)
         })
       case 'stop':
