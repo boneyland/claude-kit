@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { AgentRun, Flow, Panel, Phase, PlannedTask } from '../types'
 import { SPRITE_COLS, SPRITE_FRAMES, SPRITE_ROWS, spritePixels, spritePng } from './sprite'
-import { activityOf, applyTaskCall, isOpen, NUDGE_AFTER, nudgeText, TASK_TOOLS, taskFlow } from './tasks'
+import { activityOf, applyTaskCall, finishPlan, isOpen, NUDGE_AFTER, nudgeText, TASK_TOOLS, taskFlow } from './tasks'
 
 const flow = atom({ plugin: 'savvy-progress', key: 'flow' } as const, null)
 const agents = atom({ plugin: 'savvy-progress', key: 'agents' } as const, [])
@@ -1198,7 +1198,7 @@ export const register: Register = (on, options) => {
 
     let kind: 'task' | 'todo' | null = null
     await update($, taskList, m => {
-      if (!isOpen(m)) return m.sinceUpdate ? { ...m, sinceUpdate: 0 } : m
+      if (!isOpen(m) || m.kind === 'plan') return m.sinceUpdate ? { ...m, sinceUpdate: 0 } : m
       const count = m.sinceUpdate + 1
       if (count < NUDGE_AFTER) return { ...m, sinceUpdate: count }
       kind = m.kind
@@ -1317,6 +1317,7 @@ export const register: Register = (on, options) => {
       await update($, now, () => at)
     } else {
       await update($, activity, () => '')
+      if (e.reason === 'answer') await update($, taskList, finishPlan)
     }
     return next(e)
   })

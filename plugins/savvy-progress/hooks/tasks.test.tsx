@@ -83,6 +83,50 @@ test('TodoWrite is mirrored too', async ($, on) => {
   expect(all).toContain('Tasks 1/2')
 })
 
+const PLAN = 'mcp__ccd_turn__update_plan'
+const plan = ($: Engine, input: Record<string, unknown>) => $.tool.call({ tool: PLAN, ...input } as never)
+
+test("the desktop app's update_plan is mirrored: items, advance, done/start, and the turn's end checks off the last step", async ($, on) => {
+  on('turn.complete', () => ({ text: '' }) as never)
+  await session($, on)
+  await plan($, {
+    scope: 'continuation',
+    items: [
+      { content: 'Read the code', status: 'in_progress' },
+      { content: 'Mirror update_plan', status: 'pending' },
+      { content: 'Run the tests', status: 'pending' },
+    ],
+  })
+  let all = await texts($)
+  expect(all).toContain('Read the code')
+  expect(all).toContain('Tasks 0/3')
+
+  await plan($, { advance: true })
+  all = await texts($)
+  expect(all).toContain('Mirror update_plan')
+  expect(all).toContain('Tasks 1/3')
+
+  await plan($, { done: [2], start: 3 })
+  all = await texts($)
+  expect(all).toContain('Run the tests')
+  expect(all).toContain('Tasks 2/3')
+
+  // A subagent's turn ending leaves the main list alone; the main turn's end finishes it.
+  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ agentId: 'a1', reason: 'answer', answer: '' })
+  expect(await texts($)).toContain('Tasks 2/3')
+  await ($.turn.complete as (e: unknown) => Promise<unknown>)({ reason: 'answer', answer: '' })
+  expect(await texts($)).toContain('Done')
+})
+
+test('an update_plan list is never nudged', async ($, on) => {
+  await session($, on)
+  await plan($, { items: [{ content: 'Long step', status: 'in_progress' }] })
+  for (let i = 1; i <= 30; i++) {
+    const r = (await $.tool.call({ tool: 'Read', file_path: `/repo/f${i}.ts` } as never)) as { context?: string[] }
+    expect(r.context ?? []).toEqual([])
+  }
+})
+
 test('a stale open list gets one reminder on the 15th tool result, then again 15 later', async ($, on) => {
   await session($, on)
   await create($, 'Long task')

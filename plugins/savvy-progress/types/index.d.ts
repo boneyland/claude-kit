@@ -52,8 +52,11 @@ export type TaskItem = {
 
 export type TaskMirror = {
   items: TaskItem[]
-  /** Which tools keep the list: TaskCreate/TaskUpdate (`task`) or TodoWrite (`todo`); the nudge names them. */
-  kind: 'task' | 'todo'
+  /**
+   * Which tools keep the list: TaskCreate/TaskUpdate (`task`), TodoWrite (`todo`) or the
+   * desktop app's update_plan (`plan`, never nudged: the app keeps after it itself).
+   */
+  kind: 'task' | 'todo' | 'plan'
   /** Main-session tool calls since the list last changed, counted while a task is open. */
   sinceUpdate: number
 }

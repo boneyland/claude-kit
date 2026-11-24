@@ -4,7 +4,9 @@
 import type { Flow, TaskItem, TaskMirror, TaskStatus } from '../types'
 
 // TaskGet only reads one task, so it neither changes the list nor resets the nudge count.
-export const TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'TaskList'])
+// The desktop app's own task list (shown under Claude's message) is kept with PLAN_TOOL instead.
+export const PLAN_TOOL = 'mcp__ccd_turn__update_plan'
+export const TASK_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'TodoWrite', 'TaskList', PLAN_TOOL])
 
 // Main-session tool calls, with a task still open and no task-list change, before
 // one reminder rides along with a tool result. Again after as many more.
@@ -44,6 +46,8 @@ export const applyTaskCall = (m: TaskMirror, input: Call, result: unknown): Task
     }))
     return { items, kind: 'todo', sinceUpdate: 0 }
   }
+
+  if (input.tool === PLAN_TOOL) return applyPlanCall(m, input)
 
   if (input.tool === 'TaskCreate') {
     const task = (r.task ?? {}) as Record<string, unknown>
@@ -100,6 +104,42 @@ export const applyTaskCall = (m: TaskMirror, input: Call, result: unknown): Task
 
   return m
 }
+
+/**
+ * The desktop app's plan tool: `items` replaces the whole list; otherwise
+ * `advance` completes the step in progress and starts the next pending one, and
+ * `done` (1-based) completes steps and `start` starts one.
+ */
+const applyPlanCall = (m: TaskMirror, input: Call): TaskMirror => {
+  if (Array.isArray(input.items)) {
+    const items = input.items.slice(0, MAX_ITEMS).map((t: Record<string, unknown>, i): TaskItem => ({
+      id: String(i + 1),
+      subject: line(t?.content) || `#${i + 1}`,
+      status: statusOf(t?.status, 'pending'),
+    }))
+    return { items, kind: 'plan', sinceUpdate: 0 }
+  }
+  if (m.kind !== 'plan') return m
+  const items = m.items.map(t => ({ ...t }))
+  const at = (n: unknown): TaskItem | undefined =>
+    typeof n === 'number' && Number.isInteger(n) ? items[n - 1] : undefined
+  if (input.advance === true) {
+    const current = items.findIndex(t => t.status === 'in_progress')
+    if (current >= 0) items[current].status = 'completed'
+    const nextUp = items.find((t, i) => i > current && t.status === 'pending') ?? items.find(t => t.status === 'pending')
+    if (nextUp) nextUp.status = 'in_progress'
+  }
+  if (Array.isArray(input.done)) for (const n of input.done) { const t = at(n); if (t) t.status = 'completed' }
+  const started = at(input.start)
+  if (started) started.status = 'in_progress'
+  return { ...m, items, sinceUpdate: 0 }
+}
+
+/** The app checks off the plan's last step when the main turn ends normally. */
+export const finishPlan = (m: TaskMirror): TaskMirror =>
+  m.kind === 'plan' && m.items.some(t => t.status === 'in_progress')
+    ? { ...m, items: m.items.map(t => (t.status === 'in_progress' ? { ...t, status: 'completed' } : t)) }
+    : m
 
 /** The task list as a flow, so the band draws it with the flow's own row. */
 export const taskFlow = (m: TaskMirror, word: string): Flow => {
