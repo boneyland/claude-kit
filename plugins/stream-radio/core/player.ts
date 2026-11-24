@@ -18,6 +18,7 @@ import {
   WATCHED,
 } from './nowplaying'
 import { listSongs, paths, type Paths } from './paths'
+import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
@@ -956,6 +957,31 @@ export async function addToQueue(h: Host, config: PlayerConfig, entries: readonl
     const at = seen.pos >= 0 ? seen.pos : 0
     for (let i = 0; i < songs.length; i++) await mpv(h, ['playlist-move', count + i, at + 1 + i])
   }
+  await afterEdit(h)
+  return ''
+}
+
+// Puts the queue in `order` (order[i]: the entry now at i), the playing song
+// playing on. Shuffle goes off: un-shuffling would undo this.
+export async function reorderQueue(h: Host, order: readonly number[]): Promise<string> {
+  for (const [j, i] of moveSteps(order)) if (!(await mpv(h, ['playlist-move', j, i]))) return 'The player is not ready yet.'
+  await h.vars.change('isShuffled', () => false)
+  await mpv(h, ['set_property', 'user-data/stream-radio/shuffled', false])
+  await afterEdit(h)
+  return ''
+}
+
+// Takes entries out of the queue; the playing one going, the next plays.
+// Every one going stops the player on purpose, so nobody reconnects it.
+export async function removeFromQueue(h: Host, config: PlayerConfig, indexes: readonly number[]): Promise<string> {
+  const count = (await h.vars.read('queue')).items.length
+  const going = [...new Set(indexes)].filter(i => i >= 0 && i < count).sort((a, b) => b - a)
+  if (!going.length) return 'Nothing to remove.'
+  if (going.length >= count) {
+    await stopPlaying(h, config)
+    return 'Stopped: the queue is empty.'
+  }
+  for (const i of going) if (!(await mpv(h, ['playlist-remove', i]))) return 'The player is not ready yet.'
   await afterEdit(h)
   return ''
 }

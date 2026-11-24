@@ -2,7 +2,7 @@ import { afterEach, beforeAll, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { addToQueue, resume } from '../../../plugins/stream-radio/core/player'
+import { addToQueue, removeFromQueue, reorderQueue, resume } from '../../../plugins/stream-radio/core/player'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
 
@@ -135,4 +135,38 @@ test('resume finds the song by path after a reorder', async () => {
   fake.push({ event: 'property-change', name: 'playlist-pos', data: 1 }, { event: 'file-loaded' })
   await until(() => sent('seek').length > 0)
   expect(sent('seek')).toEqual([['seek', 30, 'absolute']])
+})
+
+// --- removing and reordering ---
+
+const THREE = [{ filename: '/m/a.flac', current: true }, { filename: '/m/b.flac' }, { filename: '/m/c.flac' }]
+
+test('a reorder moves entries in mpv, the playing one with them, and turns shuffle off', async () => {
+  const h = await loaded({ playlist: THREE, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  await h.vars.change('isShuffled', () => true)
+  expect(await reorderQueue(h, [2, 0, 1])).toBe('')
+  expect(sent('playlist-move')).toEqual([['playlist-move', 2, 0]])
+  expect(await h.vars.read('isShuffled')).toBe(false)
+  expect(commands()).toContainEqual(['set_property', 'user-data/stream-radio/shuffled', false])
+  expect(await h.vars.read('lastUrl')).toBe(QUEUE_FILE)
+})
+
+test('removing takes the highest first; removing the playing song leaves mpv to play the next', async () => {
+  const h = await loaded({ playlist: THREE, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  expect(await removeFromQueue(h, session!.config, [0, 2])).toBe('')
+  expect(sent('playlist-remove')).toEqual([
+    ['playlist-remove', 2],
+    ['playlist-remove', 0],
+  ])
+})
+
+test('removing every song stops on purpose: no reconnect', async () => {
+  const h = await loaded({ playlist: TWO, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  expect(await removeFromQueue(h, session!.config, [0, 1])).toBe('Stopped: the queue is empty.')
+  const intent = JSON.parse(fs.readFileSync(path.join(dir, 'player.json'), 'utf8'))
+  expect(intent.isStopped).toBe(true)
+  expect(sent('playlist-remove')).toEqual([])
 })
