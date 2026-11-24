@@ -152,6 +152,36 @@ test('a reorder moves entries in mpv, the playing one with them, and turns shuff
   expect(await h.vars.read('lastUrl')).toBe(QUEUE_FILE)
 })
 
+test('a sort of many songs rebuilds the list around the playing one, not a move per song', async () => {
+  const many = [...Array(20).keys()].map(i => ({ filename: `/m/${String(i).padStart(2, '0')}.flac`, title: i === 3 ? 'Three' : undefined, current: i === 5 }))
+  const h = await loaded({ playlist: many, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  const order = [...Array(20).keys()].reverse()
+  expect(await reorderQueue(h, order)).toBe('')
+  const part = `${QUEUE_FILE}.part`
+  // after: entries 4..0, read in last
+  expect(fs.readFileSync(part, 'utf8')).toBe('#EXTM3U\n/m/04.flac\n#EXTINF:-1,Three\n/m/03.flac\n/m/02.flac\n/m/01.flac\n/m/00.flac\n')
+  expect(sent('playlist-move')).toEqual([['playlist-move', 0, 15]])
+  const verbs = commands().map(c => c[0]).filter(v => ['playlist-clear', 'loadlist', 'playlist-move'].includes(v as string))
+  expect(verbs).toEqual(['playlist-clear', 'loadlist', 'playlist-move', 'loadlist'])
+  expect(sent('loadlist')).toEqual([
+    ['loadlist', part, 'append'],
+    ['loadlist', part, 'append'],
+  ])
+})
+
+test("an edit while mpv doesn't answer for the playlist leaves the queue file as it was", async () => {
+  fs.writeFileSync(QUEUE_FILE, '#EXTM3U\n/m/a.flac\n/m/b.flac\n')
+  const props: Record<string, unknown> = { playlist: THREE, 'chapter-list': [] }
+  const h = await loaded(props)
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  // mpv busy: the playlist read comes back empty-handed from now on
+  delete props.playlist
+  expect(await reorderQueue(h, [1, 0, 2])).toBe('')
+  expect(fs.readFileSync(QUEUE_FILE, 'utf8')).toBe('#EXTM3U\n/m/a.flac\n/m/b.flac\n')
+  expect((await h.vars.read('queue')).items).toHaveLength(3)
+})
+
 test('removing takes the highest first; removing the playing song leaves mpv to play the next', async () => {
   const h = await loaded({ playlist: THREE, 'chapter-list': [] })
   await until(async () => (await h.vars.read('queue')).kind === 'playlist')

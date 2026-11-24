@@ -179,10 +179,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return reorderQueue(h, moved.order)
       }),
     )
+  // Each sort asked; S pressed four times to reach `album` sorts once, by album.
+  const sortSeq = useRef(0)
   const sortBy = (field: SortField, isReversed: boolean) => {
     setSort({ field, isReversed })
+    const seq = ++sortSeq.current
     act(() =>
       inTurn(async () => {
+        if (seq !== sortSeq.current) return
         const queue = await h.vars.read('queue')
         const sortRows = queue.items.map((item, i) => {
           const path = queue.paths[i] ?? ''
