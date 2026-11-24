@@ -71,3 +71,15 @@ test('the length unknown: seeks where asked', async () => {
   await seek(h, 300)
   expect(seeks()).toEqual([['seek', 300, 'absolute']])
 })
+
+test('a relative seek counts from where mpv is to the fraction, not the whole second shown', async () => {
+  const h = await playing({ duration: 245, 'time-pos': 60.9 })
+  await seek(h, 10, true)
+  await seek(h, -10, true)
+  expect(seeks()).toEqual([
+    ['seek', 70.9, 'absolute'],
+    ['seek', 50.9, 'absolute'],
+  ])
+  // the clock shows whole seconds, as the watcher gives them
+  expect(await h.vars.read('elapsed')).toBe(50)
+})

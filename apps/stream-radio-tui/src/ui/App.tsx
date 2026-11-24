@@ -123,7 +123,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
       case 'prev':
         return act(() => step(h, a.kind === 'next' ? 1 : -1))
       case 'seek':
-        return act(() => inTurn(async () => seek(h, Math.max(0, await h.vars.read('elapsed')) + a.by)))
+        return act(() => inTurn(() => seek(h, a.by, true)))
       case 'volume':
         return act(() => inTurn(async () => setVolume(h, session.config.volume, stepVolume(await h.vars.read('volume'), a.dir))))
       case 'shuffle':
