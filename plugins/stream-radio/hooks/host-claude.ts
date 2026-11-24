@@ -62,6 +62,7 @@ export function hostOf($: EngineInterface, vars: StateStore, events: Host['event
       write: (path, text) => $.fs.write(path, text),
       exists: path => $.fs.exists(path),
       stat: path => $.fs.stat(path),
+      list: async path => (await $.fs.list(path)).map(e => ({ name: e.name, kind: e.kind })),
     },
     home: async () => (await $.env.get('HOME')) ?? '',
     cwd: () => $.session.cwd(),

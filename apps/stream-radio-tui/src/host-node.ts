@@ -211,6 +211,8 @@ export function nodeHost(events: Host['events'], state: StateStore, opts: HostOp
         const s = await fs.stat(path)
         return { kind: s.isFile() ? 'file' : s.isDirectory() ? 'dir' : 'other', mtimeMs: s.mtimeMs }
       },
+      list: async path =>
+        (await fs.readdir(path, { withFileTypes: true })).map(e => ({ name: e.name, kind: e.isFile() ? 'file' : e.isDirectory() ? 'dir' : 'other' }) as const),
     },
     home: async () => env.HOME ?? '',
     cwd: async () => process.cwd(),

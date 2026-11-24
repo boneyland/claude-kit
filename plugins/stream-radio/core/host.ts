@@ -71,6 +71,8 @@ export interface Host {
     write(path: string, text: string): Promise<void>
     exists(path: string): Promise<boolean>
     stat(path: string): Promise<{ kind: 'file' | 'dir' | 'other'; mtimeMs: number }>
+    // a folder's entries, by name, unsorted
+    list(path: string): Promise<{ name: string; kind: 'file' | 'dir' | 'other' }[]>
   }
   // the person's home folder (HOME); empty when unknown
   home(): Promise<string>

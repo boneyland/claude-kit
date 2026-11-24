@@ -31,3 +31,32 @@ export async function paths(h: Host): Promise<Paths> {
   }
   return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log`, state: `${dataDir}/state.json` }
 }
+
+// What mpv's directory filter plays: its sound, video and playlist kinds.
+export const PLAYABLE_EXTS: ReadonlySet<string> = new Set(
+  'mp3 flac ogg oga opus m4a aac wav wma alac ape wv aiff aif mka mpc tta dsf dff mp4 m4v mkv webm avi mov wmv flv ts mpg mpeg m3u m3u8 pls cue'.split(' '),
+)
+
+// A file mpv would play from a folder; a dotfile never.
+export function isPlayable(name: string): boolean {
+  if (name.startsWith('.')) return false
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && PLAYABLE_EXTS.has(name.slice(dot + 1).toLowerCase())
+}
+
+// Names in the order a person reads them: 2 before 10, any case.
+export const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+
+// A folder's playable files, through its subfolders (dot-folders skipped), as
+// absolute paths in name order.
+export async function listSongs(h: Host, folder: string): Promise<string[]> {
+  const base = folder.replace(/\/+$/, '') || '/'
+  const entries = await h.fs.list(base)
+  const songs: string[] = []
+  for (const e of entries) {
+    const path = `${base === '/' ? '' : base}/${e.name}`
+    if (e.kind === 'dir' && !e.name.startsWith('.')) songs.push(...(await listSongs(h, path)))
+    else if (e.kind === 'file' && isPlayable(e.name)) songs.push(path)
+  }
+  return songs.sort(byName)
+}
