@@ -46,7 +46,7 @@ With no argument it attaches to the player that is already running, or shows the
 
 In a window 80 or more columns wide, the right-hand column shows what plays from top to bottom:
 
-- **Album art**, in terminals that can draw pictures (see below). It is the art inside the song's file, else a `cover`, `folder`, `front` or `album` image (`.jpg`, `.jpeg`, `.png` or `.webp`) in its folder; for a YouTube video, its thumbnail. With none, a ♪ placeholder shows.
+- **Album art**, in terminals that can draw pictures (see below). It is the art inside the song's file, else a `cover`, `folder`, `front` or `album` image (`.jpg`, `.jpeg`, `.png` or `.webp`) in its folder; for a YouTube video, its thumbnail. With none, a large ♪ in a frame shows in its place.
 - **The title**, the artist and album when the file has them, and the volume, repeat and shuffle.
 - **The song's waveform** as the progress bar, for local files: in pixels where pictures work, in braille dots elsewhere. YouTube videos keep the plain bar; live streams show `♪ live`.
 

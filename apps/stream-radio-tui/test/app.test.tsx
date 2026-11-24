@@ -305,11 +305,14 @@ describe('pixels', () => {
     expect(lines().findIndex(l => l.includes('▶ Song two'))).toBe(lines().findIndex(l => l.includes(sgr(9))) + 1)
   })
 
-  test('no art: a ♪ placeholder, and no picture sent', async () => {
+  test('no art: a big ♪ drawn in pixels, square, at the top', async () => {
     const screen = fakeScreen()
     const { lines } = await show(100, PLAYING, '', '', { media: pictureMedia(false), graphics: screen.graphics, rows: 40 })
-    await vi.waitFor(() => expect(lines().join('\n')).toContain('♪'))
-    expect(screen.sent()).not.toContain(placed(1))
+    // 33 columns of 8×16 cells: a square is 33 wide, 17 rows tall (264 px of 272)
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(17)))
+    expect(screen.sent()).not.toContain(placed(18))
+    expect(lines().some(l => l.includes(sgr(1) + P.repeat(33)))).toBe(true)
+    expect(lines().findIndex(l => l.includes('▶ Song three'))).toBe(lines().findIndex(l => l.includes(sgr(17))) + 1)
   })
 
   test('narrowing the pane refits the art and deletes the rows it no longer uses', async () => {
