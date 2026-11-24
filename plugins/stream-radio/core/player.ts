@@ -819,6 +819,20 @@ export async function step(h: Host, by: 1 | -1): Promise<string> {
   return (await mpv(h, command)) ? '' : 'The player is not ready yet.'
 }
 
+// Jumps the playing file to `seconds`, kept within it: a second short of the
+// end, since a seek to the very end would skip to the next song. The time and
+// the resume point follow at once, so a quit just after resumes from there.
+// '' when done, else what to show.
+export async function seek(h: Host, seconds: number): Promise<string> {
+  if ((await h.vars.read('elapsed')) < 0) return 'Nothing to seek in.'
+  const length = (await mpv(h, ['get_property', 'duration']))?.data
+  const to = Math.max(0, typeof length === 'number' ? Math.min(seconds, length - 1) : seconds)
+  if (!(await mpv(h, ['seek', to, 'absolute']))) return 'The player is not ready yet.'
+  await h.vars.change('elapsed', () => to)
+  await recordPosition(h, to)
+  return ''
+}
+
 // Pauses or resumes through mpv; false while it is not listening yet. The new
 // state is decided before sending and written as that value, not a flip: the
 // watcher reports the change while the send runs, and a late flip would undo it.
