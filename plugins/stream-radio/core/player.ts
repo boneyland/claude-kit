@@ -17,6 +17,8 @@ import {
   trackTitle,
   WATCHED,
 } from './nowplaying'
+import { paths, type Paths } from './paths'
+import { readSaved, updateSaved } from './saved'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
 
@@ -28,13 +30,11 @@ export const NO_QUEUE: Queue = { kind: 'none', items: [], current: -1, paths: []
 // the last URL again after a stop resumes there.
 export const NO_RESUME: Resume = { url: '', index: -1, seconds: -1, title: '' }
 // The volume as last set, the player's from the start; kept in saved state with
-// the Volume setting it began from, so a changed setting wins again.
-export const VOLUME_KEY = 'volume'
-export type SavedVolume = { value: number; configured: number }
-
+// the Volume setting each program set it under, so a changed setting wins again
+// for the program it changed in.
 export async function loadVolume(h: Host, configured: number) {
-  const saved = (await h.saved.get(VOLUME_KEY).catch(() => undefined)) as Partial<SavedVolume> | undefined
-  const value = saved && saved.configured === configured && typeof saved.value === 'number' ? saved.value : configured
+  const saved = (await readSaved(h)).volume
+  const value = saved && saved.configured[h.program] === configured ? saved.value : configured
   await h.vars.change('volume', () => clampVolume(value))
 }
 
@@ -42,23 +42,21 @@ export async function loadVolume(h: Host, configured: number) {
 export async function setVolume(h: Host, configured: number, level: number): Promise<string> {
   const to = clampVolume(level)
   await h.vars.change('volume', () => to)
-  await h.saved.set(VOLUME_KEY, { value: to, configured } satisfies SavedVolume).catch(() => undefined)
+  await updateSaved(h, s => ({ ...s, volume: { value: to, configured: { ...s.volume?.configured, [h.program]: configured } } }))
   if (control && !(await mpv(h, ['set_property', 'volume', to]))) return `Volume ${to}%; the player is not ready yet.`
   return `Volume ${to}%.`
 }
 
 // Repeat: kept in saved state as a preference.
-export const REPEAT_KEY = 'repeat'
-
 export async function loadRepeat(h: Host) {
-  const saved = await h.saved.get(REPEAT_KEY).catch(() => undefined)
-  if (saved === 'all' || saved === 'one' || saved === 'off') await h.vars.change('repeat', () => saved)
+  const saved = (await readSaved(h)).repeat
+  if (saved) await h.vars.change('repeat', () => saved)
 }
 
 // Sets repeat, of the playing player too; resolves to the reply to show.
 export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
   await h.vars.change('repeat', () => mode)
-  await h.saved.set(REPEAT_KEY, mode).catch(() => undefined)
+  await updateSaved(h, s => ({ ...s, repeat: mode }))
   const loops = loopsFor(mode)
   if (control) {
     await mpv(h, ['set_property', 'loop-file', loops.file])
@@ -80,34 +78,42 @@ export async function toggleShuffle(h: Host): Promise<string> {
   return on ? 'Shuffled.' : 'Back in order.'
 }
 
-export const STORE_KEY = 'last'
 export const SAVE_MS = 10_000
-export type Saved = { url: string; resumeAt: Resume; knownDefault: string }
 let savedAt = 0
 
 export async function saveLast(h: Host, isNow = false) {
   const now = await h.now().catch(() => 0)
   if (!isNow && now - savedAt < SAVE_MS) return
   savedAt = now
-  const saved: Saved = { url: await h.vars.read('lastUrl'), resumeAt: await h.vars.read('resumeAt'), knownDefault: await h.vars.read('knownDefault') }
-  await h.saved.set(STORE_KEY, saved).catch(() => undefined)
+  const url = await h.vars.read('lastUrl')
+  const resumeAt = await h.vars.read('resumeAt')
+  await updateSaved(h, s => ({ ...s, last: url ? { url, resumeAt } : null }))
 }
 
 // What an earlier session saved, when this one has nothing of its own yet.
 export async function loadLast(h: Host) {
   if (await h.vars.read('lastUrl')) return
-  const saved = (await h.saved.get(STORE_KEY).catch(() => undefined)) as Partial<Saved> | undefined
-  if (!saved || typeof saved.url !== 'string' || !saved.url) return
-  const url = saved.url
+  const saved = await readSaved(h)
+  if (!saved.last) return
+  const { url, resumeAt: at } = saved.last
   await h.vars.change('lastUrl', () => url)
-  if (typeof saved.knownDefault === 'string') {
-    const known = saved.knownDefault
-    await h.vars.change('knownDefault', () => known)
+  const known = saved.knownDefault[h.program]
+  if (known !== undefined) await h.vars.change('knownDefault', () => known)
+  if (at.url === url) await h.vars.change('resumeAt', () => at)
+}
+
+// A default stream changed since this program last started forgets the last
+// URL and where it got to; another program's default never does.
+export async function checkDefault(h: Host, defaultUrl: string) {
+  const known = (await readSaved(h)).knownDefault[h.program]
+  if (known === defaultUrl) return
+  const isChanged = known !== undefined
+  await h.vars.change('knownDefault', () => defaultUrl)
+  if (isChanged) {
+    await h.vars.change('lastUrl', () => '')
+    await h.vars.change('resumeAt', () => NO_RESUME)
   }
-  const at = saved.resumeAt
-  if (at && at.url === url && typeof at.index === 'number' && typeof at.seconds === 'number') {
-    await h.vars.change('resumeAt', () => ({ url, index: at.index, seconds: at.seconds, title: typeof at.title === 'string' ? at.title : '' }))
-  }
+  await updateSaved(h, s => ({ ...s, last: isChanged ? null : s.last, knownDefault: { ...s.knownDefault, [h.program]: defaultUrl } }))
 }
 
 // Closer to a song's start than this, it resumes at the start.
@@ -116,27 +122,8 @@ export const RESUME_MIN_SECONDS = 5
 
 
 
-// ONE player for every session. mpv runs detached from all of them (setsid),
-// listening on one socket in the player's folder, and keeps playing until
-// someone stops it. Next to it in that folder:
-// - player.json, what was last asked of the player (Intent): every session
-//   reads it when the player goes away, to tell a stop or a new start from a
-//   drop worth reconnecting;
-// - reconnect.lock, held by the one session that reconnects after a drop;
-// - mpv.log, the player's errors, for saying why something would not play.
-export type Paths = { sock: string; intent: string; lock: string; log: string }
-let dataDir: string | undefined
-
-export async function paths(h: Host): Promise<Paths> {
-  // Not kept while empty: a hook that cannot tell where the folder is must not
-  // pin the files to the filesystem root for the rest of the session.
-  if (!dataDir) {
-    dataDir = await h.dataDir()
-    // The first time the folder is known, make sure it exists.
-    if (dataDir) await h.run(['mkdir', '-p', dataDir], { timeoutMs: 3000 }).catch(() => undefined)
-  }
-  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log` }
-}
+// The player's files: core/paths.ts.
+export { paths, type Paths }
 
 // id: one per start; isStopped: someone pressed stop; attempt: reconnect tries
 // before this start; playedAt: when it first played (0 until it has).

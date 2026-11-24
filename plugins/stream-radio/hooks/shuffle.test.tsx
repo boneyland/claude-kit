@@ -13,9 +13,7 @@ const PANE = {
 const SONGS = ['A', 'B', 'C']
 
 // mpv with a three-song playlist that shuffle reverses and unshuffle restores.
-function engine(on: On, store: Record<string, unknown>) {
-  on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
-  on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
+function engine(on: On, saved?: Record<string, unknown>) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
@@ -23,6 +21,7 @@ function engine(on: On, store: Record<string, unknown>) {
   const world = fakeMpv(on, {
     title: 'A',
     props: { 'time-pos': 3, duration: true },
+    saved,
     playlist: () => order.map(title => ({ filename: `https://example.com/${title}`, title })),
     onCommand: command => {
       // mpv keeps the song playing where it is: A moves, and the position with it.
@@ -54,7 +53,7 @@ const labelOf = async ($: Parameters<Extract<Parameters<typeof test>[1], (...arg
 
 test('shuffle reorders the playlist and the panel shows the new order; again puts it back', async ($, on) => {
   const clock = mock.clock(on)
-  const world = engine(on, {})
+  const world = engine(on)
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
   await clock.advance(10)
@@ -82,7 +81,7 @@ test('shuffle reorders the playlist and the panel shows the new order; again put
 
 test('a shuffle made in another session shows here', async ($, on) => {
   const clock = mock.clock(on)
-  const world = engine(on, {})
+  const world = engine(on)
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
   await clock.advance(10)
@@ -102,8 +101,7 @@ test('a shuffle made in another session shows here', async ($, on) => {
 
 test('repeat cycles all, one, off, reaches the player, and is remembered', async ($, on) => {
   const clock = mock.clock(on)
-  const store: Record<string, unknown> = {}
-  const world = engine(on, store)
+  const world = engine(on)
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never)
   await clock.advance(10)
@@ -118,7 +116,7 @@ test('repeat cycles all, one, off, reaches the player, and is remembered', async
 
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'repeat off' } as never))).toContain('Repeat off')
   expect(world.sent).toContainEqual(['set_property', 'loop-playlist', 'no'])
-  expect(store.repeat).toBe('off')
+  expect(world.saved()?.repeat).toBe('off')
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'repeat sometimes' } as never))).toContain('Usage: /stream repeat')
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)

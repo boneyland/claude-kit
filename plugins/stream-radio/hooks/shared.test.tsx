@@ -18,9 +18,7 @@ const PANE = {
 } as const
 const start = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
 
-function session(on: On, store: Record<string, unknown> = {}) {
-  on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
-  on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
+function session(on: On) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('session.end', () => ({ sessionId: 'test' }) as never)
   on('ui.status', () => ({ value: undefined }) as never)

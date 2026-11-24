@@ -77,10 +77,9 @@ export interface Host {
   // the person's home folder (HOME); empty when unknown
   home(): Promise<string>
   cwd(): Promise<string>
-  // The folder holding mpv.sock, player.json, reconnect.lock and mpv.log.
+  // The folder holding mpv.sock, player.json, reconnect.lock, mpv.log and
+  // state.json.
   dataDir(): Promise<string>
-  // Kept across sessions on this machine.
-  saved: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }
   vars: StateStore
   // shown to the person, or only in the debug log with to 'debug'
   log(text: string, to?: 'debug'): void

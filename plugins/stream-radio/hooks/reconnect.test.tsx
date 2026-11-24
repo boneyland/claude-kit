@@ -7,13 +7,11 @@ const URL = 'https://example.com/live'
 const FOOTER = { plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } } as const
 
 // The shared player, playing a live stream until the test ends it.
-function engine(on: On, clock: { now: () => number }, store: Record<string, unknown> = {}) {
-  on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
-  on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
+function engine(on: On, clock: { now: () => number }, saved?: Record<string, unknown>) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
-  return fakeMpv(on, { title: 'Lofi radio', now: () => clock.now() })
+  return fakeMpv(on, { title: 'Lofi radio', now: () => clock.now(), saved })
 }
 
 const start = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never

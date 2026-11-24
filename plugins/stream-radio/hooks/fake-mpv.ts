@@ -1,8 +1,8 @@
 // The world beneath the plugin in tests: ONE mpv shared by every session, as
 // the plugin sees it. A start runs `sh -c '… setsid -f mpv …'`; commands go
 // through mpv-ipc.py; a session follows the player with `mpv-ipc.py --watch`,
-// a stream of JSON lines; the data folder holds the socket, player.json and
-// reconnect.lock.
+// a stream of JSON lines; the data folder holds the socket, player.json,
+// reconnect.lock and state.json.
 import type { On } from 'claude-code'
 
 export const DATA = '/tmp/stream-radio-test/stream-radio'
@@ -10,6 +10,7 @@ export const SOCK = `${DATA}/mpv.sock`
 export const INTENT = `${DATA}/player.json`
 export const LOCK = `${DATA}/reconnect.lock`
 export const LOG = `${DATA}/mpv.log`
+export const STATE = `${DATA}/state.json`
 
 export type Entry = { filename?: string; title?: string; current?: boolean }
 type Event = Record<string, unknown>
@@ -40,6 +41,8 @@ export type FakeOptions = {
   // A start this returns text for never plays: mpv prints the text (its
   // output, stdout and stderr, goes to the log) and exits before its socket.
   refuses?: (argv: string[]) => string | undefined
+  // what state.json holds at the start, as an earlier session saved it
+  saved?: Record<string, unknown>
 }
 
 export function fakeMpv(on: On, options: FakeOptions = {}) {
@@ -56,7 +59,9 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     // commands sent over IPC, pid probes left out
     sent: [] as unknown[][],
     // files in the data folder (the socket aside)
-    files: {} as Record<string, string>,
+    files: (options.saved ? { [STATE]: JSON.stringify({ version: 1, ...options.saved }) } : {}) as Record<string, string>,
+    // what state.json holds now; undefined while there is none
+    saved: () => (STATE in world.files ? (JSON.parse(world.files[STATE]!) as Record<string, unknown>) : undefined),
     isRunning: false,
     props: {} as Record<string, unknown>,
     toasts: [] as string[],
@@ -185,6 +190,13 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       const path = argv.at(-1)!
       if (path === SOCK) sockMtime = undefined
       delete world.files[path]
+      return ok()
+    }
+    if (argv[0] === 'mv' && argv[1] === '-f') {
+      const [from, to] = [argv[2]!, argv[3]!]
+      if (!(from in world.files)) return fail()
+      world.files[to] = world.files[from]!
+      delete world.files[from]
       return ok()
     }
     if (argv[0] === 'kill') {

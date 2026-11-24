@@ -66,7 +66,6 @@ export function hostOf($: EngineInterface, vars: StateStore, events: Host['event
     home: async () => (await $.env.get('HOME')) ?? '',
     cwd: () => $.session.cwd(),
     dataDir: () => stateDir(name => (name === 'XDG_STATE_HOME' ? $.env.get('XDG_STATE_HOME') : $.env.get('HOME'))),
-    saved: { get: key => $.store.get(key), set: (key, value) => $.store.set(key, value as never) },
     vars,
     log: (text, to) => void (to ? $.ui.log(text, { to }) : $.ui.log(text)),
     toast: text => void $.ui.toast(text),

@@ -21,6 +21,7 @@ import {
 import {
   NO_QUEUE,
   NO_RESUME,
+  checkDefault,
   connect,
   isFollowing,
   detach,
@@ -32,7 +33,6 @@ import {
   releaseLock,
   resumable,
   resume,
-  saveLast,
   setRepeat,
   setVolume,
   start,
@@ -43,6 +43,7 @@ import {
   toggleShuffle,
 } from '../core/player'
 import type { Host, PlayerKeys, StateStore } from '../core/host'
+import { migrateFromStore } from '../core/saved'
 import { hostOf } from './host-claude'
 
 // The panel reads these two through $.state for their versions.
@@ -224,15 +225,12 @@ export const register: Register = (on, options) => {
     await update($, scroll, () => 0)
     await update($, queue, () => NO_QUEUE)
     await update($, notice, () => '')
+    // Before state.json, saved state was in the store: brought over once.
+    await migrateFromStore(hostFor($, config), { get: key => $.store.get(key) })
     await loadLast(hostFor($, config))
     await loadVolume(hostFor($, config), config.volume)
     await loadRepeat(hostFor($, config))
-    if ((await read($, knownDefault)) !== defaultUrl) {
-      await update($, knownDefault, () => defaultUrl)
-      await update($, lastUrl, () => '')
-      await update($, resumeAt, () => NO_RESUME)
-      await saveLast(hostFor($, config), true)
-    }
+    await checkDefault(hostFor($, config), defaultUrl)
     await $.command.register({
       name: 'stream',
       description: "Play a YouTube stream's audio; shows what is playing",

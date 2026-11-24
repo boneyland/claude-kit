@@ -11,13 +11,11 @@ const PANE = {
   props: { title: 'Radio', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
-function engine(on: On, store: Record<string, unknown>) {
-  on('store.get', (_$, e) => ({ value: store[e.key] }) as never)
-  on('store.set', (_$, e) => ((store[e.key] = e.value), { value: undefined }) as never)
+function engine(on: On, saved?: Record<string, unknown>) {
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
-  const world = fakeMpv(on, { title: 'Lofi' })
+  const world = fakeMpv(on, { title: 'Lofi', saved })
   return Object.assign(world, { spawned: world.launches })
 }
 
@@ -25,8 +23,7 @@ const start = { cwd: '/repo', surface: 'terminal', isInteractive: true } as neve
 
 test('the panel turns the playing volume up and down, and remembers it', { options: { volume: 60 } }, async ($, on) => {
   const clock = mock.clock(on)
-  const store: Record<string, unknown> = {}
-  const world = engine(on, store)
+  const world = engine(on)
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'https://example.com/live' } as never)
   await clock.advance(10)
@@ -40,7 +37,7 @@ test('the panel turns the playing volume up and down, and remembers it', { optio
   const again = await $.ui.mount(PANE)
   expect(await again.find({ type: 'Text', text: 'Volume 65%' })).toBeTruthy()
   await again.unmount()
-  expect(store.volume).toEqual({ value: 65, configured: 60 })
+  expect(world.saved()?.volume).toEqual({ value: 65, configured: { mod: 60 } })
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
@@ -48,7 +45,7 @@ test('the panel turns the playing volume up and down, and remembers it', { optio
 
 test('/stream vol sets, steps and clamps the volume', { options: { volume: 60 } }, async ($, on) => {
   mock.clock(on)
-  engine(on, {})
+  engine(on)
   await $.session.start(start)
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'vol 30' } as never))).toContain('Volume 30%')
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'vol up' } as never))).toContain('Volume 35%')
@@ -59,7 +56,7 @@ test('/stream vol sets, steps and clamps the volume', { options: { volume: 60 } 
 
 test('a new session starts at the saved volume, unless the setting changed', async ($, on) => {
   const clock = mock.clock(on)
-  const world = engine(on, { volume: { value: 35, configured: 60 } })
+  const world = engine(on, { volume: { value: 35, configured: { mod: 60 } } })
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'https://example.com/live' } as never)
   await clock.advance(10)
@@ -70,7 +67,7 @@ test('a new session starts at the saved volume, unless the setting changed', asy
 
 test('a changed Volume setting wins over the saved volume', { options: { volume: 80 } }, async ($, on) => {
   mock.clock(on)
-  engine(on, { volume: { value: 35, configured: 60 } })
+  engine(on, { volume: { value: 35, configured: { mod: 60 } } })
   await $.session.start(start)
   expect(JSON.stringify(await $.command.run({ command: 'stream', args: 'vol' } as never))).toContain('Volume 80%')
 })

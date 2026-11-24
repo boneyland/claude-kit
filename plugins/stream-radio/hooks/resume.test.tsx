@@ -100,9 +100,8 @@ test('the resume jump happens for a file that loaded before the watcher began', 
     loadsBeforeWatch: true,
     exists: () => true,
     playlist: SONGS.map((title, i) => ({ filename: `/m/${i}.flac`, title })),
+    saved: { last: { url: '/m', resumeAt: { url: '/m', index: 2, seconds: 80, title: SONGS[2] } }, knownDefault: { mod: '' } },
   })
-  on('store.get', (_$, e) => ({ value: e.key === 'last' ? { url: '/m', resumeAt: { url: '/m', index: 2, seconds: 80, title: SONGS[2] }, knownDefault: '' } : undefined }) as never)
-  on('store.set', () => ({ value: undefined }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
