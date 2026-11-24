@@ -24,7 +24,7 @@ Keys:
   ↑/↓ or k/j   move            Enter   play the song, or open/shut a folder
   ←/→          shut/open folder
   space        pause           n/p     next/previous
-  +/-          volume by 5     s       shuffle      r   repeat all/one/off
+  +/-          volume a step   s       shuffle      r   repeat all/one/off
   /            filter (Enter plays the first match, Esc clears)
   o            open a URL or path
   l            resume the last URL from where it got to

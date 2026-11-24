@@ -1,5 +1,4 @@
 import type { Key } from 'ink'
-import { VOLUME_STEP } from '../../../plugins/stream-radio/core/nowplaying'
 
 // list: keys are commands; filter and open: keys edit a line of text; help:
 // the key list shows, and keys scroll or close it.
@@ -15,7 +14,8 @@ export type Action =
   | { kind: 'pause' }
   | { kind: 'next' }
   | { kind: 'prev' }
-  | { kind: 'volume'; by: number }
+  // one step louder (1) or quieter (-1): the same change in loudness at any level
+  | { kind: 'volume'; dir: 1 | -1 }
   | { kind: 'shuffle' }
   | { kind: 'repeat' }
   | { kind: 'filterMode' }
@@ -37,9 +37,9 @@ const LETTERS: Record<string, Action> = {
   ' ': { kind: 'pause' },
   n: { kind: 'next' },
   p: { kind: 'prev' },
-  '+': { kind: 'volume', by: VOLUME_STEP },
-  '=': { kind: 'volume', by: VOLUME_STEP },
-  '-': { kind: 'volume', by: -VOLUME_STEP },
+  '+': { kind: 'volume', dir: 1 },
+  '=': { kind: 'volume', dir: 1 },
+  '-': { kind: 'volume', dir: -1 },
   s: { kind: 'shuffle' },
   r: { kind: 'repeat' },
   '/': { kind: 'filterMode' },

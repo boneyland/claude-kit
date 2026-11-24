@@ -3,7 +3,6 @@ import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
 import * as player from '../../../plugins/stream-radio/core/player'
-import { VOLUME_STEP } from '../../../plugins/stream-radio/core/nowplaying'
 import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
@@ -437,8 +436,11 @@ describe('keys', () => {
   test("an action's reply shows on the status line", async () => {
     const { press, host, lines } = await show(100)
     await press('+')
-    expect(player.setVolume).toHaveBeenCalledWith(host, DEFAULT_CONFIG.volume, 65)
-    expect(lines().join('\n')).toContain('Volume 65%.')
+    expect(player.setVolume).toHaveBeenCalledWith(host, DEFAULT_CONFIG.volume, 67)
+    expect(lines().join('\n')).toContain('Volume 67%.')
+    // a step down from 60 is as much quieter as a step up is louder
+    await press('-')
+    expect(player.setVolume).toHaveBeenLastCalledWith(host, DEFAULT_CONFIG.volume, 53)
   })
 
   test('l while the last URL plays leaves it be and says so', async () => {
@@ -465,8 +467,8 @@ describe('keys', () => {
     ui.stdin.write('+')
     ui.stdin.write('+')
     await tick()
-    expect(await vars.read('volume')).toBe(60 + 3 * VOLUME_STEP)
-    expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([60 + VOLUME_STEP, 60 + 2 * VOLUME_STEP, 60 + 3 * VOLUME_STEP])
+    expect(await vars.read('volume')).toBe(84)
+    expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([67, 75, 84])
   })
 
   test('Enter on a folder shuts it (the mark moves to it); on a song, plays it', async () => {

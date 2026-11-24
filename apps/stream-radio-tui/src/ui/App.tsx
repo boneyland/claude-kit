@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useInput } from 'ink'
-import { filterRows, nextRepeat, playlistRows } from '../../../../plugins/stream-radio/core/nowplaying'
+import { filterRows, nextRepeat, playlistRows, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
 import { locate, pick, resume, seek, setRepeat, setVolume, start, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
@@ -117,7 +117,7 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
       case 'prev':
         return act(() => step(h, a.kind === 'next' ? 1 : -1))
       case 'volume':
-        return act(() => inTurn(async () => setVolume(h, session.config.volume, (await h.vars.read('volume')) + a.by)))
+        return act(() => inTurn(async () => setVolume(h, session.config.volume, stepVolume(await h.vars.read('volume'), a.dir))))
       case 'shuffle':
         return act(() => toggleShuffle(h))
       case 'repeat':

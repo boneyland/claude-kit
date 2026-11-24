@@ -31,7 +31,7 @@ With no argument it attaches to the player that is already running, or shows the
 | `←` `→` | shut or open a folder |
 | `space` | pause or resume |
 | `n` `p` | next or previous song |
-| `+` / `=`, `-` | volume up or down by 5 |
+| `+` / `=`, `-` | volume up or down a step: about 3 dB, the same change at any level |
 | `s` | shuffle |
 | `r` | repeat: all, one, off |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
