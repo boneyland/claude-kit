@@ -30,6 +30,9 @@ describe('splitMouse', () => {
     expect(splitMouse('', '\x1b[')).toEqual({ text: '\x1b[', held: '', events: [] })
     expect(splitMouse('', '\x1b[A').text).toBe('\x1b[A')
   })
+  test('a sideways wheel (a touchpad swipe) is dropped', () => {
+    expect(splitMouse('', '\x1b[<66;3;3M\x1b[<67;3;3M')).toEqual({ text: '', held: '', events: [] })
+  })
   test('motion is dropped', () => {
     expect(splitMouse('', '\x1b[<32;4;4M')).toEqual({ text: '', held: '', events: [] })
   })
@@ -55,5 +58,13 @@ describe('mouseInput', () => {
     ;(source as unknown as PassThrough).write('q')
     await new Promise(r => setTimeout(r, 10))
     expect(String(input.stdin.read())).toBe('q')
+  })
+  test('Ink leaving raw mode turns the mouse off first, so no report reaches the shell', () => {
+    const calls: string[] = []
+    const source = Object.assign(new PassThrough(), { isTTY: true, setRawMode: (m: boolean) => (calls.push(`raw ${m}`), source) }) as unknown as NodeJS.ReadStream
+    const input = mouseInput(source, () => calls.push('mouse off'))
+    input.stdin.setRawMode(true)
+    input.stdin.setRawMode(false)
+    expect(calls).toEqual(['raw true', 'mouse off', 'raw false'])
   })
 })

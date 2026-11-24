@@ -34,7 +34,7 @@ export function VolumeBar({ level, width, onSet }: BarProps) {
     else runs.push([ch, isFilled, isLabel])
   }
   return (
-    <Clickable width={width} onClick={hit => onSet?.(volumeAt(hit.x - 1, inner))}>
+    <Clickable width={width} flexShrink={0} onClick={hit => onSet?.(volumeAt(hit.x - 1, inner))}>
       <Text>
         |
         {runs.map(([text, isFilled, isLabel], i) => (
@@ -56,13 +56,14 @@ type Props = { isPaused: boolean; volume: number; width: number; isNarrow?: bool
 export function Controls({ isPaused, volume, width, isNarrow, onAction, onVolume }: Props) {
   const gap = isNarrow ? ' ' : '  '
   const button = (text: string, a: Action) => (
-    <Clickable onClick={() => onAction?.(a)}>
+    <Clickable flexShrink={0} onClick={() => onAction?.(a)}>
       <Text>{text}</Text>
     </Clickable>
   )
   const used = 2 + gap.length + 2 + gap.length + 2 + 2
+  // nothing shrinks: a squeezed button or bar would wrap and misplace clicks
   return (
-    <Box width={width}>
+    <Box width={width} flexShrink={0}>
       {button('|◂', { kind: 'prev' })}
       <Text>{gap}</Text>
       {button(isPaused ? ' ▸' : '❚❚', { kind: 'pause' })}

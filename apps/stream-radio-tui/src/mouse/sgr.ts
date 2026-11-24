@@ -19,7 +19,8 @@ const BUTTONS = ['left', 'middle', 'right'] as const
 function eventOf(code: number, col: number, row: number, end: string): MouseEvent | undefined {
   const [x, y] = [col - 1, row - 1]
   if (code & 32) return undefined // motion
-  if (code & 64) return { kind: 'wheel', button: 'none', dir: code & 1 ? 'down' : 'up', x, y }
+  // 66 and 67: a sideways wheel or touchpad swipe, which the list has no use for
+  if (code & 64) return code & 2 ? undefined : { kind: 'wheel', button: 'none', dir: code & 1 ? 'down' : 'up', x, y }
   const button = BUTTONS[code & 3]
   if (!button) return undefined
   return { kind: end === 'M' ? 'press' : 'release', button, x, y }

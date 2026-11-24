@@ -526,6 +526,11 @@ describe('mouse rows', () => {
 
   test("a click on a folder's arrow shuts it; elsewhere on its row it only selects; a double-click shuts it", async () => {
     const { click, dblclick, where, vars, press } = await show(100)
+    // a double-click on the arrow toggles it once, not twice
+    await dblclick(where('▾').x, where('▾').y)
+    expect(await vars.read('openFolders')).toEqual([])
+    await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
+    await tick()
     let at = where('Disc 1/')
     await click(at.x + 3, at.y)
     expect(await vars.read('openFolders')).toEqual([`${ALBUM}/Disc 1`])
@@ -534,6 +539,8 @@ describe('mouse rows', () => {
     expect(await vars.read('openFolders')).toEqual([])
     await vars.change('openFolders', () => [`${ALBUM}/Disc 1`])
     await tick()
+    // a click on another row first, or this one would make a double-click
+    await click(where('Intro').x, where('Intro').y)
     at = where('▾')
     await click(at.x, at.y)
     expect(await vars.read('openFolders')).toEqual([])
@@ -585,7 +592,7 @@ describe('mouse controls', () => {
     return { y, left: columnOf(line, line.lastIndexOf('|', text)), right: columnOf(line, line.indexOf('|', text)) }
   }
 
-  for (const columns of [100, 60]) {
+  for (const columns of [100, 60, 40]) {
     test(`at ${columns} columns: previous, pause and next; repeat and shuffle`, async () => {
       const { click, where, host } = await show(columns)
       for (const [text, called] of [
@@ -610,6 +617,16 @@ describe('mouse controls', () => {
       expect(player.setVolume).toHaveBeenLastCalledWith(expect.anything(), DEFAULT_CONFIG.volume, 100)
     })
   }
+
+  test('narrow: the controls and the volume bar keep to one line; repeat and shuffle the next', async () => {
+    for (const columns of [60, 40]) {
+      const { lines } = await show(columns)
+      const at = lineOf(lines(), /\|◂ +❚❚ +▸\| +\|.*vol 60%.*\|/)
+      expect(at, `${columns} columns`).toBeGreaterThan(0)
+      expect(lines()[at + 1]).toMatch(/repeat all\s+shuffle off/)
+      cleanup()
+    }
+  })
 
   test('the wheel over the volume bar does nothing', async () => {
     const { wheel, lines } = await show(100)

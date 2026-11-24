@@ -5,7 +5,10 @@ import { splitMouse, type MouseEvent, type MouseSource } from './sgr'
 // Stands between the terminal and Ink: Ink reads the keys from `stdin`, the
 // mouse reports go to `subscribe`rs instead, so none reach the key handler.
 // `close` lets go of the terminal's stdin, so it keeps the process alive no longer.
-export function mouseInput(real: NodeJS.ReadStream): { stdin: NodeJS.ReadStream; subscribe: MouseSource; close(): void } {
+// `off`: turns the terminal's mouse reports off, called as Ink leaves raw mode
+// and before the terminal echoes again, so a report sent while quitting is
+// not printed in the shell.
+export function mouseInput(real: NodeJS.ReadStream, off?: () => void): { stdin: NodeJS.ReadStream; subscribe: MouseSource; close(): void } {
   const out = new PassThrough()
   const fns = new Set<(e: MouseEvent) => void>()
   let held = ''
@@ -23,6 +26,7 @@ export function mouseInput(real: NodeJS.ReadStream): { stdin: NodeJS.ReadStream;
     // Ink reads only while raw; the probe before it left stdin paused, and a
     // paused stream stays paused when a data listener is added.
     setRawMode: (mode: boolean) => {
+      if (!mode) off?.()
       real.setRawMode?.(mode)
       if (mode) real.resume()
       else real.pause()

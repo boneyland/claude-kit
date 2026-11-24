@@ -6,7 +6,7 @@ import { App } from './ui/App'
 import { nodeMedia } from './media'
 import { kittyGraphics, leaveScreen, type Graphics } from './gfx/screen'
 import { mouseInput } from './mouse/input'
-import { MOUSE_ON } from './mouse/sgr'
+import { MOUSE_OFF, MOUSE_ON } from './mouse/sgr'
 
 // Set by build.mjs; absent under vitest or tsx.
 declare const __VERSION__: string | undefined
@@ -77,7 +77,7 @@ async function main(argv: string[]) {
   }
   process.stdout.write(ENTER_ALT)
   // Clicks come out of stdin before Ink reads it; Ink gets the keys.
-  const input = session.config.mouse === 'on' ? mouseInput(process.stdin) : undefined
+  const input = session.config.mouse === 'on' ? mouseInput(process.stdin, () => write(MOUSE_OFF)) : undefined
   if (input) write(MOUSE_ON)
   const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} graphics={graphics} mouse={input?.subscribe} />, {
     exitOnCtrlC: false,

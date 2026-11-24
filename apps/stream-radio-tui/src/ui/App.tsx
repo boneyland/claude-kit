@@ -190,7 +190,8 @@ function Player({ session, view, media, graphics }: { session: Session; view: Vi
     const row = rows[index]
     setTop(first)
     setCursor(index)
-    if (row && isOnArrow(row, hit.x) && row.kind === 'folder') return setOpen(row.path)
+    // the second press of a double-click on the arrow would only undo the first
+    if (row && isOnArrow(row, hit.x) && row.kind === 'folder') return hit.isDouble ? undefined : setOpen(row.path)
     if (hit.isDouble) handle({ kind: 'enter' })
   }
   const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))

@@ -36,8 +36,8 @@ export type Full = { height: number; tags: { artist: string; album: string }; pe
 
 // Title, second line, tags, controls, settings: what the art leaves room for.
 const DETAIL_ROWS = 5
-// The narrow layout's volume bar.
-const NARROW_BAR = 16
+// The narrow layout's controls line at most: the buttons, then the bar.
+const NARROW_CONTROLS = 40
 // Less room than this and the art is left out.
 const MIN_ART_ROWS = 4
 
@@ -63,12 +63,10 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
         {second || ' '}
       </Text>
       {time}
+      <Controls isPaused={isPaused} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} isNarrow onAction={onAction} onVolume={onVolume} />
       <Box>
-        <Controls isPaused={isPaused} volume={view.volume} width={NARROW_BAR + 14} isNarrow onAction={onAction} onVolume={onVolume} />
-        <Text>{'  '}</Text>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
-      </Box>
-      <Box>
+        <Text>{'   '}</Text>
         <Toggle text={`shuffle ${view.isShuffled ? 'on' : 'off'}`} action={{ kind: 'shuffle' }} onAction={onAction} />
       </Box>
     </Box>
