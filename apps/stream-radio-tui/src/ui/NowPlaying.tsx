@@ -7,6 +7,7 @@ import { Waveform, WAVEFORM_ROWS } from './Waveform'
 import { Art } from './Art'
 import type { ArtState } from './hooks'
 import type { Graphics } from '../gfx/screen'
+import type { Wave } from '../media/peaks'
 
 // The lines it takes, for the layout to plan around.
 export const NOW_PLAYING_ROWS = 5
@@ -23,7 +24,7 @@ export function progress(elapsed: number, duration: number, width: number): stri
 // The wide layout's pane, a column of its own: its height, the song's tags,
 // and its waveform when there is one.
 // With `pixels`, the art at the top and the waveform in pixels.
-export type Full = { height: number; tags: { artist: string; album: string }; peaks?: Uint8Array; pixels?: { graphics: Graphics; art: ArtState } }
+export type Full = { height: number; tags: { artist: string; album: string }; peaks?: Wave; pixels?: { graphics: Graphics; art: ArtState } }
 
 // Title, second line, tags, settings: what the art leaves room for.
 const DETAIL_ROWS = 4
@@ -61,7 +62,7 @@ type ColumnProps = { view: View; duration: number; width: number; full: Full; se
 function Column({ view, duration, width, full, second, time }: ColumnProps) {
   const { playing, isPaused, elapsed } = view
   const tags = [full.tags.artist, full.tags.album].filter(Boolean).join(' · ')
-  const hasWave = !!full.peaks && full.peaks.length > 0 && duration > 0 && elapsed >= 0
+  const hasWave = !!full.peaks && full.peaks.peak.length > 0 && duration > 0 && elapsed >= 0
   const pixels = full.pixels
   const artRows = full.height - DETAIL_ROWS - WAVEFORM_ROWS
   return (
@@ -78,7 +79,7 @@ function Column({ view, duration, width, full, second, time }: ColumnProps) {
       <Box flexGrow={1} />
       {hasWave ? (
         <Box height={WAVEFORM_ROWS}>
-          <Waveform peaks={full.peaks!} elapsed={elapsed} duration={duration} width={width} graphics={pixels?.graphics} />
+          <Waveform wave={full.peaks!} elapsed={elapsed} duration={duration} width={width} graphics={pixels?.graphics} />
         </Box>
       ) : (
         <Text>{time || ' '}</Text>

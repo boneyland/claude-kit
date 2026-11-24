@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises'
 import { artSources, loadArt, type Art, type ArtSource } from './art'
 import { cacheDir, pruneCache } from './cache'
-import { decodePeaks } from './peaks'
+import { decodePeaks, type Wave } from './peaks'
 
 // What the screen asks of the files and mpv: a fake in tests.
 export type Media = {
-  peaks(file: string, signal: AbortSignal): Promise<Uint8Array | undefined>
+  peaks(file: string, signal: AbortSignal): Promise<Wave | undefined>
   art(sources: ArtSource[], signal: AbortSignal): Promise<Art | undefined>
   sources(playing: { file?: string; url?: string }): Promise<ArtSource[]>
   isLocalFile(path: string): Promise<boolean>

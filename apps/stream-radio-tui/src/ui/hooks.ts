@@ -5,6 +5,7 @@ import { mpv } from '../../../../plugins/stream-radio/core/player'
 import { metaValue } from '../../../../plugins/stream-radio/core/nowplaying'
 import type { Media } from '../media'
 import type { Art } from '../media/art'
+import type { Wave } from '../media/peaks'
 import type { Session } from '../session'
 
 const DRAWN = ['playing', 'isPaused', 'elapsed', 'chapter', 'lastUrl', 'queue', 'openFolders', 'filter', 'resumeAt', 'volume', 'repeat', 'isShuffled'] as const
@@ -134,11 +135,11 @@ export function useTags(h: Host, playing: string): { artist: string; album: stri
   return known.title === playing ? known : { artist: '', album: '' }
 }
 
-// A local file's waveform peaks; undefined while decoding, for anything not a
+// A local file's waveform; undefined while decoding, for anything not a
 // local file, or when mpv can't decode it. A new file stops the old decode,
 // and a late answer for a file no longer playing is dropped.
-export function usePeaks(media: Media | undefined, file: string | undefined): Uint8Array | undefined {
-  const [known, setKnown] = useState<{ file: string; peaks?: Uint8Array }>({ file: '' })
+export function usePeaks(media: Media | undefined, file: string | undefined): Wave | undefined {
+  const [known, setKnown] = useState<{ file: string; peaks?: Wave }>({ file: '' })
   useEffect(() => {
     if (!media || !file) return
     const ac = new AbortController()

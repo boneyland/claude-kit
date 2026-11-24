@@ -9,6 +9,7 @@ import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
 import { App } from '../src/ui/App'
 import type { Media } from '../src/media'
+import type { Wave } from '../src/media/peaks'
 import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
 
@@ -181,7 +182,7 @@ describe('drawing', () => {
 
 // A Media whose decodes the test resolves by hand, one per file.
 function fakeMedia() {
-  const pending = new Map<string, { resolve: (p: Uint8Array | undefined) => void; signal: AbortSignal }>()
+  const pending = new Map<string, { resolve: (w: Wave | undefined) => void; signal: AbortSignal }>()
   const media: Media = {
     isLocalFile: async () => true,
     peaks: (file, signal) => new Promise(resolve => pending.set(file, { resolve, signal })),
@@ -191,21 +192,22 @@ function fakeMedia() {
   return { media, pending }
 }
 const BRAILLE = /[\u2800-\u28FF]{20,}/
+const flat = (v: number): Wave => ({ peak: new Uint8Array(2048).fill(v), rms: new Uint8Array(2048).fill(v >> 1) })
 const SONG3 = `${ALBUM}/Disc 1/03.mp3`
 
 describe('pane', () => {
-  test('a local song shows its waveform at the foot of the pane, with the times above it', async () => {
+  test('a local song shows its waveform, four rows, at the foot of the pane, with the times above it', async () => {
     const { media, pending } = fakeMedia()
     const { lines } = await show(100, PLAYING, '', '', { media })
     await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
-    pending.get(SONG3)!.resolve(new Uint8Array(2048).fill(128))
-    await vi.waitFor(() => expect(lines().filter(l => BRAILLE.test(l))).toHaveLength(2))
+    pending.get(SONG3)!.resolve(flat(128))
+    await vi.waitFor(() => expect(lines().filter(l => BRAILLE.test(l))).toHaveLength(4))
     const all = lines()
     const wave = all.findIndex(l => BRAILLE.test(l))
     expect(all[wave - 1]).toMatch(/2:41\s+4:05/)
     expect(all.join('\n')).not.toContain('━')
     // the pane runs down to the line above the text line
-    expect(all[wave + 2]).not.toContain('│')
+    expect(all[wave + 4]).not.toContain('│')
   })
 
   test('until the waveform is ready the bar shows', async () => {
@@ -223,7 +225,7 @@ describe('pane', () => {
     await vars.change('playing', () => 'Song two')
     await vi.waitFor(() => expect(pending.has(`${ALBUM}/Disc 1/02.mp3`)).toBe(true))
     expect(pending.get(SONG3)!.signal.aborted).toBe(true)
-    pending.get(SONG3)!.resolve(new Uint8Array(2048).fill(255))
+    pending.get(SONG3)!.resolve(flat(255))
     await tick()
     expect(lines().some(l => BRAILLE.test(l))).toBe(false)
   })
@@ -252,13 +254,13 @@ const deleted = (id: number) => `a=d,d=I,q=2,i=${id}\x1b`
 // Media with an 800×450 picture and a waveform, both at once.
 const pictureMedia = (art = true): Media => ({
   isLocalFile: async () => true,
-  peaks: async () => new Uint8Array(2048).fill(128),
+  peaks: async () => flat(128),
   sources: async () => [{ kind: 'file', path: SONG3 }],
   art: async () => (art ? { width: 800, height: 450, rgba: new Uint8Array(800 * 450 * 4) } : undefined),
 })
 
 describe('pixels', () => {
-  // 100 columns: the pane is 33 wide; 40 rows: the pane is 33 tall, 26 of
+  // 100 columns: the pane is 33 wide; 40 rows: the pane is 33 tall, 24 of
   // them free for art. 800×450 at 33 columns of 8×16 cells is 9 rows.
   test('the art sits at the top of the pane, the title under it, the waveform at the foot', async () => {
     const screen = fakeScreen()
@@ -275,9 +277,10 @@ describe('pixels', () => {
     expect(screen.sent()).toContain(placed(1))
     await vi.waitFor(() => expect(lines().some(l => l.includes(sgr(201)))).toBe(true))
     const wave = lines().findIndex(l => l.includes(sgr(201)))
-    expect(lines()[wave + 1]).toContain(sgr(202))
+    for (const i of [1, 2, 3]) expect(lines()[wave + i]).toContain(sgr(201 + i))
     expect(lines()[wave - 1]).toMatch(/2:41\s+4:05/)
     expect(screen.sent()).toContain(placed(201))
+    expect(screen.sent()).toContain(placed(204))
   })
 
   test('the next song keeps the art on screen until its own art is ready', async () => {
