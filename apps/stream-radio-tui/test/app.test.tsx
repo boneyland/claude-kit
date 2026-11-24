@@ -280,6 +280,28 @@ describe('pixels', () => {
     expect(screen.sent()).toContain(placed(201))
   })
 
+  test('the next song keeps the art on screen until its own art is ready', async () => {
+    const screen = fakeScreen()
+    const later: ((a: { width: number; height: number; rgba: Uint8Array }) => void)[] = []
+    const media: Media = {
+      ...pictureMedia(),
+      art: () => new Promise(resolve => later.push(resolve)),
+    }
+    const { lines, vars } = await show(100, PLAYING, '', '', { media, graphics: screen.graphics, rows: 40 })
+    await vi.waitFor(() => expect(later).toHaveLength(1))
+    later[0]({ width: 800, height: 450, rgba: new Uint8Array(800 * 450 * 4) })
+    await vi.waitFor(() => expect(screen.sent()).toContain(placed(9)))
+    screen.clear()
+    await vars.change('queue', q => ({ ...q, current: 1 }))
+    await vars.change('playing', () => 'Song two')
+    await vi.waitFor(() => expect(later).toHaveLength(2))
+    await tick()
+    // still drawn, nothing deleted, the title still under the art
+    expect(lines().some(l => l.includes(sgr(9)))).toBe(true)
+    expect(screen.sent()).not.toContain(deleted(1))
+    expect(lines().findIndex(l => l.includes('▶ Song two'))).toBe(lines().findIndex(l => l.includes(sgr(9))) + 1)
+  })
+
   test('no art: a ♪ placeholder, and no picture sent', async () => {
     const screen = fakeScreen()
     const { lines } = await show(100, PLAYING, '', '', { media: pictureMedia(false), graphics: screen.graphics, rows: 40 })

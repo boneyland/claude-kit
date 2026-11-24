@@ -117,6 +117,17 @@ describe('loadArt', () => {
     expect(again && [again.width, again.height, again.rgba[0]]).toEqual([10, 4, 7])
     expect(children).toHaveLength(2)
   })
+  test('the cache keeps art compressed, and gives back the same pixels', async () => {
+    const rgba = Buffer.alloc(600 * 300 * 4, 9)
+    const { spawn } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 600 300\n'], code: 0 } : { chunks: [rgba], code: 0 }))
+    const cache = path.join(dir, 'cache')
+    await loadArt(sources(), { spawn, cache })
+    const [file] = fs.readdirSync(cache)
+    expect(fs.statSync(path.join(cache, file)).size).toBeLessThan(rgba.length / 10)
+    const again = await loadArt(sources(), { spawn, cache })
+    expect(again && Buffer.from(again.rgba).equals(rgba)).toBe(true)
+  })
+
   test('a broken picture moves on instead of throwing', async () => {
     const { spawn } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 10 4\n'], code: 0 } : { code: 1 }))
     expect(await loadArt(sources(), { spawn })).toBeUndefined()

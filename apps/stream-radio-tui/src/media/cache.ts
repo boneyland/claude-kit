@@ -10,12 +10,42 @@ export function cacheDir(env: Record<string, string | undefined>): string {
 
 export const cacheKey = (...parts: (string | number)[]): string => createHash('sha1').update(parts.join('\0')).digest('hex')
 
+// A hit counts as a use: its time is moved on, so pruneCache keeps it longer.
 export async function readCache(dir: string, name: string): Promise<Buffer | undefined> {
   if (!dir) return undefined
   try {
-    return await fs.readFile(path.join(dir, name))
+    const file = path.join(dir, name)
+    const data = await fs.readFile(file)
+    const now = new Date()
+    await fs.utimes(file, now, now).catch(() => undefined)
+    return data
   } catch {
     return undefined
+  }
+}
+
+// What the cache may hold before the least recently used files go.
+export const CACHE_MAX_BYTES = 200 * 1024 * 1024
+
+// Deletes the least recently used files until the rest fit in `maxBytes`.
+// Never throws: a cache that can't be pruned only stays as it is.
+export async function pruneCache(dir: string, maxBytes = CACHE_MAX_BYTES): Promise<void> {
+  if (!dir) return
+  try {
+    const names = await fs.readdir(dir)
+    const files = []
+    for (const name of names) {
+      const stat = await fs.stat(path.join(dir, name)).catch(() => undefined)
+      if (stat?.isFile()) files.push({ name, size: stat.size, used: stat.mtimeMs })
+    }
+    let total = files.reduce((sum, f) => sum + f.size, 0)
+    for (const f of files.sort((a, b) => a.used - b.used)) {
+      if (total <= maxBytes) break
+      await fs.rm(path.join(dir, f.name), { force: true }).catch(() => undefined)
+      total -= f.size
+    }
+  } catch {
+    // no folder yet, or not readable
   }
 }
 

@@ -156,7 +156,9 @@ export function usePeaks(media: Media | undefined, file: string | undefined): Ui
 
 // The playing thing's art: 'loading' until known, then 'shown' with the
 // picture or 'missing' (a placeholder shows). 'none' when off or nothing
-// plays. A late answer for something no longer playing is dropped.
+// plays. A late answer for something no longer playing is dropped. While the
+// next song's art loads the last picture stays, so an album's cover doesn't
+// blink at every track.
 export type ArtState = { state: 'none' | 'loading' | 'shown' | 'missing'; art?: Art }
 
 export function useArt(media: Media | undefined, track: { file?: string; url?: string }, isOn: boolean): ArtState {
@@ -179,5 +181,6 @@ export function useArt(media: Media | undefined, track: { file?: string; url?: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media, isOn, key])
   if (!media || !isOn || !key) return { state: 'none' }
-  return known.key === key ? { state: known.state, art: known.art } : { state: 'loading' }
+  if (known.key === key || known.state === 'shown') return { state: known.state, art: known.art }
+  return { state: 'loading' }
 }

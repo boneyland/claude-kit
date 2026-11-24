@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { deflateSync, inflateSync } from 'node:zlib'
 import path from 'node:path'
 import type { Cell } from '../gfx/probe'
 import { cacheKey, readCache, writeCache } from './cache'
@@ -103,6 +104,28 @@ async function loadOne(source: ArtSource, signal: AbortSignal | undefined, spawn
   return { width, height, rgba: new Uint8Array(raw.stdout) }
 }
 
+// Cached art: width and height (u32le each), then the pixels deflated. A
+// cover is often mostly flat colour, and every track of an album with art
+// inside its files keeps its own copy.
+function toCache(art: Art): Buffer {
+  const header = Buffer.alloc(8)
+  header.writeUInt32LE(art.width, 0)
+  header.writeUInt32LE(art.height, 4)
+  return Buffer.concat([header, deflateSync(art.rgba)])
+}
+
+function fromCache(data: Buffer | undefined): Art | undefined {
+  if (!data || data.length < 8) return undefined
+  const width = data.readUInt32LE(0)
+  const height = data.readUInt32LE(4)
+  try {
+    const rgba = inflateSync(data.subarray(8))
+    return rgba.length === width * height * 4 ? { width, height, rgba: new Uint8Array(rgba) } : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // The first source that has a picture, from the cache or through mpv. A
 // failure moves on to the next source; an abort is passed on.
 export async function loadArt(sources: ArtSource[], opts: { signal?: AbortSignal; spawn?: Spawn; cache?: string } = {}): Promise<Art | undefined> {
@@ -115,18 +138,11 @@ export async function loadArt(sources: ArtSource[], opts: { signal?: AbortSignal
         const stat = await fs.stat(source.path)
         name = `${cacheKey('art', source.path, stat.size, stat.mtimeMs)}.art`
       } else name = `${cacheKey('art', source.url)}.art`
-      const cached = await readCache(cache, name)
-      if (cached && cached.length >= 8) {
-        const width = cached.readUInt32LE(0)
-        const height = cached.readUInt32LE(4)
-        if (cached.length === 8 + width * height * 4) return { width, height, rgba: new Uint8Array(cached.subarray(8)) }
-      }
+      const cached = fromCache(await readCache(cache, name))
+      if (cached) return cached
       const art = await loadOne(source, signal, spawn)
       if (!art) continue
-      const header = Buffer.alloc(8)
-      header.writeUInt32LE(art.width, 0)
-      header.writeUInt32LE(art.height, 4)
-      await writeCache(cache, name, Buffer.concat([header, art.rgba]))
+      await writeCache(cache, name, toCache(art))
       return art
     } catch (error) {
       if (signal?.aborted) throw error
