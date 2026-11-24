@@ -4,8 +4,8 @@
 // character is now wide only if string-width (already imported by that file)
 // agrees. Characters of one code unit keep Ink's answer: string-width calls ▶
 // two columns (it can be an emoji), but terminals draw it as one. Applied by
-// build.mjs and vitest.config.ts; it throws rather than build a TUI with the
-// old check.
+// build.mjs and vitest.config.ts; package.json pins Ink to 5.2.1, the version
+// it was written for, and it throws rather than build a TUI with the old check.
 
 const OLD = 'const isWideCharacter = character.fullWidth || character.value.length > 1;'
 const NEW = 'const isWideCharacter = character.fullWidth || (character.value.length > 1 && stringWidth(character.value) > 1);'
