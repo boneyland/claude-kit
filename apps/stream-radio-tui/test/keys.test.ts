@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Key } from 'ink'
-import { keyAction, type Action, type Mode } from '../src/keys'
+import { homeEnd, keyAction, type Action, type Keys, type Mode } from '../src/keys'
 import type { Edit } from '../src/ui/lineEdit'
 
 const NONE: Key = {
@@ -19,9 +19,9 @@ const NONE: Key = {
   delete: false,
   meta: false,
 }
-const key = (k: Partial<Key> = {}): Key => ({ ...NONE, ...k })
+const key = (k: Partial<Keys> = {}): Keys => ({ ...NONE, ...k })
 
-type Case = [name: string, input: string, key: Key, expected: Action | null]
+type Case = [name: string, input: string, key: Keys, expected: Action | null]
 
 const listCases: Case[] = [
   ['↑', '', key({ upArrow: true }), { kind: 'up' }],
@@ -48,6 +48,10 @@ const listCases: Case[] = [
   ['q', 'q', key(), { kind: 'quit' }],
   ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
   ['?', '?', key({ shift: true }), { kind: 'help' }],
+  ['PgUp', '', key({ pageUp: true }), { kind: 'jump', by: 'page', dir: -1 }],
+  ['PgDn', '', key({ pageDown: true }), { kind: 'jump', by: 'page', dir: 1 }],
+  ['Home', '', key({ home: true }), { kind: 'jump', by: 'all', dir: -1 }],
+  ['End', '', key({ end: true }), { kind: 'jump', by: 'all', dir: 1 }],
   ['an unbound letter', 'z', key(), null],
   ['Esc', '', key({ escape: true }), null],
   ['Ctrl-N is not n', 'n', key({ ctrl: true }), null],
@@ -102,6 +106,8 @@ const openCases: Case[] = [
   ['Ctrl-W', 'w', key({ ctrl: true }), lineEdit({ kind: 'eraseWord' })],
   ['Ctrl-D', 'd', key({ ctrl: true }), lineEdit({ kind: 'eraseAfter' })],
   ['Ctrl-X does nothing', 'x', key({ ctrl: true }), null],
+  ['Home', '', key({ home: true }), lineEdit({ kind: 'start' })],
+  ['End', '', key({ end: true }), lineEdit({ kind: 'end' })],
 ]
 
 describe('keyAction in open mode', () => {
@@ -120,6 +126,8 @@ const helpCases: Case[] = [
   ['↓', '', key({ downArrow: true }), { kind: 'down' }],
   ['j', 'j', key(), { kind: 'down' }],
   ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
+  ['PgUp', '', key({ pageUp: true }), { kind: 'jump', by: 'page', dir: -1 }],
+  ['End', '', key({ end: true }), { kind: 'jump', by: 'all', dir: 1 }],
   ['x does nothing here', 'x', key(), null],
   ['space does nothing here', ' ', key(), null],
 ]
@@ -174,3 +182,22 @@ describe('chords are not letters', () => {
   })
 })
 
+
+describe('homeEnd', () => {
+  test.each([
+    ['\x1b[H', 'home'],
+    ['\x1bOH', 'home'],
+    ['\x1b[1~', 'home'],
+    ['\x1b[7~', 'home'],
+    ['\x1b[F', 'end'],
+    ['\x1bOF', 'end'],
+    ['\x1b[4~', 'end'],
+    ['\x1b[8~', 'end'],
+  ])('%j is %s', (seq, name) => {
+    expect(homeEnd(seq)).toBe(name)
+    expect(homeEnd(Buffer.from(seq))).toBe(name)
+  })
+  test('anything else is neither', () => {
+    for (const seq of ['H', '\x1b[A', '\x1b[5~', '\x1b[1;5H', '\x1b[H\x1b[H']) expect(homeEnd(seq)).toBeUndefined()
+  })
+})

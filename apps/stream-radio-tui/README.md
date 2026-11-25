@@ -32,6 +32,8 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | --- | --- |
 | `Tab`, `Shift-Tab` | switch tabs |
 | `↑` `↓` or `k` `j` | move |
+| `PgUp` `PgDn` | move a page up or down |
+| `Home` `End` | the first or last row |
 | `Shift-↑` `Shift-↓` | pick rows from the cursor (`Shift-↓` then `Shift-↑` leaves one row picked, as in a file manager) |
 | `space` | pause or resume; while stopped, play the playlist from the start of the song it stopped on (`l` resumes mid-song); while any row is picked, pick or unpick the cursor's row instead |
 | `Esc` | clear the pick |
@@ -55,7 +57,7 @@ Actions take the picked rows, or the cursor's row when none is picked. Adding or
 
 Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. The heading shows where you are; `../` is always the first row.
 
-Click the heading's location to edit it in place, the cursor where you clicked. `o` does the same from an empty line. While editing: `←` `→` or a click move the cursor, `Ctrl-A` `Ctrl-E` jump to the start or end, Backspace and `Ctrl-D` erase before or after it, `Ctrl-W` takes off a folder, `Ctrl-U` `Ctrl-K` erase to the start or end. `Enter` goes there; `Esc`, or a click on a row, leaves it as it was. (Home and End don't reach the TUI.)
+Click the heading's location to edit it in place, the cursor where you clicked. `o` does the same from an empty line. While editing: `←` `→` or a click move the cursor, `Home` `End` or `Ctrl-A` `Ctrl-E` jump to the start or end, Backspace and `Ctrl-D` erase before or after it, `Ctrl-W` takes off a folder, `Ctrl-U` `Ctrl-K` erase to the start or end. `Enter` goes there; `Esc`, or a click on a row, leaves it as it was.
 
 | Key | |
 | --- | --- |
@@ -80,7 +82,7 @@ One row per song: its title (from its tags, else its file name), then, dimmed, i
 | `Alt-↑` `Alt-↓`, or `u` `d` | move the picked songs one place |
 | `Delete` (or Backspace) | remove the picked songs |
 | `S` | sort by title, artist, album artist, album, or folder then file name, then `as queued` (the order the songs were added or moved to) |
-| `R` | the same sort the other way round |
+| `R` | the same sort the other way round (also the `↓` / `↑` after `sort:` on the tab row) |
 | `C` twice | clear the playlist and stop; `l` brings it back (also in the row's menu) |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
 
@@ -94,7 +96,7 @@ Everything the keys do, the mouse can do too:
 
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Playlist, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
 - **Drag:** in the Playlist, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
-- **Tabs:** a click on `Files` or `Playlist` switches; a click on `sort: …` sorts by the next field.
+- **Tabs:** a click on `Files` or `Playlist` switches; a click on `sort: …` sorts by the next field. In the Playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.

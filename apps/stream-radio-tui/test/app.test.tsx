@@ -90,6 +90,7 @@ async function settle(frame: () => string | undefined) {
 const UP = '\x1b[A'
 const ENTER = '\r'
 const ESC = '\x1b'
+const [PG_UP, PG_DOWN, HOME, END] = ['\x1b[5~', '\x1b[6~', '\x1b[H', '\x1b[F']
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
@@ -656,6 +657,31 @@ describe('mouse rows', () => {
     for (let i = 0; i < 20; i++) await wheel(list.x, list.y, 'up')
     expect(firstShown(lines())).toBe(1)
   })
+
+  test('PgDn and PgUp move the cursor a page, keeping a row of the last; End and Home go to the last and first rows', async () => {
+    const { press, lines, host } = await show(100, LONG)
+    const height = lines().filter(l => /\d+\. Track/.test(l)).length
+    await press(PG_DOWN, ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), height - 1)
+    await press(END, ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), 29)
+    expect(lines().some(l => l.includes('30. Track 30'))).toBe(true)
+    await press(PG_UP, ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), 29 - (height - 1))
+    await press(PG_DOWN, PG_DOWN, PG_DOWN, ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), 29)
+    await press(HOME, ENTER)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), 0)
+    expect(firstShown(lines())).toBe(1)
+  })
+
+  test('End and Home bring a wheeled view back to the cursor', async () => {
+    const { wheel, where, press, lines } = await show(100, LONG)
+    const list = where('Track 2')
+    await wheel(list.x, list.y, 'down')
+    await press(HOME)
+    expect(firstShown(lines())).toBe(1)
+  })
 })
 
 describe('tabs', () => {
@@ -901,6 +927,15 @@ describe('files', () => {
     await click(t.x, t.y)
     await press('\x0b', '/other', ENTER)
     await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+  })
+
+  test('Home and End move the cursor to the start and end of the location', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const t = where('~/Music')
+    await click(t.x + 2, t.y)
+    await press(HOME, 'X', END, 'Y')
+    expect(stripAnsi(heading(lines()))).toContain('Files · X~/MusicY')
   })
 
   test('arrows and Ctrl-W edit at the cursor; a click past the end puts it there', async () => {
@@ -1256,6 +1291,21 @@ describe('playlist editing', () => {
     expect(player.sortQueue).toHaveBeenLastCalledWith(host, 'title', true, [4, 3, 2, 1, 0])
   })
 
+  test('a click on the ↓ after sort: sorts the other way round, and it turns to ↑; none while as queued', async () => {
+    const { press, click, where, host, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
+    expect(lines().join('\n')).toContain('sort: as queued ▾')
+    expect(lines().join('\n')).not.toContain('▾ ↓')
+    await press('S')
+    const down = where('▾ ↓')
+    await click(down.x + 2, down.y)
+    expect(player.sortQueue).toHaveBeenLastCalledWith(host, 'title', true, [4, 3, 2, 1, 0])
+    expect(lines().join('\n')).toContain('sort: title ▾ ↑')
+    // the field part still goes to the next field
+    const up = where('sort: title')
+    await click(up.x, up.y)
+    expect(player.sortQueue).toHaveBeenLastCalledWith(host, 'artist', false, expect.anything())
+  })
+
   test('S past folder goes back to as queued: unsortQueue, and the tab row says so', async () => {
     const { press, host, lines } = await show(100, FIVE)
     await press('S', 'S', 'S', 'S', 'S')
@@ -1526,7 +1576,7 @@ describe('mouse seek', () => {
 
 describe('the key list', () => {
   test('? shows every key and what the mouse does in place of the list and pane; Esc, ? or q closes it', async () => {
-    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 56 })
     for (const close of [ESC, '?', 'q']) {
       await press('?')
       const all = lines().join('\n')
@@ -1543,7 +1593,7 @@ describe('the key list', () => {
   })
 
   test('every description starts in the same column, the icons row too', async () => {
-    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 56 })
     await press('?')
     const starts = ['move', 'pause or resume', 'scroll the list', 'previous, pause or play, next, stop', 'seek there'].map(text => {
       const line = lines().find(l => l.includes(text)) ?? ''
@@ -1553,7 +1603,7 @@ describe('the key list', () => {
   })
 
   test("? lists the keys of the tab showing, and both tabs' shared keys", async () => {
-    const { press, lines } = await show(100, PLAYING, '', '', { rows: 50 })
+    const { press, lines } = await show(100, PLAYING, '', '', { rows: 56 })
     await press('?')
     let all = lines().join('\n')
     for (const text of ['Playlist tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
