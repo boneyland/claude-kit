@@ -402,7 +402,7 @@ const TIER_MODEL: Record<string, [model: string, effort: string]> = {
   heavy: ['Opus', 'xhigh'],
   careful: ['Opus', 'high'],
   medium: ['Opus', 'medium'],
-  light: ['Opus', 'low'],
+  light: ['Sonnet', 'low'],
 }
 
 // "Opus · xhigh", with the effort word in the panel's language; '' for an unknown tier.
@@ -953,7 +953,7 @@ const demoRuns = (at: number): AgentRun[] => {
     run(2, 'savvy-medium', 'Build the search endpoint', 'claude-sonnet-5-5', 'running', 190, 0, 48_000, 0.41, [2, 5, 'writing tests']),
     run(3, 'Explore', 'Find the old query parser', 'claude-haiku-5-5', 'running', 45, 0, 21_000, 0.04),
     run(4, 'savvy-heavy', 'Migrate the index schema', 'claude-opus-5-5', 'done', 900, 610, 131_000, 2.37, [4, 4, 'done']),
-    run(5, 'savvy-light', 'Rename the search flags', 'claude-haiku-5-5', 'done', 700, 95, 15_000, 0.03, [2, 2, 'done']),
+    run(5, 'savvy-light', 'Rename the search flags', 'claude-sonnet-5-5', 'done', 700, 95, 15_000, 0.03, [2, 2, 'done']),
     run(6, 'savvy-careful', 'Audit the query escaping', 'claude-opus-5-5', 'failed', 500, 260, 64_000, 0.88, [1, 3, 'stopped']),
   ]
 }

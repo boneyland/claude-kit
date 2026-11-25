@@ -20,6 +20,8 @@ test('/agents-info demo fills the panel with made-up agents, and demo off takes 
   for (const n of [1, 2, 3, 4, 5, 6]) expect(await ui.find({ type: 'Raster', key: `crab-demo-${n}` })).toBeTruthy()
   // Planned tasks from the demo flow, and no Open button on a made-up agent.
   expect(await ui.find({ type: 'Text', text: /Wire the search box/ })).toBeTruthy()
+  // A planned light task names the model its tier runs on.
+  expect(await ui.find({ type: 'Text', text: /Sonnet · low/ })).toBeTruthy()
   for (const n of [1, 2, 3, 4, 5, 6]) expect(await ui.find({ type: 'Button', key: `view-demo-${n}` })).toBe(undefined)
   await ui.unmount()
 
