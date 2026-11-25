@@ -60,8 +60,11 @@ export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
   await updateSaved(h, s => ({ ...s, repeat: mode }))
   const loops = loopsFor(mode)
   if (control) {
-    await mpv(h, ['set_property', 'loop-file', loops.file])
-    await mpv(h, ['set_property', 'loop-playlist', loops.playlist])
+    // In an order where what mpv tells between the two is the old mode or the
+    // new one: loop-file off first left one → off showing all for a moment.
+    const file = ['set_property', 'loop-file', loops.file]
+    const playlist = ['set_property', 'loop-playlist', loops.playlist]
+    for (const command of mode === 'one' ? [file, playlist] : [playlist, file]) await mpv(h, command)
   }
   return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
 }
