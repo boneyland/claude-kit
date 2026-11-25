@@ -26,7 +26,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  # Named release: the branch protection on main requires a check of that name.
+  release:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,13 +71,13 @@ jobs:
           retention-days: 1
 
   # Only main moves the rolling tag. This job runs no npm and no build: it
-  # publishes what the build job made, with the only token that can write.
+  # publishes what the release job built, with the only token that can write.
   # The tag moves to each build, so the release must not be immutable: an
   # immutable release locks its tag, and GitHub never frees the name again
   # (stream-radio-tui-latest was lost that way). Keep the repository's
   # release immutability off.
   publish:
-    needs: build
+    needs: release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
