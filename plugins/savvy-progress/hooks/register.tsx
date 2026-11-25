@@ -27,6 +27,9 @@ const STEP_BRIEF = `
 
 Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
 const PANE = 'savvy-agents'
+// A worker of the flow: its name past any `<plugin>:` prefix starts with `savvy-`.
+// The raw type won't do: every agent of a plugin named `savvy-…` starts so.
+const isWorker = (type: string): boolean => (type.split(':').pop() ?? '').startsWith('savvy-')
 const PHASES: readonly Phase[] = ['plan', 'design', 'delegate', 'review', 'close']
 const TIERS: readonly string[] = ['fable', 'heavy', 'careful', 'medium', 'light']
 // The tools' schemas are advice to the model, not a check: what a call may ask
@@ -737,6 +740,29 @@ let canDrawPixels = false
 let isPixelsRefused = false
 const usesPixels = (): boolean => crabStyle === 'pixels' || (crabStyle === 'auto' && canDrawPixels && !isPixelsRefused)
 
+// A run the spawn answered without an agentId (a named teammate's, which comes
+// back with its team address) is matched to its loop's agentId through the
+// engine's list the first time that id is seen. Ids of agents that are no
+// teammate are remembered, so each such agent is looked up once; a teammate's
+// is not, as its first steps can come before its spawn has written the row.
+const unknownIds = new Set<string>()
+async function adopt($: EngineInterface, agentId: string): Promise<void> {
+  if (unknownIds.has(agentId)) return
+  const list = await read($, agents)
+  if (list.some(a => a.agentId === agentId)) return
+  const info = await $.agent
+    .list()
+    .then(xs => xs.find(x => x.id === agentId))
+    .catch(() => undefined)
+  const teammateId = info?.teammateId
+  if (!teammateId) {
+    if (info) unknownIds.add(agentId)
+    return
+  }
+  if (!list.some(a => a.agentId === undefined && a.teammateId === teammateId)) return
+  await update($, agents, l => l.map(a => (a.agentId === undefined && a.teammateId === teammateId ? { ...a, agentId } : a)))
+}
+
 const detectPixels = async ($: EngineInterface): Promise<boolean> => {
   if ((await $.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES')) === '1') return true
   if (await $.env.get('KITTY_WINDOW_ID')) return true
@@ -1148,6 +1174,7 @@ export const register: Register = (on, options) => {
     const input = e as unknown as { done?: number; total?: number; note?: string }
     const agentId = e.agentId
     if (!agentId) return { result: 'ignored: only subagents report steps' }
+    await adopt($, agentId)
     let matched = false
     await update($, agents, list =>
       list.map(a => {
@@ -1161,20 +1188,17 @@ export const register: Register = (on, options) => {
     return { result: matched ? 'ok' : `ignored: no panel row for agent ${agentId}` }
   })
 
-  // Safety net: worker launches move the faint layer even if the orchestrator forgets to report.
+  // Safety net: a worker launch starts the flow even if the orchestrator forgets to
+  // report. How many run is counted from the agent list as the band draws: the Agent
+  // call returns as a background worker starts, so a count kept around the call fell
+  // back to 0 while the worker still ran.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
-    const type = String(e.subagent_type ?? '')
-    if (!type.startsWith('savvy-')) return next(e)
-
+    if (!isWorker(String(e.subagent_type ?? ''))) return next(e)
     await update($, flow, prev => {
       const base = prev && !prev.isFinished ? { ...blank(), ...prev } : blank()
-      return { ...base, running: base.running + 1, phase: base.phase === 'plan' ? 'delegate' : base.phase }
+      return { ...base, phase: base.phase === 'plan' ? 'delegate' : base.phase }
     })
-    try {
-      return await next(e)
-    } finally {
-      await update($, flow, prev => (prev ? { ...prev, running: Math.max(0, prev.running - 1) } : prev))
-    }
+    return next(e)
   })
 
   // Claude Code's own task list, mirrored for the band; the main session's latest
@@ -1215,7 +1239,7 @@ export const register: Register = (on, options) => {
   })
 
   on('agent.spawn', async ($, e, next) => {
-    const isUnbriefed = e.subagentType.startsWith('savvy-') && !e.prompt.includes(STEP_TOOL)
+    const isUnbriefed = isWorker(e.subagentType) && !e.prompt.includes(STEP_TOOL)
     const started = await next(isUnbriefed ? { ...e, prompt: e.prompt + STEP_BRIEF } : e)
     if (started.deny !== undefined) return started
 
@@ -1223,8 +1247,9 @@ export const register: Register = (on, options) => {
     await update($, agents, list => {
       const round = 1 + list.filter(a => norm(a.description) === norm(e.description) && e.description).length
       const run: AgentRun = {
-        id: started.agentId ?? e.tool_use_id,
+        id: started.agentId ?? started.teammateId ?? e.tool_use_id,
         agentId: started.agentId,
+        ...(started.teammateId ? { teammateId: started.teammateId } : {}),
         type: e.subagentType,
         description: e.description,
         model: started.model,
@@ -1240,7 +1265,7 @@ export const register: Register = (on, options) => {
       return [...list.filter(a => a.id !== run.id), run].slice(-200)
     })
     await update($, now, () => at)
-    if (e.subagentType.startsWith('savvy-')) {
+    if (isWorker(e.subagentType)) {
       const f = await read($, flow)
       await autoOpen($, f && !f.isFinished ? f.title : 'savvy-flow')
     } else if (options.autoOpen === 'any') {
@@ -1256,6 +1281,7 @@ export const register: Register = (on, options) => {
     const usage = result.usage
     if (!agentId || !usage) return result
 
+    await adopt($, agentId)
     const model = usage.model || e.model
     await update($, agents, list =>
       list.map((a): AgentRun =>
@@ -1273,11 +1299,12 @@ export const register: Register = (on, options) => {
                 (usage.cache_creation_input_tokens || 0) +
                 (usage.output_tokens || 0),
               contextMax: windowOf(model),
+              // Cache reads are the same context read again on every request: summed,
+              // they ran the total far past what the run spent. Cost still prices them.
               tokens:
                 a.tokens +
                 (usage.input_tokens || 0) +
                 (usage.output_tokens || 0) +
-                (usage.cache_read_input_tokens || 0) +
                 (usage.cache_creation_input_tokens || 0),
               costUsd: a.costUsd + costOf(model, usage, true),
               steps: a.steps + 1,
@@ -1290,6 +1317,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const agentId = e.agentId
     if (agentId) {
+      await adopt($, agentId)
       const at = await $.clock.now()
       await update($, agents, list =>
         list.map((a): AgentRun => {
@@ -1306,7 +1334,6 @@ export const register: Register = (on, options) => {
                   tokens:
                     e.usage.input_tokens +
                     e.usage.output_tokens +
-                    e.usage.cache_read_input_tokens +
                     e.usage.cache_creation_input_tokens,
                   costUsd: costOf(e.usage.model || a.model, e.usage, false),
                 }
@@ -1378,7 +1405,8 @@ export const register: Register = (on, options) => {
     const isEmpty = list.length === 0 && planned.length === 0
     const summary = `≈${fmtCost(t.cost)}, ${fmtTokens(t.tokens)} ${s.tokensWord}, ${fmtTime(t.time)}`
 
-    if (e.surface === 'desktop' && 'Svg' in ui) {
+    // VS Code draws Svg too; the terminal's table carries one that draws nothing.
+    if (e.surface !== 'terminal' && 'Svg' in ui) {
       const { Svg } = ui
       const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 40) * 8 - 8))
       const section = (key: string, text: string) => (
@@ -1582,8 +1610,10 @@ export const register: Register = (on, options) => {
     const reported = await read($, flow)
     const mirror = reported === null && taskMode !== 'off' ? await read($, taskList) : null
     const isTasks = mirror !== null && mirror.items.length > 0
-    const f = reported ?? (isTasks ? taskFlow(mirror, tr().tasks) : null)
-    if (f === null) return next(e)
+    const shown = reported ?? (isTasks ? taskFlow(mirror, tr().tasks) : null)
+    if (shown === null) return next(e)
+    const workers = reported ? (await read($, agents)).filter(a => a.status === 'running' && isWorker(a.type)).length : 0
+    const f = reported ? { ...shown, running: workers } : shown
     const doing = f.isFinished ? '' : await read($, activity)
     // Draw this row with the other mods' bands beneath it. Claude Code's own placeholder ({ type: 'engine' }) is
     // never nested: the desktop drops a band that nests it.
@@ -1619,10 +1649,19 @@ export const register: Register = (on, options) => {
       const width = Math.max(180, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 96))
       return (
         <Box flexDirection="column">
-          <Box flexDirection={isRtl() ? 'row-reverse' : 'row'} alignItems="center" gap={1}>
-            <Svg source={rowSvg(f, width, isWorking)} alt={`${f.title}: ${label(f)}, ${percent}`} width={width} height={H} />
-            {crewButton}
-            {dismiss}
+          {/* The columns only estimate the slot's width, and a wider font or a
+              narrow window made the drawing push the count and the dismiss out of
+              view. So it has no width of its own: in a box that shrinks (and does
+              not grow, so the buttons stay beside the bar), it scales down by its
+              viewBox to what the buttons, which never shrink, leave. */}
+          <Box flexDirection={isRtl() ? 'row-reverse' : 'row'} alignItems="center" gap={1} flexWrap="nowrap">
+            <Box flexShrink={1} minWidth={0} overflow="hidden">
+              <Svg source={rowSvg(f, width, isWorking)} alt={`${f.title}: ${label(f)}, ${percent}`} />
+            </Box>
+            <Box flexDirection={isRtl() ? 'row-reverse' : 'row'} alignItems="center" gap={1} flexShrink={0}>
+              {crewButton}
+              {dismiss}
+            </Box>
           </Box>
           {doing ? <Text dimColor wrap="truncate-end">{doing}</Text> : null}
           {below}

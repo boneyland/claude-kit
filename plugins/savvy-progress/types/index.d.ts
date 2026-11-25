@@ -21,6 +21,8 @@ export type AgentStatus = 'running' | 'done' | 'failed'
 export type AgentRun = {
   id: string
   agentId?: string
+  /** A named teammate's address, `<name>@<team>`: matched to its agentId when its loop is first seen. */
+  teammateId?: string
   type: string
   description: string
   model: string
