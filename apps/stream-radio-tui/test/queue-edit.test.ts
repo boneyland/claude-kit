@@ -200,3 +200,19 @@ test('removing every song stops on purpose: no reconnect', async () => {
   expect(intent.isStopped).toBe(true)
   expect(sent('playlist-remove')).toEqual([])
 })
+
+test('a position that moved against a list already read still finds the song playing', async () => {
+  // a sort elsewhere left the length as it was; only the new position came
+  const props: Record<string, unknown> = {
+    playlist: [{ filename: '/m/a.flac', current: true }, { filename: '/m/b.flac' }, { filename: '/m/c.flac' }],
+    'chapter-list': [],
+  }
+  const h = await loaded(props)
+  await until(async () => (await h.vars.read('queue')).paths.length === 3)
+  props.playlist = [{ filename: '/m/b.flac' }, { filename: '/m/c.flac' }, { filename: '/m/a.flac', current: true }]
+  props['playlist/2/filename'] = '/m/a.flac'
+  fake!.push({ event: 'property-change', name: 'playlist-pos', data: 2 })
+  await until(async () => (await h.vars.read('queue')).current === 2)
+  const q = await h.vars.read('queue')
+  expect(q.paths[q.current]).toBe('/m/a.flac')
+})

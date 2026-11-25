@@ -783,7 +783,9 @@ export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Q
   const chapterList = seen.count === 1 ? (await mpv(h, ['get_property', 'chapter-list']))?.data : undefined
   const hasChapters = Array.isArray(chapterList) && chapterList.length > 1
   if (seen.count > 1 || (seen.count === 1 && !hasChapters)) {
-    if (!how.isReordered && before.kind === 'playlist' && before.items.length === seen.count) return { ...before, current: seen.pos }
+    if (!how.isReordered && before.kind === 'playlist' && before.items.length === seen.count && (await isSameAt(h, before, seen.pos))) {
+      return { ...before, current: seen.pos }
+    }
     const entries = await playlistOf(h)
     // mpv slow to answer (it was busy) is not an empty playlist: keep the last one read
     if (!entries) return before.kind === 'playlist' ? { ...before, current: seen.pos } : NO_QUEUE
@@ -813,6 +815,16 @@ export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Q
     paths: [],
     root: '',
   }
+}
+
+// Whether the list last read still has, at `pos`, the song mpv has there. A
+// sort keeps the length, and a position that comes after it (late, or with the
+// counts between missed) taken against the old list showed another song, and
+// its art and waveform, until the list was read again. Unanswered: trusted.
+async function isSameAt(h: Host, before: Queue, pos: number): Promise<boolean> {
+  if (pos < 0 || pos >= before.paths.length) return true
+  const file = (await mpv(h, ['get_property', `playlist/${pos}/filename`]))?.data
+  return typeof file !== 'string' || file === before.paths[pos]
 }
 
 // Plays entry `index` of the queue, unpaused.
