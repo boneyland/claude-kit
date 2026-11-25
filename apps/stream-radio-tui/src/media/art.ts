@@ -175,7 +175,10 @@ const PROBE_MS = 15_000
 async function loadOne(source: ArtSource, signal: AbortSignal | undefined, spawn: Spawn | undefined, player: string | undefined): Promise<Art | undefined> {
   if (source.kind === 'none') return undefined
   const target = source.kind === 'file' ? source.path : source.url
-  const common = ['--audio=no', '--frames=1', '--ytdl=no']
+  // mpv holds a still picture on screen for --image-display-duration (5 s by
+  // default) before it exits, even with nowhere to show it: the probe waited
+  // that long for every cover not in the cache.
+  const common = ['--audio=no', '--frames=1', '--ytdl=no', '--image-display-duration=0']
   const probe = await runMpv([...common, '--vo=null', '--term-playing-msg=SIZE ${width} ${height}', '--', target], { signal, spawn, player, timeoutMs: PROBE_MS, maxBytes: 64_000 })
   const size = /^SIZE (\d+) (\d+)$/m.exec(probe.stdout.toString())
   if (probe.code !== 0 || !size) return undefined

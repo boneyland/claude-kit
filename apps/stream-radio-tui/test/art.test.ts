@@ -138,6 +138,11 @@ describe('loadArt', () => {
     await loadArt(sources().slice(1), { spawn, player: 'mpv-git' })
     expect(children.map(c => c.cmd)).toEqual(['mpv-git', 'mpv-git'])
   })
+  test('neither mpv run holds the picture before exiting', async () => {
+    const { spawn, children } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 2 2\n'], code: 0 } : { chunks: [Buffer.alloc(16)], code: 0 }))
+    await loadArt(sources().slice(1), { spawn })
+    for (const c of children) expect(c.args).toContain('--image-display-duration=0')
+  })
   test('too few bytes back is no art', async () => {
     const { spawn } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 100 100\n'], code: 0 } : { chunks: [Buffer.alloc(10)], code: 0 }))
     expect(await loadArt(sources(), { spawn })).toBeUndefined()
