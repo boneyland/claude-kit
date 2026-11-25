@@ -5,7 +5,6 @@ import path from 'node:path'
 import {
   addToQueue,
   clearQueue,
-  pick,
   removeFromQueue,
   reorderQueue,
   resumeQueue,
@@ -193,18 +192,6 @@ test('adding a playlist file adds its songs, as playing it does', async () => {
   expect(await addToQueue(h, session!.config, [{ path: path.join(folder, 'list.m3u') }], 'end')).toBe('')
   expect(storedPaths()).toEqual(['/m/a.flac', path.join(folder, 'x.flac'), path.join(folder, 'y.flac')])
   fs.rmSync(folder, { recursive: true, force: true })
-})
-
-test('a click while mpv is out of step plays the row clicked, not the index', async () => {
-  const h = await playing(['/m/a.flac', '/m/b.flac'])
-  // an earlier mend left a song the file lacks playing first
-  const list = mpvProps.playlist as { filename: string; current?: boolean }[]
-  list.forEach(e => delete e.current)
-  list.unshift({ filename: '/m/x.flac', current: true })
-  fake!.push({ event: 'property-change', name: 'playlist-count', data: 3 }, { event: 'property-change', name: 'playlist-pos', data: 0 })
-  await new Promise(r => setTimeout(r, 300))
-  expect(await pick(h, session!.config, 1)).toBe('')
-  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 2]])
 })
 
 test("an edit does not write over a queue file it can't read", async () => {

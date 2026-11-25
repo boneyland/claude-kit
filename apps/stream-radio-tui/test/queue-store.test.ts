@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { checkDefault, playAt, playSource, POLL_MS, resumeQueue, stopPlaying } from '@core/player'
+import { checkDefault, pick, playAt, playSource, POLL_MS, resumeQueue, stopPlaying } from '@core/player'
 import { openSession, type Session } from '../src/session'
 import { actAsMpv, fakeMpv, type Fake } from './fake-mpv-socket'
 
@@ -371,4 +371,30 @@ test("songs a network stream's playlist names are kept only when on the network"
   await following(props, 1)
   await until(() => readJson(QUEUE_JSON).rev === 2)
   expect(readJson(QUEUE_JSON).entries.map((e: { path: string }) => e.path)).toEqual(['https://cdn.example/a.mp3'])
+})
+
+test("a click while mpv's list is out of step plays the row clicked", { timeout: 20_000 }, async () => {
+  // x plays; another program takes it out of the queue
+  writeQueue(1, ['/m/x.flac', '/m/a.flac', '/m/b.flac'], '1.0')
+  const playlist = [{ filename: '/m/x.flac', current: true }, { filename: '/m/a.flac' }, { filename: '/m/b.flac' }]
+  const props: Record<string, unknown> = { playlist, 'user-data/stream-radio/rev': 1 }
+  const h = await following(props, 0)
+  await until(async () => (await h.vars.read('queue')).paths.length === 3)
+  const looks = () => sent('get_property').filter(c => c[1] === 'playlist').length
+  const revLooks = () => sent('get_property').filter(c => c[1] === 'user-data/stream-radio/rev').length
+  const before = looks()
+  const revBefore = revLooks()
+  writeQueue(2, ['/m/a.flac', '/m/b.flac'])
+  fake!.push({ event: 'property-change', name: 'user-data/stream-radio/edited', data: 1 })
+  await until(async () => (await h.vars.read('queue')).paths.length === 2)
+  // the mend looks at mpv's list and leaves x playing first, mpv's rev
+  // behind, until x has played
+  await until(() => looks() > before)
+  await until(() => revLooks() > revBefore)
+  expect(sent('playlist-remove')).toEqual([])
+  expect(sent('playlist-clear')).toEqual([])
+  expect(revSet()).toEqual([])
+  // row 1 is b, at 2 in mpv's list
+  expect(await pick(h, session!.config, 1)).toBe('')
+  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 2]])
 })
