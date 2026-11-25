@@ -54,20 +54,68 @@ export const byName = (a: string, b: string) => a.localeCompare(b, undefined, { 
 // imports this file (expand.ts re-exports it).
 export const MAX_SONGS = 10_000
 
+// The resolved path of `path` (symlinks followed); undefined when it cannot be had.
+async function realPath(h: Host, path: string): Promise<string | undefined> {
+  try {
+    const r = await h.run(['realpath', '-e', '--', path], { timeoutMs: 3000 })
+    const out = r.stdout.replace(/\n$/, '')
+    return r.exitCode === 0 && out.startsWith('/') ? out : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // A folder's playable files, through its subfolders (dot-folders skipped), as
 // absolute paths in name order, at most `limit` of them: it stops walking once
 // it has that many, so a folder of tens of thousands of files is not all listed.
+// As mpv's own folder scan did: a symlink counts as what it points to (a linked
+// folder is walked once, never back into one it came through), and a subfolder
+// that cannot be read is skipped. Only the folder itself unreadable throws.
 export async function listSongs(h: Host, folder: string, limit = MAX_SONGS): Promise<string[]> {
   const songs: string[] = []
-  const walk = async (dir: string): Promise<void> => {
-    const entries = (await h.fs.list(dir)).slice().sort((a, b) => byName(a.name, b.name))
+  const top = folder.replace(/\/+$/, '') || '/'
+  // resolved paths of the folders walked into through a link (and the top), so
+  // a link loop ends; undefined until the first linked folder needs it
+  let followed: Set<string> | undefined
+  let rootReal = ''
+  const childOf = (dir: string, name: string) => `${dir === '/' ? '' : dir}/${name}`
+  // real: the folder's resolved path, as far as it is known ('' not yet)
+  const walk = async (dir: string, real: string, isTop: boolean): Promise<void> => {
+    let listing
+    try {
+      listing = await h.fs.list(dir)
+    } catch (error) {
+      if (isTop) throw error
+      h.log?.(`stream-radio: skipped ${dir}: ${error instanceof Error ? error.message : String(error)}`, 'debug')
+      return
+    }
+    const entries = listing.slice().sort((a, b) => byName(a.name, b.name))
     for (const e of entries) {
       if (songs.length >= limit) return
-      const path = `${dir === '/' ? '' : dir}/${e.name}`
-      if (e.kind === 'dir' && !e.name.startsWith('.')) await walk(path)
-      else if (e.kind === 'file' && isPlayable(e.name)) songs.push(path)
+      if (e.name.startsWith('.')) continue
+      const path = childOf(dir, e.name)
+      let kind = e.kind
+      if (kind === 'other') kind = (await Promise.resolve().then(() => h.fs.stat(path)).catch(() => undefined))?.kind ?? 'other'
+      if (kind === 'dir') {
+        if (e.kind === 'dir') {
+          await walk(path, real && childOf(real, e.name), false)
+          continue
+        }
+        // a linked folder: walked only when where it leads is known and new
+        if (!followed) {
+          rootReal = (await realPath(h, top)) ?? ''
+          followed = new Set(rootReal ? [rootReal] : [])
+        }
+        if (!rootReal) continue
+        const to = await realPath(h, path)
+        // reached through no link: the top's resolved path and the rest as is
+        const here = real || `${rootReal === '/' ? '' : rootReal}${top === '/' ? dir : dir.slice(top.length)}` || '/'
+        if (!to || followed.has(to) || here === to || here.startsWith(`${to}/`)) continue
+        followed.add(to)
+        await walk(path, to, false)
+      } else if (kind === 'file' && isPlayable(e.name)) songs.push(path)
     }
   }
-  await walk(folder.replace(/\/+$/, '') || '/')
+  await walk(top, '', true)
   return songs
 }

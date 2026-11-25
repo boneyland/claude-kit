@@ -43,12 +43,14 @@ export async function listPlaylist(h: Host, url: string): Promise<PlaylistListin
   }
   if (!data || typeof data !== 'object') return { error: "yt-dlp's listing couldn't be read." }
   const channelOf = (e: Record<string, unknown>) => text(e.channel) || text(e.uploader)
+  // what the site lists is the network's word: a local path or file:// in it is dropped
+  const fromNet = (u: string) => (isNetwork(u) ? u : '')
   if (!Array.isArray(data.entries)) {
-    const one = text(data.webpage_url) || text(data.original_url) || url
+    const one = fromNet(text(data.webpage_url)) || fromNet(text(data.original_url)) || url
     return { title: text(data.title) || one, entries: [{ url: one, title: text(data.title) || one, channel: channelOf(data) }] }
   }
   const entries = (data.entries as Record<string, unknown>[]).flatMap(e => {
-    const u = e && typeof e === 'object' ? text(e.url) : ''
+    const u = e && typeof e === 'object' ? fromNet(text(e.url)) : ''
     return u ? [{ url: u, title: text(e.title) || u, channel: channelOf(e) }] : []
   })
   return { title: text(data.title) || url, entries }
@@ -129,8 +131,10 @@ async function fetchBody(h: Host, url: string): Promise<string | undefined> {
 
 // What a remote playlist may name: network streams, never a local file (mpv
 // refuses those from a playlist it fetched; the queue file is local, so the
-// rule is kept here). mms and rtsp stay for old internet radio lists.
-const isNetwork = (s: string) => /^(https?|mms|mmsh|rtsp):\/\//i.test(s)
+// rule is kept here, and wherever a list from the network becomes the queue's).
+// mms, rtsp and rtmp stay for old internet radio lists; ytdl:// is how mpv's
+// yt-dlp hook names a playlist's videos (yt-dlp itself refuses file://).
+export const isNetwork = (s: string) => /^(https?|mms|mmsh|rtsp|rtmps?|ytdl):\/\//i.test(s)
 
 // An HLS playlist is a stream, not a list of songs.
 const isHls = (body: string) => /^﻿?\s*#EXTM3U/.test(body) && /^\s*#EXT-X-/m.test(body)

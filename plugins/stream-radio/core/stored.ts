@@ -70,15 +70,23 @@ function arrangementOf(v: unknown, count: number): Arrangement {
 // wrong shape is that field of the empty queue, and an order that is not a
 // permutation of the entries is no arrangement. A broken file reads as empty.
 export function parseStored(text: string): StoredQueue {
+  const q = checkStored(text)
+  return typeof q === 'string' ? EMPTY_QUEUE : q
+}
+
+// The same, telling what is wrong instead of reading it as empty: 'newer' for
+// a queue a later version wrote, 'broken' for anything else that is not one.
+export function checkStored(text: string): StoredQueue | 'newer' | 'broken' {
   let v: unknown
   try {
     v = JSON.parse(text)
   } catch {
-    return EMPTY_QUEUE
+    return 'broken'
   }
-  if (!isObject(v) || v.version !== 1 || !Array.isArray(v.entries)) return EMPTY_QUEUE
+  if (isObject(v) && isNumber(v.version) && v.version > 1) return 'newer'
+  if (!isObject(v) || v.version !== 1 || !Array.isArray(v.entries)) return 'broken'
   const entries = v.entries.map(entryOf)
-  if (entries.some(e => e === null) || new Set(entries.map(e => e!.id)).size !== entries.length) return EMPTY_QUEUE
+  if (entries.some(e => e === null) || new Set(entries.map(e => e!.id)).size !== entries.length) return 'broken'
   return {
     version: 1,
     rev: isNumber(v.rev) && Number.isInteger(v.rev) && v.rev >= 0 ? v.rev : 0,

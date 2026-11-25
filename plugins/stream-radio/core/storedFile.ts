@@ -5,7 +5,7 @@
 // is read-modify-write under queue.lock, so two programs' edits both land.
 import type { Host } from './host'
 import { paths } from './paths'
-import { EMPTY_QUEUE, NO_PLACE, parsePlace, parseStored, type Place, type StoredQueue } from './stored'
+import { checkStored, EMPTY_QUEUE, NO_PLACE, parsePlace, parseStored, type Place, type StoredQueue } from './stored'
 
 // A queue lock older than this was left by a program that died mid-edit. An
 // edit holds it while mpv is brought along (bounded: a few commands, else a
@@ -71,6 +71,30 @@ export async function readStored(h: Host): Promise<StoredQueue> {
   }
 }
 
+// The queue as an edit reads it, under the lock: a missing file is the empty
+// queue, but one that is there and cannot be read (a passing error, a queue a
+// newer version wrote) throws, so the edit fails and the file is not written
+// over. A broken file is moved aside to queue.json.broken, so it can be looked
+// at, and the edit goes on from empty.
+async function readForEdit(h: Host, queueJson: string): Promise<StoredQueue> {
+  let text: string
+  try {
+    text = await h.fs.read(queueJson)
+  } catch (error) {
+    if (!(await h.fs.exists(queueJson).catch(() => true))) return EMPTY_QUEUE
+    throw error
+  }
+  const q = checkStored(text)
+  if (q === 'newer') throw new Error(`${queueJson} was written by a newer stream-radio; update this one.`)
+  if (q === 'broken') {
+    const moved = await h.run(['mv', '-f', queueJson, `${queueJson}.broken`], { timeoutMs: 3000 })
+    if (moved.exitCode !== 0) throw new Error(`${queueJson} is broken and could not be moved aside: ${moved.stderr}`)
+    h.log(`stream-radio: ${queueJson} was broken; moved it to ${queueJson}.broken and started an empty queue.`, 'debug')
+    return EMPTY_QUEUE
+  }
+  return q
+}
+
 // One update at a time in this program as well as across programs.
 let chain: Promise<unknown> = Promise.resolve()
 
@@ -94,7 +118,7 @@ export function updateStoredWith(
   const step = chain.then(async () => {
     const p = await paths(h)
     return withFileLock(h, p.queueLock, QUEUE_LOCK_STALE_MS, async () => {
-      const was = await readStored(h)
+      const was = await readForEdit(h, p.queueJson)
       const next = await fn(was)
       if (next.rev === was.rev) return was
       await writeWhole(h, p.queueJson, `${JSON.stringify(next)}\n`)
@@ -134,11 +158,24 @@ export async function backUpAndEmpty(h: Host): Promise<'busy' | void> {
 }
 
 // Brings the cleared queue back (rev + 1 over the empty one); false when there
-// is no backup, 'busy' when the lock could not be had (nothing changed).
+// is no backup, 'busy' when the lock could not be had (nothing changed). Its
+// entries keep their ids, made at revs up to its own; the rev goes past that
+// too, so no later add makes one of those ids again (the queue file may have
+// started over meanwhile, from a lower rev).
 export async function restorePrev(h: Host): Promise<boolean | 'busy'> {
   const p = await paths(h)
   const prev = await h.fs.read(p.prev).then(parseStored, () => EMPTY_QUEUE)
   if (prev.entries.length === 0) return false
-  const done = await updateStored(h, q => ({ ...prev, rev: q.rev + 1 }))
+  const done = await updateStored(h, q => ({ ...prev, rev: Math.max(q.rev, prev.rev, highestIdRev(prev)) + 1 }))
   return done === 'busy' ? 'busy' : true
+}
+
+// The highest rev an entry's id was made at (ids are `rev.i`); 0 for none.
+function highestIdRev(q: StoredQueue): number {
+  let most = 0
+  for (const e of q.entries) {
+    const rev = Number(e.id.split('.')[0])
+    if (Number.isInteger(rev) && rev > most) most = rev
+  }
+  return most
 }

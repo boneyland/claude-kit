@@ -314,3 +314,61 @@ test('a stale mpv list is rebuilt from the file', { timeout: 20_000 }, async () 
   await until(async () => (await h.vars.read('queue')).current === 1)
   expect(readJson(PLACE).current).toBe('5.1')
 })
+
+test('a song that will not load is jumped back to once, not forever', { timeout: 20_000 }, async () => {
+  stored()
+  session = await openSession([], { env, run })
+  const h = session.host
+  expect(await playAt(h, session.config, 1)).toBe('')
+  // b would not load: mpv went on to c
+  await playerUp(SONGS, 2)
+  await until(() => sent('playlist-play-index').length > 0)
+  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 1]])
+  // and again, after the jump
+  fake!.push({ event: 'property-change', name: 'playlist-pos', data: 2 }, { event: 'file-loaded' })
+  await new Promise(r => setTimeout(r, 500))
+  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 1]])
+  await until(async () => readJson(PLACE).current === '1.2')
+})
+
+test('a folder plays its linked songs and folders, and skips a subfolder it cannot read', { timeout: 20_000 }, async () => {
+  const top = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-links-'))
+  fs.writeFileSync(path.join(top, 'a.flac'), '')
+  fs.symlinkSync(SONGS[0]!, path.join(top, 'b.flac'))
+  fs.symlinkSync(path.join(music, 'Y'), path.join(top, 'C'))
+  // a link back up: walked never
+  fs.symlinkSync(top, path.join(top, 'D'))
+  fs.mkdirSync(path.join(top, 'E'))
+  fs.writeFileSync(path.join(top, 'E', 'e.flac'), '')
+  fs.chmodSync(path.join(top, 'E'), 0o000)
+  try {
+    session = await openSession([], { env, run })
+    expect(await playSource(session.host, session.config, top)).toBe('')
+    const paths = readJson(QUEUE_JSON).entries.map((e: { path: string }) => e.path)
+    expect(paths).toEqual([path.join(top, 'a.flac'), path.join(top, 'b.flac'), path.join(top, 'C', 'a.flac'), path.join(top, 'C', 'b.flac')])
+  } finally {
+    fs.chmodSync(path.join(top, 'E'), 0o755)
+    fs.rmSync(top, { recursive: true, force: true })
+  }
+})
+
+test("a queue brought back after the file started over makes no id it already has", { timeout: 20_000 }, async () => {
+  const entries = SONGS.map((p, i) => ({ id: `6.${i}`, path: p }))
+  fs.writeFileSync(PREV, JSON.stringify({ version: 1, rev: 6, entries, arrangement: { kind: 'none' }, root: '', source: '/prev' }))
+  fs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 1, entries: [], arrangement: { kind: 'none' }, root: '', source: '' }))
+  session = await openSession([], { env, run })
+  expect(await resumeQueue(session.host, session.config, '')).toBe('')
+  expect(readJson(QUEUE_JSON).rev).toBeGreaterThan(6)
+})
+
+test("songs a network stream's playlist names are kept only when on the network", { timeout: 20_000 }, async () => {
+  writeQueue(1, ['https://radio.example/stream'], '1.0')
+  const playlist = [
+    { filename: '/home/u/private.flac', 'playlist-path': 'https://radio.example/stream' },
+    { filename: 'https://cdn.example/a.mp3', 'playlist-path': 'https://radio.example/stream', current: true },
+  ]
+  const props: Record<string, unknown> = { playlist, 'user-data/stream-radio/rev': 1 }
+  await following(props, 1)
+  await until(() => readJson(QUEUE_JSON).rev === 2)
+  expect(readJson(QUEUE_JSON).entries.map((e: { path: string }) => e.path)).toEqual(['https://cdn.example/a.mp3'])
+})

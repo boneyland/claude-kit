@@ -46,6 +46,7 @@ function hostOf(files: Record<string, string> = {}) {
       return ok
     },
     fs: {
+      exists: async (path: string) => path in files,
       read: async (path: string) => {
         if (!(path in files)) throw new Error(`ENOENT: ${path}`)
         return files[path]!

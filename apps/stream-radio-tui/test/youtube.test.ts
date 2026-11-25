@@ -28,6 +28,19 @@ describe('listPlaylist', () => {
     })
     expect(run).toHaveBeenCalledWith(['yt-dlp', '--flat-playlist', '-J', '--playlist-end', '1000', 'https://youtube.com/playlist?list=x'], { timeoutMs: 60000 })
   })
+  test('an entry that names a local file is dropped: the site may not', async () => {
+    const out = {
+      _type: 'playlist',
+      title: 'Odd',
+      entries: [
+        { url: 'file:///home/u/private.flac', title: 'Local' },
+        { url: '/home/u/other.flac', title: 'Path' },
+        { url: 'https://www.youtube.com/watch?v=a', title: 'First' },
+      ],
+    }
+    const { h } = hostRunning({ exitCode: 0, stdout: JSON.stringify(out), stderr: '' })
+    expect(await listPlaylist(h, 'https://x.example/list?list=1')).toEqual({ title: 'Odd', entries: [{ url: 'https://www.youtube.com/watch?v=a', title: 'First', channel: '' }] })
+  })
   test('a single video is one entry', async () => {
     const out = { _type: 'video', title: 'Solo', channel: 'Me', webpage_url: 'https://www.youtube.com/watch?v=s' }
     const { h } = hostRunning({ exitCode: 0, stdout: JSON.stringify(out), stderr: '' })

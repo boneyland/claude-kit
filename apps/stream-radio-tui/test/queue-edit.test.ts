@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   addToQueue,
   clearQueue,
+  pick,
   removeFromQueue,
   reorderQueue,
   resumeQueue,
@@ -146,7 +147,8 @@ test('add to the end appends to the file, then to mpv', async () => {
   // what was played to make the queue stays its source
   expect(await h.vars.read('lastUrl')).toBe('/src')
   expect(revSet()).toEqual([2])
-  expect(commands()).toContainEqual(['set_property', 'user-data/stream-radio/edited', 1])
+  // mpv's new rev tells the other sessions; no second mark on top of it
+  expect(commands().filter(c => c[1] === 'user-data/stream-radio/edited')).toEqual([])
 })
 
 test('play next puts the songs after the playing one, in their order', async () => {
@@ -171,6 +173,56 @@ test('play next on an mpv without insert-at appends, then moves the songs up', a
     ['playlist-move', 3, 2],
   ])
   expect(mpvPaths()).toEqual(storedPaths())
+})
+
+test('play next of many songs on an mpv without insert-at rebuilds, not a move per song', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac'])
+  fake!.refuse = c => c[0] === 'loadlist' && c[2] === 'insert-at'
+  const many = Array.from({ length: 20 }, (_, i) => ({ path: `/n/${i}.flac` }))
+  expect(await addToQueue(h, session!.config, many, 'next')).toBe('')
+  expect(sent('playlist-move').length).toBeLessThanOrEqual(1)
+  expect(sent('playlist-clear')).toHaveLength(1)
+  expect(mpvPaths()).toEqual(storedPaths())
+  expect(storedPaths()).toEqual(['/m/a.flac', ...many.map(e => e.path), '/m/b.flac'])
+})
+
+test('adding a playlist file adds its songs, as playing it does', async () => {
+  const h = await playing(['/m/a.flac'])
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-add-'))
+  fs.writeFileSync(path.join(folder, 'list.m3u'), '#EXTM3U\nx.flac\ny.flac\n')
+  expect(await addToQueue(h, session!.config, [{ path: path.join(folder, 'list.m3u') }], 'end')).toBe('')
+  expect(storedPaths()).toEqual(['/m/a.flac', path.join(folder, 'x.flac'), path.join(folder, 'y.flac')])
+  fs.rmSync(folder, { recursive: true, force: true })
+})
+
+test('a click while mpv is out of step plays the row clicked, not the index', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac'])
+  // an earlier mend left a song the file lacks playing first
+  const list = mpvProps.playlist as { filename: string; current?: boolean }[]
+  list.forEach(e => delete e.current)
+  list.unshift({ filename: '/m/x.flac', current: true })
+  fake!.push({ event: 'property-change', name: 'playlist-count', data: 3 }, { event: 'property-change', name: 'playlist-pos', data: 0 })
+  await new Promise(r => setTimeout(r, 300))
+  expect(await pick(h, session!.config, 1)).toBe('')
+  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 2]])
+})
+
+test("an edit does not write over a queue file it can't read", async () => {
+  // a later version's queue
+  const newer = JSON.stringify({ version: 2, rev: 7, entries: [{ id: '7.0', path: '/m/a.flac' }] })
+  fs.writeFileSync(QUEUE_JSON, newer)
+  session = await openSession([], { env, run })
+  expect(await toggleShuffle(session.host)).toBe('Could not save the queue.')
+  expect(fs.readFileSync(QUEUE_JSON, 'utf8')).toBe(newer)
+})
+
+test('a broken queue file is moved aside before an edit starts over', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac'])
+  fs.writeFileSync(QUEUE_JSON, '{"version":1,"rev":3,"entries":[{"id":"x","path":"/m/a.flac"},{"id":"x","path":"/m/b.flac"}]}')
+  await addToQueue(h, session!.config, [{ path: '/n/c.flac' }], 'end')
+  expect(fs.readFileSync(`${QUEUE_JSON}.broken`, 'utf8')).toContain('"id":"x"')
+  expect(readJson(QUEUE_JSON).entries.map((e: { path: string }) => e.path)).toEqual(['/n/c.flac'])
+  fs.rmSync(`${QUEUE_JSON}.broken`, { force: true })
 })
 
 test('a folder adds all its songs in one command', async () => {
