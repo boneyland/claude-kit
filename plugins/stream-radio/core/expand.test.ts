@@ -124,3 +124,28 @@ test('a .cue and a plain file stay one entry', async () => {
   expect((await expandSource(h, '/a/x.cue')).entries).toEqual([{ path: '/a/x.cue' }])
   expect((await expandSource(h, '/a/s.mp3')).entries).toEqual([{ path: '/a/s.mp3' }])
 })
+
+test('a playlist line with a dot in a folder name is still a folder', async () => {
+  const { h } = hostOf({ dirs: { '/pl/Vol. 1': [f('a.mp3')], '/pl/Dr. Dre': [f('b.mp3')] }, files: { '/pl/x.m3u': 'Vol. 1\nDr. Dre/\n' } })
+  expect((await expandSource(h, '/pl/x.m3u')).entries.map(e => e.path)).toEqual(['/pl/Vol. 1/a.mp3', '/pl/Dr. Dre/b.mp3'])
+})
+
+test('file:// lines become paths; other schemes pass through as one entry', async () => {
+  const { h } = hostOf({ files: { '/pl/x.m3u': 'file:///m/a%20b.mp3\nmms://r.example/live\nrtsp://r.example/s\n' } })
+  expect((await expandSource(h, '/pl/x.m3u')).entries).toEqual([{ path: '/m/a b.mp3' }, { path: 'mms://r.example/live' }, { path: 'rtsp://r.example/s' }])
+})
+
+test('a list= URL whose listing fails is added as one entry with the error', async () => {
+  const { h } = hostOf({})
+  const failing = { ...h, run: async () => ({ exitCode: 1, stdout: '', stderr: 'ERROR: Private playlist\n' }) } as unknown as Host
+  const r = await expandSource(failing, 'https://www.youtube.com/playlist?list=PL1')
+  expect(r.entries).toEqual([{ path: 'https://www.youtube.com/playlist?list=PL1' }])
+  expect(r.note).toContain('Private playlist')
+})
+
+test('a remote playlist that cannot be fetched is added as one entry with a note', async () => {
+  const { h } = hostOf({})
+  const r = await expandSource(h, 'http://x.example/r.m3u')
+  expect(r.entries).toEqual([{ path: 'http://x.example/r.m3u' }])
+  expect(r.note).toContain('http://x.example/r.m3u')
+})

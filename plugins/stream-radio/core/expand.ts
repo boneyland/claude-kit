@@ -3,7 +3,7 @@
 // local or remote .m3u/.pls, a YouTube playlist, or one thing as it is.
 import type { Host } from './host'
 import { baseName } from './nowplaying'
-import { listSongs, MAX_SONGS } from './paths'
+import { isPlayable, listSongs, MAX_SONGS } from './paths'
 import type { QueueEntry } from './stored'
 
 export { MAX_SONGS }
@@ -158,16 +158,25 @@ async function expandPlaylistFile(h: Host, source: string, depth: number, budget
       } catch {
         continue
       }
-    } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) continue
-    else resolved = line.startsWith('/') ? line : `${folder === '/' ? '' : folder}/${line}`
+    } else if (/^file:\/\//i.test(line)) {
+      try {
+        resolved = decodeURIComponent(line.slice('file://'.length).replace(/^localhost(?=\/)/i, ''))
+      } catch {
+        continue
+      }
+    } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
+      // mms://, rtsp:// and the like: one stream each, as they are.
+      push(into, budget, title ? { path: line, title } : { path: line })
+      continue
+    } else resolved = line.startsWith('/') ? line : `${folder === '/' ? '' : folder}/${line}`
     const lineExt = extOf(isUrl(resolved) ? urlPath(resolved) : resolved)
     if (isPlaylistExt(lineExt)) {
       if (depth < MAX_DEPTH) await expandPlaylistFile(h, resolved, depth + 1, budget, into)
       continue
     }
-    // A name without an extension may be a folder.
-    if (!isUrl(resolved) && !lineExt) {
-      const st = await h.fs.stat(resolved).catch(() => undefined)
+    // Anything that is not a playable file name may be a folder ("Vol. 1").
+    if (!isUrl(resolved) && (resolved.endsWith('/') || !isPlayable(baseName(resolved)))) {
+      const st = await h.fs.stat(resolved.replace(/\/+$/, '') || '/').catch(() => undefined)
       if (st?.kind === 'dir') {
         const songs = await listSongs(h, resolved, budget.room + 1)
         for (const p of songs) if (!push(into, budget, { path: p })) break
@@ -200,7 +209,7 @@ export async function expandSource(h: Host, source: string, limit = MAX_SONGS): 
     }
     if (ext === 'm3u8' || !query) return one()
     const listing = await listPlaylist(h, source)
-    if ('error' in listing) return { entries: [], root: '', note: listing.error }
+    if ('error' in listing) return { entries: [{ path: source }], root: '', note: `Couldn't list ${source} (${listing.error}); added it as it is.` }
     const capped = listing.entries.length > limit
     return {
       entries: listing.entries.slice(0, limit).map(v => ({ path: v.url, title: v.title })),
