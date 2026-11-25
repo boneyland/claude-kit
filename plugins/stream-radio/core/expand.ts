@@ -80,7 +80,7 @@ function parsePlaylist(body: string, ext: string): { line: string; title?: strin
     for (const l of lines) {
       const m = /^(File|Title)(\d+)\s*=\s*(.*)$/i.exec(l)
       if (!m) continue
-      ;(m[1].toLowerCase() === 'file' ? files : titles).set(m[2], m[3])
+      ;(m[1]!.toLowerCase() === 'file' ? files : titles).set(m[2]!, m[3]!)
     }
     for (const [n, line] of [...files].sort((a, b) => Number(a[0]) - Number(b[0]))) if (line) out.push({ line, title: titles.get(n) || undefined })
     return out
@@ -90,7 +90,7 @@ function parsePlaylist(body: string, ext: string): { line: string; title?: strin
     if (!l) continue
     if (l.startsWith('#')) {
       const m = /^#EXTINF:[^,]*,(.*)$/i.exec(l)
-      if (m) title = m[1].trim() || undefined
+      if (m) title = m[1]!.trim() || undefined
       continue
     }
     out.push({ line: l, title })

@@ -161,6 +161,7 @@ test('panel keeps the list after stop and plays a clicked song from its start', 
   await clock.advance(10)
   await clock.advance(10)
   expect(world.launches.at(-1)).toContain('--playlist-start=2')
+  expect(world.launches.at(-1)!.some(a => a.startsWith('--start'))).toBe(false)
   expect(world.sent.some(c => c[0] === 'seek')).toBe(false)
   await pane.unmount()
 

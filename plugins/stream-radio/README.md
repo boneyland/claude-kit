@@ -13,7 +13,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 /stream shuffle    # shuffle the playlist, or put it back in order
 /stream repeat     # cycle repeat: all (default), one song, off; or repeat all | one | off
 /stream panel      # open or close the panel
-/stream last       # plays the playlist again from where it stopped (across sessions too)
+/stream last       # plays the playlist again from where it stopped (across sessions too); with an empty one, the default stream
 /stream stop       # stops the player; the playlist stays
 ```
 
@@ -21,7 +21,7 @@ Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens)
 
 There is one player, shared by all your Claude Code sessions, and it plays like a normal music player: until someone presses Stop (the panel's ⏹ or `/stream stop`). Stop keeps the playlist: the panel still lists it, a click on a song plays it from the song's start, and `/stream last` resumes where it stopped. Closing the session that started it, closing every session, or reloading the plugin does not stop it. Pause, Next and Prev, the volume, Shuffle, Repeat, picking a song and Stop work from any session on the same music, and every session's footer and panel show what it plays, paused or not, and where it is. Starting something in one session replaces what played in all of them. A session opened while music plays shows it at once; an idle session notices a player started elsewhere within a few seconds.
 
-With nothing playing the footer shows `▶ Play radio`: click it to play the playlist again from where it stopped, in this session or an earlier one, no `/stream` needed. The button plays the queue while it has songs; with none, the default stream. Changing the default never empties the queue.
+With nothing playing the footer shows `▶ Play radio`: click it to play the playlist again from where it stopped, in this session or an earlier one, no `/stream` needed. The button plays the queue while it has songs; with none, the default stream (`/stream last` does the same). Changing the default never empties the queue.
 
 After updating stream-radio, restart your Claude Code sessions or run `/reload-plugins`: a session still on the old version edits the player directly and its changes are undone.
 
@@ -35,7 +35,7 @@ The footer reads `3:42 <title>`, at most 40 columns: how far into the current so
 
 ## When the stream drops
 
-In the desktop app, whose footer has little room, the button is an icon alone and does the same: `▶` with nothing playing plays what played last, and while playing `♪` (or `⏸` paused) opens the panel.
+In the desktop app, whose footer has little room, the button is an icon alone and does the same: `▶` with nothing playing plays the queue at its place (with none, the default stream), and while playing `♪` (or `⏸` paused) opens the panel.
 
 If the player stops by itself after it had been playing (a live stream drops, the network goes, mpv crashes), one session starts it again (whichever takes `reconnect.lock` in the player's folder first; the others pick up the new player): its footer shows `reconnecting in 2 s…` and the same URL starts again where it got to, after 2, then 5, then 15 seconds; after three failed tries it says it gave up. A minute of steady playing starts the tries over. It does not reconnect after a stop from any session or a new start while it waits, when a playlist with Repeat off has simply finished, or when mpv was told to quit from outside (`q`, SIGTERM, SIGINT).
 
