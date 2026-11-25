@@ -41,12 +41,12 @@ export function PlaylistView({ heading, rows, selected, picked, dropAt, current,
         return (
           <Clickable key={`row-${row.index}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)} onDrag={p => onRowDrag?.(at, p.y)} onRelease={() => onRowRelease?.()}>
             <Box flexGrow={1}>
+            <RowFill on={at === selected} width={width} />
             <Text inverse={at === selected} bold={isPlaying} color={isPicked ? 'cyan' : undefined} underline={dropAt === at + 1 && dropAt !== undefined} wrap="truncate-end">
               {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${row.title}`}
               {/* dim on the highlight would be hard to read: full strength there */}
               {extra ? <Text dimColor={at !== selected}>{` · ${extra}`}</Text> : null}
             </Text>
-            <RowFill on={at === selected} width={width} />
             </Box>
             {at === selected ? (
               <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>

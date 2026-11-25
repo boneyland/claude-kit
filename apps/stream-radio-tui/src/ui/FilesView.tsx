@@ -76,12 +76,12 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
         return (
           <Clickable key={key} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)}>
             <Box flexGrow={1}>
+              <RowFill on={at === selected} width={width} />
               <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
                 {` ${isPicked ? '+' : ' '}${label(row)}`}
                 {/* dim on the highlight would be hard to read: full strength there */}
                 {artist ? <Text dimColor={at !== selected}>{` · ${artist}`}</Text> : null}
               </Text>
-              <RowFill on={at === selected} width={width} />
             </Box>
             {at === selected && (row.kind === 'file' || row.kind === 'dir') ? (
               <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>

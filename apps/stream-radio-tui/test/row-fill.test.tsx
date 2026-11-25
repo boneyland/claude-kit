@@ -51,3 +51,25 @@ test('a row too long for the width is still one line, truncated', () => {
   expect(lines[1]).toContain('…')
   expect(inverseCells(lines[1])).toBe(30)
 })
+
+// Ink lays ▶ and ⤵ out as two columns (string-width) but draws them in one, as
+// terminals do: the row's text box ended a cell past its text, and that cell
+// was left out of the highlight.
+test('the playing row, and the drop row, are inverse across the whole width', () => {
+  for (const props of [{ current: 0 }, { current: -1, dropAt: 0 }]) {
+    const { lastFrame } = render(
+      <PlaylistView heading="Playlist" rows={[row(0, 'Short'), row(1, 'Other')]} selected={0} height={2} width={30} first={0} {...props} />,
+    )
+    const cursor = lastFrame()!.split('\n')[1]!
+    expect(cursor).toContain(props.dropAt === 0 ? '⤵' : '▶')
+    expect(inverseCells(cursor)).toBe(30)
+    cleanup()
+  }
+})
+
+test('a playing row too long for the width is inverse to its end', () => {
+  const { lastFrame } = render(
+    <PlaylistView heading="Playlist" rows={[row(0, 'x'.repeat(80))]} selected={0} current={0} height={1} width={30} first={0} />,
+  )
+  expect(inverseCells(lastFrame()!.split('\n')[1]!)).toBe(30)
+})
