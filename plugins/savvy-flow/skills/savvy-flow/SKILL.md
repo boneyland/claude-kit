@@ -49,7 +49,7 @@ No delegation until the spec is approved. Workers cannot see this chat, so the s
 6. Write `filemap.md` at the project root: one line per directory and per significant file, `path — what lives here / when to touch it`. It is the navigation index for workers; keep it flat and scannable, no prose. Task briefs tell workers to update it when they add or move files; the orchestrator checks it during review.
 7. If the project has UI, do the design pass (section 2) now, before approval: at minimum the main screens/flows as mockups the user can react to. Record the decisions in SPEC.md.
 8. Show the user SPEC.md and PLAN.md in summary form and wait for approval. Name any Heavy or Fable tasks in that summary: approving the plan approves them only when they were named. Edit on feedback; do not start delegating on a partial "sounds fine".
-9. After approval: delegate the scaffold, review it (section 5), commit. Only then fan out the rest of PLAN.md by dependency order.
+9. After approval: delegate the scaffold, review it (section 5), commit. Only then delegate the rest of PLAN.md in dependency order, under the one-at-a-time rules in section 4.
 10. Every worker brief references `docs/SPEC.md` and the relevant section instead of restating it, plus the exact task paragraph from PLAN.md. Keep PLAN.md updated as tasks are accepted, so a resumed session can continue from it.
 
 ## 2. Design (orchestrator only — never delegated)
@@ -85,8 +85,8 @@ Heuristics:
 ## 4. Delegate
 
 - Use the Agent tool with `subagent_type` = the tier agent name exactly as the Agent tool lists it (`savvy-careful` or `savvy-flow:savvy-careful`).
-- **One worker that edits files at a time**, even when tasks are independent: workers share one checkout and would overwrite each other's edits. Read-only tasks (an investigation that only reports, an Explore search) may run in parallel with each other, never alongside a worker that edits.
-- **Memory-heavy commands one at a time**: builds, test suites, browsers, and anything whose memory use cannot be predicted. Never start one while another is running, whether yours or a worker's; this machine may have little memory to spare.
+- **One worker that edits files at a time**, even when tasks are independent: workers share one checkout and would overwrite each other's edits. Read-only tasks (an investigation that only reports, an Explore search) may run in parallel with each other, never alongside a worker that edits, and only when each brief says not to run builds, test suites or browsers. A read-only task that needs one runs alone.
+- **Memory-heavy commands one at a time**: builds, test suites, browsers, and anything whose memory use cannot be predicted. Never start one while another is running, whether yours or a worker's: run your own checks (such as the re-run in section 5) only while no worker is active. This machine may have little memory to spare.
 - Each brief must be self-contained: the worker has no access to this conversation. Include file paths, the decided design specs, constraints from CLAUDE.md that matter, and the exact verification expected.
 - Keep briefs tight. Do not paste the whole plan; paste this task.
 - Do not implement in parallel with workers. While they run, prepare the next briefs or the review checklist.
