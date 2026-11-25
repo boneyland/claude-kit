@@ -51,11 +51,11 @@ export function VolumeBar({ level, width, onSet }: BarProps) {
 type Props = { isPaused: boolean; volume: number; width: number; onAction?(a: Action): void; onVolume?(level: number): void }
 
 // Nerd Font Material icons (kitty and Ghostty bundle the font): previous,
-// pause, play, stop, next. Each takes one column; kitty may draw it over the
+// pause, play, next, stop. Each takes one column; kitty may draw it over the
 // space after it, so each button is the icon and a space.
-export const ICONS = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: '\u{F040A}', stop: '\u{F04DB}', next: '\u{F04AD}' }
+export const ICONS = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: '\u{F040A}', next: '\u{F04AD}', stop: '\u{F04DB}' }
 
-// 󰒮 󰏤 󰓛 󰒭 then the volume bar over the rest of `width`; the play icon for
+// 󰒮 󰏤 󰒭 󰓛 then the volume bar over the rest of `width`; the play icon for
 // pause while paused. Each does what its key does.
 export function Controls({ isPaused, volume, width, onAction, onVolume }: Props) {
   const button = (icon: string, a: Action) => (
@@ -71,9 +71,9 @@ export function Controls({ isPaused, volume, width, onAction, onVolume }: Props)
       <Text> </Text>
       {button(isPaused ? ICONS.play : ICONS.pause, { kind: 'pause' })}
       <Text> </Text>
-      {button(ICONS.stop, { kind: 'stop' })}
-      <Text> </Text>
       {button(ICONS.next, { kind: 'next' })}
+      <Text> </Text>
+      {button(ICONS.stop, { kind: 'stop' })}
       <Text>{'  '}</Text>
       <VolumeBar level={volume} width={Math.max(10, width - used)} onSet={onVolume} />
     </Box>
