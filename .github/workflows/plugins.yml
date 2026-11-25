@@ -1,0 +1,85 @@
+name: plugins
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/**'
+      - '.claude-plugin/**'
+      - '.github/workflows/plugins.yml'
+  pull_request:
+    paths:
+      - 'plugins/**'
+      - '.claude-plugin/**'
+      - '.github/workflows/plugins.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels that pull request's stale run.
+concurrency:
+  group: plugins-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Mods are built on an early-access API that may change between releases:
+  # the version is pinned and moved on on purpose, not by whatever is latest.
+  CLAUDE_CODE_VERSION: 2.1.332
+  DISABLE_AUTOUPDATER: '1'
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
+
+jobs:
+  # `claude plugin validate` and `claude plugin test` need no login.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        run: |
+          npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          claude --version
+
+      - name: Validate the catalog
+        run: claude plugin validate .
+
+      # Every plugin, so one that fails doesn't hide the others; the job fails
+      # at the end if any did.
+      - name: Validate and test each plugin
+        run: |
+          failed=""
+          for dir in plugins/*/; do
+            name=$(basename "$dir")
+            echo "::group::$name"
+            claude plugin validate "$dir" || failed="$failed $name(validate)"
+            if [ -n "$(find "$dir" -name '*.test.ts' -o -name '*.test.tsx' | grep -v node_modules | head -1)" ]; then
+              claude plugin test "$dir" || failed="$failed $name(test)"
+            else
+              echo "$name has no tests"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::failed:$failed"
+            exit 1
+          fi
+
+      # Each plugin's version in the catalog is the one in its manifest: Claude
+      # Code updates a plugin from GitHub by the catalog's version.
+      - name: Catalog versions match the manifests
+        run: |
+          node -e '
+            const fs = require("fs")
+            const m = JSON.parse(fs.readFileSync(".claude-plugin/marketplace.json", "utf8"))
+            let bad = 0
+            for (const p of m.plugins) {
+              const v = JSON.parse(fs.readFileSync(p.source + "/.claude-plugin/plugin.json", "utf8")).version
+              if (v !== p.version) { console.log(`::error::${p.name}: catalog ${p.version}, manifest ${v}`); bad++ }
+            }
+            process.exit(bad ? 1 : 0)
+          '
