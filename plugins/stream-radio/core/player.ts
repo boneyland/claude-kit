@@ -22,8 +22,34 @@ import { expandSource } from './expand'
 import { isPlayable, listSongs, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
-import { nameOf, NO_PLACE, played, replaceWith, type Place, type QueueEntry, type StoredQueue } from './stored'
-import { readPlace, readStored, releaseFileLock, restorePrev, takeFileLock, updateStored, writePlace, writeWhole } from './storedFile'
+import {
+  addEntries,
+  arrangementOff,
+  EMPTY_QUEUE,
+  moveShown,
+  nameOf,
+  NO_PLACE,
+  played,
+  removeIds,
+  replaceWith,
+  shuffleOn,
+  sortShown,
+  type Place,
+  type QueueEntry,
+  type StoredEntry,
+  type StoredQueue,
+} from './stored'
+import {
+  backUpAndEmpty,
+  readPlace,
+  readStored,
+  releaseFileLock,
+  restorePrev,
+  takeFileLock,
+  updateStored,
+  writePlace,
+  writeWhole,
+} from './storedFile'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
 
@@ -74,19 +100,6 @@ export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
     }
   }
   return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
-}
-
-// Shuffles the playing playlist, or puts it back in order; mpv keeps the song
-// playing where it is. The list is read again, as its order changed; the mark
-// on the player tells the other sessions to read it again too.
-export async function toggleShuffle(h: Host): Promise<string> {
-  if ((await h.vars.read('queue')).kind !== 'playlist') return 'Nothing to shuffle: this is not a playlist.'
-  const on = !(await h.vars.read('isShuffled'))
-  if (!(await mpv(h, [on ? 'playlist-shuffle' : 'playlist-unshuffle']))) return 'The player is not ready yet.'
-  await h.vars.change('isShuffled', () => on)
-  await mpv(h, ['set_property', 'user-data/stream-radio/shuffled', on])
-  await refreshQueue(h, { isReordered: true })
-  return on ? 'Shuffled.' : 'Back in order.'
 }
 
 export const SAVE_MS = 10_000
@@ -506,16 +519,10 @@ export async function onEvent(h: Host, event: PlayerEvent) {
       if (seen.isLoaded) await markLoaded(h)
       return
     case 'user-data/stream-radio/edited':
+      // the queue's file changed (a shuffle, say): what it says is read again too
       if (seen.isLoaded) await refreshQueue(h, { isReordered: true })
+      await refreshFromStored(h)
       return
-    case 'user-data/stream-radio/shuffled': {
-      const on = data === true
-      if (on !== (await h.vars.read('isShuffled'))) {
-        await h.vars.change('isShuffled', () => on)
-        if (seen.isLoaded) await refreshQueue(h, { isReordered: true })
-      }
-      return
-    }
   }
 }
 
@@ -920,7 +927,8 @@ export async function resumeQueue(h: Host, config: PlayerConfig, fallback: strin
 // Ends the shared player, for every session: marked stopped first, so none of
 // them reconnects. The queue and its place stay, to play again.
 export async function stopPlaying(h: Host, config: PlayerConfig) {
-  await savePlace(h, true)
+  // only what this session follows: its place from an earlier play is stale
+  if (control) await savePlace(h, true)
   run += 1
   asked += 1
   isStarting = false
@@ -1158,57 +1166,125 @@ async function playlistOf(h: Host): Promise<Entry[] | undefined> {
 }
 const entriesOf = (list: readonly Entry[]): QueueEntry[] => list.filter(e => e.filename).map(e => ({ path: e.filename!, title: e.title }))
 
-// Writes the player's queue as it is now to the queue file; its path. Undefined,
-// the file untouched, when mpv did not answer: an empty file would be a queue
-// with nothing in it, and resuming or reconnecting would play that.
-export async function writeQueueFile(h: Host): Promise<string | undefined> {
-  const file = (await paths(h)).queue
-  const list = await playlistOf(h)
-  if (!list?.length) return undefined
-  await h.fs.write(file, m3u(entriesOf(list)))
-  return file
+// --- Edits: every one goes to the queue's file first, playing or stopped; a
+// player followed is then brought to the new played order, the song playing
+// playing on. Indexes come in the shown order, as the `queue` var lists them,
+// and are taken to entries in the queue as read under the lock.
+
+const BUSY = 'The queue is busy; try again.'
+const STALE = 'The queue changed meanwhile; try again.'
+
+// The entry the queue is at: this session's place while it follows a player
+// and knows it, else the one saved.
+async function currentId(h: Host): Promise<string | null> {
+  return control && place.current !== null ? place.current : (await readPlace(h)).current
 }
 
-// After an edit: the queue file is what plays now, resumes and reconnects;
-// every session reads the queue again.
-async function afterEdit(h: Host) {
-  const file = await writeQueueFile(h)
-  if (file) {
-    await mpv(h, ['set_property', 'user-data/stream-radio/url', file])
-    await h.vars.change('lastUrl', () => file)
-    const intent = await readIntent(h)
-    if (intent) await writeIntent(h, { ...intent, url: file })
+// `fn` over the stored queue under the lock, then the place, mpv and every
+// session follow. '' when done, `unchanged` when `fn` changed nothing, else
+// what to show.
+async function edit(h: Host, fn: (q: StoredQueue) => StoredQueue, unchanged = ''): Promise<string> {
+  let was: StoredQueue = EMPTY_QUEUE
+  const q = await updateStored(h, x => ((was = x), fn(x))).catch(() => undefined)
+  if (q === 'busy') return BUSY
+  if (!q) return 'Could not save the queue.'
+  if (q.rev === was.rev) return unchanged
+  await movePlace(h, was, q)
+  if (control) {
+    // mpv's list not brought along (it was not the stored one) keeps its old
+    // rev, to be rebuilt from the file
+    if (await syncPlayer(h, played(was), played(q))) await mpv(h, ['set_property', 'user-data/stream-radio/rev', q.rev])
+    await markEdited(h)
+    await refreshQueue(h, { isReordered: true })
   }
-  await markEdited(h)
-  await refreshQueue(h, { isReordered: true })
+  await refreshFromStored(h)
+  return ''
 }
 
-// Adds to the end of the queue, or to play next (after the playing song, in
-// the order given). With nothing playing, the queue is what was added, and it
-// starts. '' when done, else what to show.
+// The place after an edit: on the same entry, else (it went) on the next one
+// still there, from its start; mpv plays that one next too.
+async function movePlace(h: Host, was: StoredQueue, q: StoredQueue) {
+  const at = control && place.current !== null ? place : await readPlace(h)
+  if (at.current === null) return
+  const kept = new Set(q.entries.map(e => e.id))
+  let next: Place = { ...at, rev: q.rev }
+  if (!kept.has(at.current)) {
+    const before = played(was)
+    const from = before.findIndex(e => e.id === at.current)
+    const e = before.slice(from + 1).find(x => kept.has(x.id)) ?? played(q)[0]
+    if (!e) return
+    next = { rev: q.rev, current: e.id, seconds: 0 }
+  }
+  if (control) {
+    place = next
+    placedAt = undefined
+  }
+  await writePlace(h, next).catch(() => undefined)
+}
+
+// Brings mpv's list from the played order `from` to `to`: the entries gone
+// removed (the song playing among them: mpv plays the next), the new ones
+// loaded in one list where they go, then the moves, a few one by one, else a
+// rebuild around the song playing. Never a jump: the song playing plays on.
+// false, and mpv left as it is, when its list is not `from` (it expanded an
+// entry, or the edit came between) or it stopped answering.
+async function syncPlayer(h: Host, from: readonly StoredEntry[], to: readonly StoredEntry[]): Promise<boolean> {
+  if (seen.count !== from.length) return false
+  isReordering = true
+  try {
+    const keep = new Set(to.map(e => e.id))
+    const list = from.map(e => e.id)
+    // the highest first, so the indexes below stay put
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (keep.has(list[i]!)) continue
+      if (!(await mpv(h, ['playlist-remove', i]))) return false
+      list.splice(i, 1)
+    }
+    const had = new Set(list)
+    const added = to.filter(e => !had.has(e.id))
+    if (added.length) {
+      const first = to.indexOf(added[0]!)
+      const at = first > 0 ? list.indexOf(to[first - 1]!.id) + 1 : 0
+      if (!(await loadAt(h, added, at, list.length))) return false
+      list.splice(at, 0, ...added.map(e => e.id))
+    }
+    const order = to.map(e => list.indexOf(e.id))
+    const steps = moveSteps(order)
+    if (steps.length && (steps.length <= FEW_MOVES ? await moveEach(h, steps) : await rebuild(h, order))) return false
+    seen.count = to.length
+    return true
+  } finally {
+    isReordering = false
+  }
+}
+
+// `songs` into mpv's list of `count` at `at`, in one list: a loadfile per song
+// made a folder trickle in, every session reading the queue again after each.
+async function loadAt(h: Host, songs: readonly QueueEntry[], at: number, count: number): Promise<boolean> {
+  const file = `${(await paths(h)).queue}.add`
+  await h.fs.write(file, m3u(songs))
+  if (at >= count) return !!(await mpv(h, ['loadlist', file, 'append']))
+  if (await mpv(h, ['loadlist', file, 'insert-at', at])) return true
+  // insert-at needs mpv 0.38; an older one appends, and the songs move up one by one
+  if (!(await mpv(h, ['loadlist', file, 'append']))) return false
+  for (let i = 0; i < songs.length; i++) if (!(await mpv(h, ['playlist-move', count + i, at + i]))) return false
+  return true
+}
+
+// Adds to the end of the queue, or to play next (after the current song, in
+// the order given). Nothing queued and nothing playing: what is added becomes
+// the queue, and it plays. '' when done, else what to show.
 export async function addToQueue(h: Host, config: PlayerConfig, entries: readonly QueueEntry[], where: 'end' | 'next'): Promise<string> {
   const songs = await expand(h, entries)
   if (!songs.length) return 'Nothing to add.'
-  if (!isFollowing()) {
-    // Stopped: what is added becomes the queue, and it plays.
-    return playNew(h, config, songs, (await paths(h)).queue, '')
-  }
-  // All the songs in one list, loaded in one command: a loadfile per song made
-  // a folder trickle in, every session reading the queue again after each one.
-  const file = `${(await paths(h)).queue}.add`
-  await h.fs.write(file, m3u(songs))
-  if (where === 'next') {
-    const at = (seen.pos >= 0 ? seen.pos : 0) + 1
-    // insert-at needs mpv 0.38; an older one appends, and the songs move up one by one
-    if (!(await mpv(h, ['loadlist', file, 'insert-at', at]))) {
-      const before = (await mpv(h, ['get_property', 'playlist-count']))?.data
-      const count = typeof before === 'number' ? before : seen.count
-      if (!(await mpv(h, ['loadlist', file, 'append']))) return 'The player is not ready yet.'
-      for (let i = 0; i < songs.length; i++) await mpv(h, ['playlist-move', count + i, at + i])
-    }
-  } else if (!(await mpv(h, ['loadlist', file, 'append']))) return 'The player is not ready yet.'
-  await afterEdit(h)
-  return ''
+  const current = await currentId(h)
+  const was = { isEmpty: false }
+  const reply = await edit(h, q => {
+    was.isEmpty = !q.entries.length && !control
+    return was.isEmpty ? q : addEntries(q, songs, where, current)
+  })
+  if (reply || !was.isEmpty) return reply
+  return playNew(h, config, songs, (await paths(h)).queue, '')
 }
 
 // Up to this many moves go one by one; more (a sort) rebuild the list.
@@ -1227,7 +1303,7 @@ async function moveEach(h: Host, steps: readonly [number, number][]): Promise<st
 async function rebuild(h: Host, order: readonly number[]): Promise<string> {
   const list = await playlistOf(h)
   if (!list) return 'The player is not ready yet.'
-  if (list.length !== order.length) return 'The queue changed meanwhile; try again.'
+  if (list.length !== order.length) return STALE
   const playing = list.findIndex(e => e.current)
   // nothing playing: playlist-clear would empty it, so move one by one
   if (playing < 0) return moveEach(h, moveSteps(order))
@@ -1245,35 +1321,61 @@ async function rebuild(h: Host, order: readonly number[]): Promise<string> {
   return ''
 }
 
-// Puts the queue in `order` (order[i]: the entry now at i), the playing song
-// playing on. Shuffle goes off: un-shuffling would undo this.
+// A hand move: the shown list put in `order` (order[i]: the row now at i)
+// becomes the queued order, and a shuffle or sort goes off.
 export async function reorderQueue(h: Host, order: readonly number[]): Promise<string> {
-  const steps = moveSteps(order)
-  if (!steps.length) return ''
-  isReordering = true
-  try {
-    const reply = steps.length <= FEW_MOVES ? await moveEach(h, steps) : await rebuild(h, order)
-    if (reply) return reply
-  } finally {
-    isReordering = false
-  }
-  await h.vars.change('isShuffled', () => false)
-  await mpv(h, ['set_property', 'user-data/stream-radio/shuffled', false])
-  await afterEdit(h)
-  return ''
+  if (!moveSteps(order).length) return ''
+  return edit(h, q => moveShown(q, order), STALE)
 }
 
-// Takes entries out of the queue; the playing one going, the next plays.
-// Every one going stops the player on purpose, so nobody reconnects it.
-export async function removeFromQueue(h: Host, config: PlayerConfig, indexes: readonly number[]): Promise<string> {
-  const count = (await h.vars.read('queue')).items.length
-  const going = [...new Set(indexes)].filter(i => i >= 0 && i < count).sort((a, b) => b - a)
+// Sorted by `field`: `order` over the shown list (the caller reads the tags).
+export async function sortQueue(h: Host, field: string, isReversed: boolean, order: readonly number[]): Promise<string> {
+  return edit(h, q => sortShown(q, field, isReversed, order), STALE)
+}
+
+// Back to the queued order, from a sort or a shuffle.
+export async function unsortQueue(h: Host): Promise<string> {
+  return edit(h, q => (q.arrangement.kind === 'none' ? q : arrangementOff(q)))
+}
+
+// Shuffles the queue (the current song first), or puts it back in the queued
+// order; playing or stopped.
+export async function toggleShuffle(h: Host): Promise<string> {
+  const current = await currentId(h)
+  const was = { isOn: false }
+  const reply = await edit(
+    h,
+    q => {
+      was.isOn = q.arrangement.kind === 'shuffle'
+      if (!was.isOn && q.entries.length < 2) return q
+      return was.isOn ? arrangementOff(q) : shuffleOn(q, current, Math.random)
+    },
+    'Nothing to shuffle.',
+  )
+  return reply || (was.isOn ? 'Back in order.' : 'Shuffled.')
+}
+
+// Takes entries out of the queue; the current one going, the next is current
+// (playing: mpv plays it). Every one going clears the queue.
+export async function removeFromQueue(h: Host, config: PlayerConfig, shownIndexes: readonly number[]): Promise<string> {
+  const going = [...new Set(shownIndexes)].filter(i => Number.isInteger(i) && i >= 0)
   if (!going.length) return 'Nothing to remove.'
-  if (going.length >= count) {
-    await stopPlaying(h, config)
-    return 'Stopped: the queue is empty.'
-  }
-  for (const i of going) if (!(await mpv(h, ['playlist-remove', i]))) return 'The player is not ready yet.'
-  await afterEdit(h)
-  return ''
+  const all = { isAll: false }
+  const reply = await edit(h, q => {
+    const shown = played(q)
+    const ids = going.flatMap(i => (shown[i] ? [shown[i].id] : []))
+    all.isAll = ids.length > 0 && ids.length === shown.length
+    return all.isAll ? q : removeIds(q, ids)
+  }, 'Nothing to remove.')
+  return all.isAll ? clearQueue(h, config) : reply
+}
+
+// Stops the player and empties the queue; the queue cleared is kept, for `l`
+// to bring back.
+export async function clearQueue(h: Host, config: PlayerConfig): Promise<string> {
+  const done = await backUpAndEmpty(h).catch(() => 'failed' as const)
+  if (done === 'busy') return BUSY
+  if (done === 'failed') return 'Could not save the queue.'
+  await stopPlaying(h, config)
+  return 'Cleared the playlist. l brings it back.'
 }

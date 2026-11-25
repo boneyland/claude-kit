@@ -12,7 +12,6 @@ export const WATCHED = [
   'loop-file',
   'loop-playlist',
   'user-data/stream-radio/url',
-  'user-data/stream-radio/shuffled',
   // a count another program raises after editing the queue: read it again
   'user-data/stream-radio/edited',
   // last: its first value means a player already playing, and finds the rest known

@@ -152,3 +152,19 @@ test('replaceEntry keeps the shown order stable under an arrangement', () => {
   expect(spliced.arrangement.kind).toBe('sort')
   expect(replaceEntry(q, 'nope', songs('x'))).toBe(q)
 })
+
+test('a hand move or sort whose order is not a permutation of the shown list changes nothing', () => {
+  const q = abc()
+  for (const order of [[0, 1], [0, 1, 1], [0, 1, 3], [2, 1, 0, 3], [0.5, 1, 2]]) {
+    expect(moveShown(q, order)).toBe(q)
+    expect(sortShown(q, 'title', false, order)).toBe(q)
+  }
+  expect(names(moveShown(q, [2, 1, 0]))).toEqual(['c', 'b', 'a'])
+})
+
+test('removing ids that are not there changes nothing', () => {
+  const q = abc()
+  expect(removeIds(q, ['nope'])).toBe(q)
+  expect(removeIds(q, [])).toBe(q)
+  expect(removeIds(q, [idOf(q, 'b')]).rev).toBe(q.rev + 1)
+})

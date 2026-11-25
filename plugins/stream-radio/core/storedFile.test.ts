@@ -119,7 +119,7 @@ test('backUpAndEmpty then restorePrev gives the same entries back', async () => 
   await updateStored(h, add('/a.mp3'))
   await updateStored(h, add('/b.mp3'))
   const was = await readStored(h)
-  await backUpAndEmpty(h)
+  expect(await backUpAndEmpty(h)).toBeUndefined()
   const empty = await readStored(h)
   expect(empty.entries).toEqual([])
   expect(empty.rev).toBe(was.rev + 1)
@@ -127,4 +127,14 @@ test('backUpAndEmpty then restorePrev gives the same entries back', async () => 
   const back = await readStored(h)
   expect(back.entries).toEqual(was.entries)
   expect(back.rev).toBeGreaterThan(empty.rev)
+})
+
+test('backUpAndEmpty says busy when the lock cannot be had', async () => {
+  const { h, files, clock, mtimes } = hostOf()
+  await updateStored(h, add('/a.mp3'))
+  files[LOCK] = 'held'
+  mtimes[LOCK] = clock.now
+  const before = files[`${D}/queue.json`]
+  expect(await backUpAndEmpty(h)).toBe('busy')
+  expect(files[`${D}/queue.json`]).toBe(before)
 })

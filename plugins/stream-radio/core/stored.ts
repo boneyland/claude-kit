@@ -148,9 +148,11 @@ export function addEntries(q: StoredQueue, add: QueueEntry[], where: 'end' | 'ne
   return { ...q, rev, entries, arrangement }
 }
 
-// Entries out; the arrangement keeps its order of the rest.
+// Entries out; the arrangement keeps its order of the rest. None of the ids
+// there: nothing changes.
 export function removeIds(q: StoredQueue, ids: readonly string[]): StoredQueue {
   const gone = new Set(ids)
+  if (!q.entries.some(e => gone.has(e.id))) return q
   const newIndex: number[] = []
   const entries: StoredEntry[] = []
   q.entries.forEach((e, i) => {
@@ -163,9 +165,11 @@ export function removeIds(q: StoredQueue, ids: readonly string[]): StoredQueue {
 }
 
 // A hand move: `order` over the shown list becomes the queued order, and the
-// arrangement is gone.
+// arrangement is gone. An order that is not one over the shown list (a stale
+// one, from a list since changed) changes nothing.
 export function moveShown(q: StoredQueue, order: readonly number[]): StoredQueue {
   const shown = played(q)
+  if (!isPermutation(order, shown.length)) return q
   return { ...q, rev: q.rev + 1, entries: order.map(i => shown[i]!), arrangement: NONE }
 }
 
@@ -187,9 +191,10 @@ export function arrangementOff(q: StoredQueue): StoredQueue {
 }
 
 // A sort: `order` over the shown list, kept as an order over the entries. It
-// replaces a shuffle or an earlier sort.
+// replaces a shuffle or an earlier sort. A stale order changes nothing.
 export function sortShown(q: StoredQueue, field: string, isReversed: boolean, order: readonly number[]): StoredQueue {
   const shown = shownIndexes(q)
+  if (!isPermutation(order, shown.length)) return q
   return { ...q, rev: q.rev + 1, arrangement: { kind: 'sort', field, isReversed, order: order.map(i => shown[i]!) } }
 }
 

@@ -111,12 +111,14 @@ export async function writePlace(h: Host, place: Place): Promise<void> {
 }
 
 // Clearing: the queue goes to queue.prev.json and the queue is emptied (rev + 1).
-export async function backUpAndEmpty(h: Host): Promise<void> {
+// 'busy' when the lock could not be had: nothing changed.
+export async function backUpAndEmpty(h: Host): Promise<'busy' | void> {
   const p = await paths(h)
-  await updateStoredWith(h, async q => {
+  const done = await updateStoredWith(h, async q => {
     if (q.entries.length > 0) await writeWhole(h, p.prev, `${JSON.stringify(q)}\n`)
     return { ...EMPTY_QUEUE, rev: q.rev + 1 }
   })
+  if (done === 'busy') return 'busy'
 }
 
 // Brings the cleared queue back (rev + 1 over the empty one); false when there
