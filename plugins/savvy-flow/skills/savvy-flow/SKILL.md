@@ -35,7 +35,7 @@ When delegating, pass the task's `title` verbatim as the Agent tool's `descripti
    - a clear, self-contained brief (what, where, constraints, definition of done, how to verify);
    - explicit dependencies between tasks;
    - a **tier** per task (section 3).
-4. Present the plan to the user in a compact form: numbered tasks, tier, dependency order. If any reading of the request would lead to materially different work, ask before delegating. Otherwise proceed.
+4. Present the plan to the user in a compact form: numbered tasks, tier, dependency order. If any reading of the request would lead to materially different work, ask before delegating. If any task is at Heavy or Fable, mark those tasks and ask for the user's yes in the same message (section 3, "Heavy and Fable need the user's yes"), and delegate nothing until they answer. Otherwise proceed.
 
 ## 1a. New project (greenfield)
 
@@ -48,7 +48,7 @@ No delegation until the spec is approved. Workers cannot see this chat, so the s
 5. Write `CLAUDE.md` at the project root. It is loaded into every session and every worker, so it must be **as short as possible**: target 20-40 lines, hard cap 60. Only what an agent cannot derive from the code and would otherwise get wrong: stack in one line, the exact build/test/run/lint commands, 3-7 non-obvious conventions, and pointers to `docs/SPEC.md`, `docs/PLAN.md`, `filemap.md`. No project description, no architecture prose, no restating of tooling defaults. If a rule needs a paragraph, it goes to `docs/` and CLAUDE.md links it.
 6. Write `filemap.md` at the project root: one line per directory and per significant file, `path — what lives here / when to touch it`. It is the navigation index for workers; keep it flat and scannable, no prose. Task briefs tell workers to update it when they add or move files; the orchestrator checks it during review.
 7. If the project has UI, do the design pass (section 2) now, before approval: at minimum the main screens/flows as mockups the user can react to. Record the decisions in SPEC.md.
-8. Show the user SPEC.md and PLAN.md in summary form and wait for approval. Edit on feedback; do not start delegating on a partial "sounds fine".
+8. Show the user SPEC.md and PLAN.md in summary form and wait for approval. Name any Heavy or Fable tasks in that summary: approving the plan approves them only when they were named. Edit on feedback; do not start delegating on a partial "sounds fine".
 9. After approval: delegate the scaffold, review it (section 5), commit. Only then fan out the rest of PLAN.md by dependency order.
 10. Every worker brief references `docs/SPEC.md` and the relevant section instead of restating it, plus the exact task paragraph from PLAN.md. Keep PLAN.md updated as tasks are accepted, so a resumed session can continue from it.
 
@@ -57,10 +57,10 @@ No delegation until the spec is approved. Workers cannot see this chat, so the s
 Design decisions are yours. Workers never invent UI, with one exception below.
 
 - **Small/contained UI** (a component, a state, a screen tweak): decide the design yourself and write it into the worker brief as concrete specs (structure, states, spacing/typography rules, which existing components to reuse).
-- **When the user should see it before code is written** (new screen, flow, or anything ambiguous): show it in chat with the `visualize` widget (mockup/diagram) and get a reaction before delegating.
-- **Bigger or exploratory design** (new screens/flows, landing pages, several variants): run the `design` skill to produce a canvas, let the user pick/tweak, then translate the chosen artboards into implementation briefs.
+- **When the user should see it before code is written** (new screen, flow, or anything ambiguous): show a mockup or diagram and get a reaction before delegating. Sketch it in chat, or make an artifact or a standalone HTML mockup where the surface can show one.
+- **Bigger or exploratory design** (new screens/flows, landing pages, several variants): produce the variants side by side the same way, let the user pick and tweak, then translate the chosen one into implementation briefs.
 - **Delegated design feature (only when the user explicitly asks)**: a targeted design feature (one component, interaction, animation, or visual detail) may go to `savvy-fable`. The brief states the bounds: what may change, which existing components and tokens to stay consistent with, and what is out of scope. You still review the visual result and own acceptance.
-- For frontend styling direction, consult the `frontend-design` skill. For any chart/graph, consult `dataviz` before specifying it.
+- Design skills: if the session lists one that fits (for example frontend-design, Impeccable or UI/UX Pro Max, whichever is installed), use it for styling direction and mockups. None is required; without one, use the plain mockups above. For any chart/graph, consult `dataviz` before specifying it.
 - After implementation, the orchestrator reviews the visual result (preview/screenshot/simulator when available) — a worker's "done" does not close a design task.
 
 ## 3. Tiering
@@ -73,17 +73,20 @@ Pick the cheapest tier that will get the task right the first time. Two axes: **
 | Heavy | `savvy-heavy` | Opus / xhigh | "Understand and find": unfamiliar or messy code, unclear root cause, non-obvious architecture, large contexts, anything where a wrong first approach is expensive |
 | Careful | `savvy-careful` | Opus / high | "Do it right": the approach is clear but execution is delicate. Multi-file refactors, fixes that must preserve invariants, logic with many edge cases, concurrency |
 | Medium | `savvy-medium` | Opus / medium | Standard feature work, bug fixes with a known cause, changes confined to a few files with clear requirements |
-| Light | `savvy-light` | Opus / low | Mechanical edits, renames, boilerplate, config, small isolated fixes, running builds/tests and reporting |
+| Light | `savvy-light` | Sonnet / low | Mechanical edits, renames, boilerplate, config, small isolated fixes, running builds/tests and reporting |
 
 Heuristics:
-- Uncertain between two tiers → take the higher one. Exception: Fable is a reserve tier; pick it only when the task clearly meets its criteria, otherwise Heavy.
+- Uncertain between two tiers → take the higher one. Exception: Fable is a reserve tier; pick it only when the task clearly meets its criteria, otherwise Heavy. When the higher one is Heavy or Fable, it goes in the question below.
+- **Heavy and Fable need the user's yes.** They cost the most, so the user decides. Ask once, with the plan: list each Heavy or Fable task with one line on why it needs that tier. A task the user declines runs at Careful. Moving a task up to Heavy or Fable later (re-planning, or a return in review) asks again unless the user already approved that task at that tier.
 - Heavy vs Careful is about the kind of difficulty, not the amount: insight needed → Heavy; thoroughness needed → Careful. A task that needs both is two tasks: Heavy investigates and produces a precise brief, Careful implements it.
 - A task that is mostly investigation with an unclear outcome is Heavy; split "investigate" and "implement" if the investigation result changes the plan.
 - Never delegate final judgment (section 5) to any tier. Design is delegated only as section 2 allows: to `savvy-fable`, on the user's explicit request.
 
 ## 4. Delegate
 
-- Use the Agent tool with `subagent_type` = the tier agent name exactly as the Agent tool lists it (`savvy-careful` or `savvy-flow:savvy-careful`). Run independent tasks in parallel in one message; chain dependent ones.
+- Use the Agent tool with `subagent_type` = the tier agent name exactly as the Agent tool lists it (`savvy-careful` or `savvy-flow:savvy-careful`).
+- **One worker that edits files at a time**, even when tasks are independent: workers share one checkout and would overwrite each other's edits. Read-only tasks (an investigation that only reports, an Explore search) may run in parallel with each other, never alongside a worker that edits.
+- **Memory-heavy commands one at a time**: builds, test suites, browsers, and anything whose memory use cannot be predicted. Never start one while another is running, whether yours or a worker's; this machine may have little memory to spare.
 - Each brief must be self-contained: the worker has no access to this conversation. Include file paths, the decided design specs, constraints from CLAUDE.md that matter, and the exact verification expected.
 - Keep briefs tight. Do not paste the whole plan; paste this task.
 - Do not implement in parallel with workers. While they run, prepare the next briefs or the review checklist.
@@ -99,7 +102,7 @@ For each returned task:
 4. Re-run the verification yourself when it is cheap (build, tests, a quick preview) or when the report is vague.
 5. Outcome per task:
    - **Accept**;
-   - **Return** to the same or a higher tier with a precise list of defects (not a re-explanation of the task);
+   - **Return** to the same or a higher tier with a precise list of defects (not a re-explanation of the task); a move up to Heavy or Fable needs the user's yes first (section 3);
    - **Escalate**: take over only for design fixes or one-line corrections where a round trip would cost more than the fix.
 
 Cap at two return rounds per task; after that, re-plan or ask the user.
