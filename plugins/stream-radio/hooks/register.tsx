@@ -241,7 +241,6 @@ export const register: Register = (on, options) => {
     await update($, elapsed, () => -1)
     await update($, chapter, () => '')
     await update($, scroll, () => 0)
-    await update($, queue, () => NO_QUEUE)
     await update($, notice, () => '')
     // Before state.json, saved state was in the store: brought over once.
     await migrateFromStore(hostFor($, config), { get: key => $.store.get(key) })
@@ -291,8 +290,8 @@ export const register: Register = (on, options) => {
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.
       if (!isFollowing() && parsed.kind !== 'play' && parsed.kind !== 'last') await connect(hostFor($, config), config).catch(() => undefined)
+      // The queue's own, playing or not.
       if (parsed.kind === 'shuffle') {
-        if (!isFollowing()) return { text: 'Nothing is playing.' }
         return { text: await toggleShuffle(hostFor($, config)) }
       }
       if (parsed.kind === 'repeat') return { text: await setRepeat(hostFor($, config), parsed.mode ?? nextRepeat(await read($, repeatMode))) }

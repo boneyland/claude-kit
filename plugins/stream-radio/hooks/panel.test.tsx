@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv } from './fake-mpv'
+import { fakeMpv, PLACE, QUEUE_JSON } from './fake-mpv'
 
 const PANE = {
   plugin: 'stream-radio',
@@ -124,4 +124,60 @@ test('with nothing playing the panel offers what to play', async ($, on) => {
   expect(await pane.find({ type: 'Button', key: 'prev' })).toBe(undefined)
   expect(await pane.find({ type: 'Input', key: 'url' })).toBeTruthy()
   await pane.unmount()
+})
+
+// A queue of three songs as an earlier session left it, nothing playing.
+const STORED = JSON.stringify({
+  version: 1,
+  rev: 1,
+  entries: SONGS.map((title, i) => ({ id: `1.${i}`, path: `https://example.com/${i}`, title })),
+  arrangement: { kind: 'none' },
+  root: '',
+  source: 'https://example.com/list',
+})
+const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
+
+test('panel keeps the list after stop and plays a clicked song from its start', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: { command: 'stream' } }) as never)
+  const world = engine(on)
+  world.files[QUEUE_JSON] = STORED
+  world.files[PLACE] = JSON.stringify({ rev: 1, current: '1.1', seconds: 80 })
+  await $.session.start(START)
+  await $.command.run({ command: 'stream', args: 'last' } as never)
+  await clock.advance(10)
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(1000)
+
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ type: 'Text', text: 'Nothing playing.' }))?.text).toBe('Nothing playing.')
+  expect((await pane.find({ type: 'Button', key: 'item-0' }))?.props.label).toContain(SONGS[0])
+  expect((await pane.find({ type: 'Button', key: 'item-2' }))?.props.label).toContain(SONGS[2])
+
+  world.sent = []
+  await pane.press({ key: 'item-2' })
+  await clock.advance(10)
+  await clock.advance(10)
+  expect(world.launches.at(-1)).toContain('--playlist-start=2')
+  expect(world.sent.some(c => c[0] === 'seek')).toBe(false)
+  await pane.unmount()
+
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(1000)
+})
+
+test('shuffle works while stopped', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: { command: 'stream' } }) as never)
+  const world = engine(on)
+  world.files[QUEUE_JSON] = STORED
+  await $.session.start(START)
+  await clock.advance(10)
+  const reply = await $.command.run({ command: 'stream', args: 'shuffle' } as never)
+  expect(JSON.stringify(reply)).not.toContain('Nothing is playing')
+  expect(JSON.parse(world.files[QUEUE_JSON]!).arrangement.kind).toBe('shuffle')
 })

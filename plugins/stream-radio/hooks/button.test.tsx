@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv } from './fake-mpv'
+import { fakeMpv, PLACE, QUEUE_JSON } from './fake-mpv'
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(
@@ -121,4 +121,43 @@ test('on the desktop app the footer is an icon that opens the panel', async ($, 
   await ui.unmount()
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
+})
+
+test('footer ▶ plays the queue, else the default', { options: { defaultUrl: 'https://example.com/default' } }, async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: { command: 'stream' } }) as never)
+  const world = fakeMpv(on, { title: 'Song', saved: { knownDefault: { mod: 'https://example.com/default' } } })
+  const press = async () => {
+    const ui = await $.ui.mount(FOOTER)
+    await ui.press({ key: 'stream-radio' })
+    await clock.advance(10)
+    await ui.unmount()
+  }
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+
+  // empty queue, nothing to bring back: the default
+  await press()
+  expect(world.urls.at(-1)).toBe('https://example.com/default')
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(1000)
+
+  // a queue with a place: where it got to
+  world.files[QUEUE_JSON] = JSON.stringify({
+    version: 1,
+    rev: 5,
+    entries: [0, 1, 2].map(i => ({ id: `5.${i}`, path: `https://example.com/s${i}` })),
+    arrangement: { kind: 'none' },
+    root: '',
+    source: 'https://example.com/list',
+  })
+  world.files[PLACE] = JSON.stringify({ rev: 5, current: '5.2', seconds: 80 })
+  const before = world.launches.length
+  await press()
+  expect(world.launches).toHaveLength(before + 1)
+  expect(world.launches.at(-1)).toContain('--playlist-start=2')
+  expect(world.urls.at(-1)).toBe('https://example.com/s2')
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(1000)
 })

@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv, INTENT, LOCK, SOCK, type FakeOptions } from './fake-mpv'
+import { fakeMpv, INTENT, LOCK, QUEUE_JSON, SOCK, type FakeOptions } from './fake-mpv'
 
 // One mpv shared by every session: these tests play one session against a
 // player that others start, pause, stop or reconnect, through the same socket
@@ -279,4 +279,25 @@ test('a start that cannot find the player goes back to following the one still p
 
   world.end('quit')
   await clock.advance(10)
+})
+
+test('a new session shows the stored queue before anything plays', async ($, on) => {
+  const clock = mock.clock(on)
+  session(on)
+  const world = fakeMpv(on, { title: 'x' })
+  world.files[QUEUE_JSON] = JSON.stringify({
+    version: 1,
+    rev: 1,
+    entries: ['Alpha', 'Beta'].map((title, i) => ({ id: `1.${i}`, path: `https://example.com/${i}`, title })),
+    arrangement: { kind: 'none' },
+    root: '',
+    source: 'https://example.com/list',
+  })
+  await $.session.start(start)
+  await clock.advance(10)
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ type: 'Button', key: 'item-0' }))?.props.label).toContain('Alpha')
+  expect((await pane.find({ type: 'Button', key: 'item-1' }))?.props.label).toContain('Beta')
+  await pane.unmount()
+  expect(world.launches).toHaveLength(0)
 })
