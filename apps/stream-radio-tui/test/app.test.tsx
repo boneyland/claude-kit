@@ -46,6 +46,12 @@ vi.mock('@core/player', async original => {
       await h.vars.change('queue', q => ({ ...q, items: order.map(i => q.items[i]!), paths: q.paths.length ? order.map(i => q.paths[i]!) : q.paths }))
       return ''
     }),
+    sortQueue: vi.fn(async (h: Host, _field: string, _rev: boolean, order: readonly number[]) => {
+      await h.vars.change('queue', q => ({ ...q, items: order.map(i => q.items[i]!), paths: q.paths.length ? order.map(i => q.paths[i]!) : q.paths }))
+      return ''
+    }),
+    unsortQueue: vi.fn(async () => ''),
+    clearQueue: vi.fn(async () => 'Cleared the playlist. l brings it back.'),
     removeFromQueue: vi.fn(async () => ''),
     addToQueue: vi.fn(async () => ''),
   }
@@ -206,7 +212,7 @@ describe('drawing', () => {
     expect(all.join('\n')).toContain('repeat all')
     expect(all.join('\n')).toContain('shuffle off')
     expect(lineOf(all, /space pause.*n\/p next\/prev.*\/ filter/)).toBeGreaterThan(heading)
-    expect(lineOf(all, /\? all keys.*o go to.*l resume last.*x stop.*q quit/)).toBeGreaterThan(heading)
+    expect(lineOf(all, /\? all keys.*o go to.*l resume.*x stop.*q quit/)).toBeGreaterThan(heading)
     expect(all.every(l => [...l].length <= 100)).toBe(true)
   })
 
@@ -1140,22 +1146,22 @@ describe('playlist editing', () => {
     const { press, lines, host, session } = await show(100, FIVE)
     await press('C')
     expect(status(lines())).toContain('Press C again to clear all 5 songs.')
-    expect(player.stopPlaying).not.toHaveBeenCalled()
+    expect(player.clearQueue).not.toHaveBeenCalled()
     await press('C')
-    await vi.waitFor(() => expect(player.stopPlaying).toHaveBeenCalledWith(host, session.config))
+    await vi.waitFor(() => expect(player.clearQueue).toHaveBeenCalledWith(host, session.config))
     await vi.waitFor(() => expect(status(lines())).toContain('Cleared the playlist. l brings it back.'))
   })
 
   test("C in Files doesn't clear the playlist", async () => {
     const { press } = await show(100, FIVE)
     await press('\t', 'C', 'C')
-    expect(player.stopPlaying).not.toHaveBeenCalled()
+    expect(player.clearQueue).not.toHaveBeenCalled()
   })
 
   test("the row's menu clears the playlist at once", async () => {
     const { press, host, session } = await show(100, FIVE)
     await press('m', 'k', '\r')
-    await vi.waitFor(() => expect(player.stopPlaying).toHaveBeenCalledWith(host, session.config))
+    await vi.waitFor(() => expect(player.clearQueue).toHaveBeenCalledWith(host, session.config))
   })
 
   test('Shift-↓ twice picks 3 rows; Space then unpicks one, not pausing; Esc clears and Space pauses', async () => {
@@ -1223,23 +1229,60 @@ describe('playlist editing', () => {
   test('S sorts the queue by title; R the other way', async () => {
     const { press, host, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
     await press('S')
-    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [2, 0, 4, 1, 3])
+    expect(player.sortQueue).toHaveBeenLastCalledWith(host, 'title', false, [2, 0, 4, 1, 3])
     expect(lines().join('\n')).toContain('sort: title')
     await press('R')
     // the queue is in title order now, so the other way round is its reverse
-    expect(player.reorderQueue).toHaveBeenLastCalledWith(host, [4, 3, 2, 1, 0])
+    expect(player.sortQueue).toHaveBeenLastCalledWith(host, 'title', true, [4, 3, 2, 1, 0])
+  })
+
+  test('S past folder goes back to as queued: unsortQueue, and the tab row says so', async () => {
+    const { press, host, lines } = await show(100, FIVE)
+    await press('S', 'S', 'S', 'S', 'S')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('sort: folder'))
+    expect(player.unsortQueue).not.toHaveBeenCalled()
+    await press('S')
+    await vi.waitFor(() => expect(player.unsortQueue).toHaveBeenCalledWith(host))
+    expect(lines().join('\n')).toContain('sort: as queued')
+  })
+
+  test('x keeps the playlist: still listed, the current row marked, Stopped.; Enter then picks a row', async () => {
+    const { press, host, session, lines } = await show(100, FIVE)
+    vi.mocked(player.stopPlaying).mockImplementationOnce(async h => {
+      await h.vars.change('playing', () => '')
+    })
+    await press('x')
+    await vi.waitFor(() => expect(status(lines())).toContain('Stopped.'))
+    expect(lines().join('\n')).toMatch(/Aa song[\s\S]*Bb song[\s\S]*Cc song[\s\S]*Dd song[\s\S]*Ee song/)
+    expect(lines().join('\n')).toContain('Enter plays the picked song')
+    await press('j', ENTER)
+    expect(player.pick).toHaveBeenCalledWith(host, session.config, 1)
+  })
+
+  test('a stopped playlist can still be edited', async () => {
+    const { press, host, session } = await show(100, { ...FIVE, playing: '' })
+    await press('\x1b[3~')
+    expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [0])
+  })
+
+  test('l with nothing played yet still asks resumeQueue, and shows its reply', async () => {
+    vi.mocked(player.resumeQueue).mockResolvedValueOnce('Nothing has played yet, and there is no default stream.')
+    const { press, host, session, lines } = await show(100, { ...FIVE, playing: '', lastUrl: '' })
+    await press('l')
+    expect(player.resumeQueue).toHaveBeenCalledWith(host, session.config, '')
+    await vi.waitFor(() => expect(status(lines())).toContain('no default stream'))
   })
 
   test('S pressed again while a sort runs: only the last one asked runs after it', async () => {
     const { press, lines } = await show(100, { ...FIVE, queue: { ...FIVE.queue!, items: ['b', 'd', 'a', 'e', 'c'] } })
     let release = () => {}
-    vi.mocked(player.reorderQueue).mockImplementationOnce(() => new Promise<string>(res => (release = () => res(''))))
+    vi.mocked(player.sortQueue).mockImplementationOnce(() => new Promise<string>(res => (release = () => res(''))))
     await press('S', 'S', 'S', 'S')
-    expect(player.reorderQueue).toHaveBeenCalledTimes(1)
+    expect(player.sortQueue).toHaveBeenCalledTimes(1)
     release()
-    await vi.waitFor(() => expect(player.reorderQueue).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(player.sortQueue).toHaveBeenCalledTimes(2))
     await press('j')
-    expect(player.reorderQueue).toHaveBeenCalledTimes(2)
+    expect(player.sortQueue).toHaveBeenCalledTimes(2)
     expect(lines().join('\n')).toContain('sort: album ')
   })
 
@@ -1293,6 +1336,7 @@ describe('review fixes', () => {
     await press('\x1b[3~', 'd', 'u', 'S', 'R')
     expect(player.removeFromQueue).not.toHaveBeenCalled()
     expect(player.reorderQueue).not.toHaveBeenCalled()
+    expect(player.sortQueue).not.toHaveBeenCalled()
     await rightClick(where('Two').x, where('Two').y)
     expect(lines().join('\n')).toContain('Play')
     expect(lines().join('\n')).not.toContain('Remove')
@@ -1456,7 +1500,7 @@ describe('the key list', () => {
       const all = lines().join('\n')
       // the list and pane give way to it
       expect(all).not.toContain('2. Song two')
-      for (const text of ['Keys', 'stop the player', 'resume the last URL', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
+      for (const text of ['Keys', 'stop (the playlist stays)', 'resume the playlist', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
         expect(all).toContain(text)
       }
       await press(close)

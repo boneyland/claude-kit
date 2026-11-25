@@ -246,8 +246,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return setMode('open')
       case 'last':
         return act(async () => {
-          if (!view.lastUrl) return 'Nothing played yet: add songs from the Files tab.'
-          // lastUrl is what plays, so starting it again would only jump back
+          // what plays is the queue, so resuming it again would only jump back
           if (view.playing) return `Already playing ${view.playing}.`
           return resumeQueue(h, session.config, session.config.defaultUrl)
         })

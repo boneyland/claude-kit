@@ -26,9 +26,9 @@ describe('sortOrder', () => {
     expect(sortOrder(same, 'title', false)).toEqual([0, 1, 2])
     expect(sortOrder(same, 'title', true)).toEqual([0, 1, 2])
   })
-  test('the field cycles title → artist → album artist → album → folder → title', () => {
+  test('the field cycles title → artist → album artist → album → folder → as queued (none) → title', () => {
     expect([undefined, 'title', 'artist', 'albumArtist', 'album', 'folder'].map(f => nextSortField(f as never))).toEqual([
-      'title', 'artist', 'albumArtist', 'album', 'folder', 'title',
+      'title', 'artist', 'albumArtist', 'album', 'folder', undefined,
     ])
   })
 })

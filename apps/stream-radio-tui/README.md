@@ -36,7 +36,7 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | `space` | pause or resume; while any row is picked, pick or unpick the cursor's row instead |
 | `Esc` | clear the pick |
 | `m` | the row's menu (also a right-click, or the `⋯` at the end of the cursor's row) |
-| `S` | sort by the next field (also the `sort:` control on the tab row) |
+| `S` | sort by the next field; after the last, back to `as queued` (also the `sort:` control on the tab row) |
 | `n` `p` | next or previous song |
 | `b` `f` | jump 10 seconds back or ahead (not in a live stream) |
 | `+` / `=`, `-` | volume up or down a step: about 3 dB, the same change at any level |
@@ -44,8 +44,8 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | `r` | repeat: all, one, off |
 | `o` | go to a folder, or a YouTube playlist URL, in Files |
 | `G` | Files at the folder of the song playing, the cursor on it |
-| `l` | resume the last URL from where it got to (after `x`, or on a fresh start); while it plays, does nothing |
-| `x` | stop the player |
+| `l` | resume the playlist from where it got to (after `x`, or on a fresh start); after `C` `C` it brings the cleared playlist back; while it plays, does nothing |
+| `x` | stop; the playlist stays, and `Enter` or `l` plays it again |
 | `?` | every key of the tab showing, and what the mouse does; `?`, `Esc` or `q` closes it |
 | `q`, or `Ctrl-C` twice | quit the TUI; the music keeps playing. A single `Ctrl-C` only says to press it again, so a copy habit does not quit (kitty copies with `Ctrl-Shift-C`) |
 
@@ -76,15 +76,15 @@ One row per song: its title (from its tags, else its file name), then, dimmed, i
 
 | Key | |
 | --- | --- |
-| `Enter` | play the song |
+| `Enter` | play the song, from its start (also while stopped) |
 | `Alt-↑` `Alt-↓`, or `u` `d` | move the picked songs one place |
 | `Delete` (or Backspace) | remove the picked songs |
-| `S` | sort by title, artist, album artist, album, or folder then file name |
+| `S` | sort by title, artist, album artist, album, or folder then file name, then `as queued` (the order the songs were added or moved to) |
 | `R` | the same sort the other way round |
-| `C` twice | clear the playlist and stop (also in the row's menu) |
+| `C` twice | clear the playlist and stop; `l` brings it back (also in the row's menu) |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
 
-A sort reorders the queue for good: it plays in that order afterwards, and songs added later go where they are added. Sorting or moving turns shuffle off. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the playlist. The edited queue is kept, so `l` after a stop resumes the same song, found by its path.
+A sort reorders the queue for good: it plays in that order afterwards, and songs added later go where they are added. Sorting or moving turns shuffle off. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the playlist. A stop keeps the queue: it still lists, and while stopped you can edit it, `Enter` plays a song from its start, and `l` resumes the saved place.
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 

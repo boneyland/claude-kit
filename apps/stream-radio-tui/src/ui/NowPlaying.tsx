@@ -50,7 +50,16 @@ type Props = { view: View; duration: number; width: number; full?: Full; onActio
 // five lines; with `full`, down the whole column.
 export function NowPlaying({ view, duration, width, full, onAction, onVolume, onSeek }: Props) {
   const { playing, isPaused, chapter, elapsed, lastUrl, resumeAt } = view
-  const second = playing ? chapter : lastUrl ? `l plays ${resumable(resumeAt, lastUrl) || lastUrl}` : ''
+  const place = lastUrl ? resumable(resumeAt, lastUrl) : ''
+  const second = playing
+    ? chapter
+    : place
+      ? `l plays ${place}`
+      : view.queue.kind === 'playlist' && view.queue.items.length
+        ? 'Enter plays the picked song'
+        : lastUrl
+          ? `l plays ${lastUrl}`
+          : ''
   const isLive = elapsed < 0 || duration <= 0
   const time = !playing ? <Text> </Text> : isLive ? <Text>♪ live</Text> : <Progress elapsed={elapsed} duration={duration} width={width} onSeek={onSeek} />
   if (full)

@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 import type { Host, Queue } from '@core/host'
-import { removeFromQueue, reorderQueue, stopPlaying } from '@core/player'
+import { clearQueue, removeFromQueue, reorderQueue, sortQueue, unsortQueue } from '@core/player'
 import { moveBy, moveTo, type Moved } from '@core/queue'
 import type { TuiConfig } from '../config'
 import { useRefState, type View } from '../ui/hooks'
@@ -38,7 +38,7 @@ export type Playlist = {
   move(by: 1 | -1): void
   moveTo(to: number): void
   remove(): void
-  // the whole queue, and stop: already confirmed
+  // the whole queue (l brings it back), and stop: already confirmed
   clear(): void
   sortNext(): void
   sortReverse(): void
@@ -96,12 +96,17 @@ export function usePlaylist(h: Host, config: TuiConfig, view: View, book: TagBoo
     )
   // Each sort asked; S pressed four times to reach `album` sorts once, by album.
   const sortSeq = useRef(0)
-  const sortBy = (field: SortField, isReversed: boolean) => {
-    setSort({ field, isReversed })
+  // No field: back to the queued order.
+  const sortBy = (field: SortField | undefined, isReversed: boolean) => {
+    setSort(field ? { field, isReversed } : { isReversed: false })
     const seq = ++sortSeq.current
     act(() =>
       inTurn(async () => {
         if (seq !== sortSeq.current) return
+        if (!field) {
+          setSel(undefined)
+          return unsortQueue(h)
+        }
         const queue = await h.vars.read('queue')
         const sortRows = queue.items.map((item, i) => {
           const path = queue.paths[i] ?? ''
@@ -111,7 +116,7 @@ export function usePlaylist(h: Host, config: TuiConfig, view: View, book: TagBoo
         const unread = field === 'title' || field === 'folder' ? 0 : sortRows.filter(r => r.path.startsWith('/') && !r.tags).length
         // the cursor follows the playing song again, not a place now holding another
         setSel(undefined)
-        const reply = await reorderQueue(h, sortOrder(sortRows, field, isReversed))
+        const reply = await sortQueue(h, field, isReversed, sortOrder(sortRows, field, isReversed))
         return reply || (unread ? `Sorted; ${unread} songs' tags weren't read yet, so they went last.` : '')
       }),
     )
@@ -147,10 +152,7 @@ export function usePlaylist(h: Host, config: TuiConfig, view: View, book: TagBoo
       setTop(undefined)
       setSort({ isReversed: false })
       act(() =>
-        inTurn(async () => {
-          await stopPlaying(h, config)
-          return 'Cleared the playlist. l brings it back.'
-        }),
+        inTurn(() => clearQueue(h, config)),
       )
     },
     sortNext: () => isEditable() && sortBy(nextSortField(sortRef.current.field), false),
