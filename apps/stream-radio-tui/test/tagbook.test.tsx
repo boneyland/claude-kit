@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import React, { useEffect } from 'react'
 import { cleanup, render } from 'ink-testing-library'
-import type { Host } from '../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 import { useTagBook, type TagBook } from '../src/ui/tagbook'
 import type { TagReader } from '../src/media/tags'
 

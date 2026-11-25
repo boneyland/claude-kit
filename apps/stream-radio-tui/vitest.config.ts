@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { INK_OUTPUT, patchInkOutput } from './ink-width-fix.mjs'
 
@@ -10,6 +11,8 @@ const dropSourcemapUrl = (code: string) => code.replace(/\n\/\/# sourceMappingUR
 
 // Few workers and a per-test timeout: this machine freezes under memory pressure.
 export default defineConfig({
+  // as tsconfig.json's paths: the mod's core
+  resolve: { alias: { '@core': fileURLToPath(new URL('../../plugins/stream-radio/core', import.meta.url)) } },
   // See ink-width-fix.mjs: the tests draw with the same Ink the build ships.
   plugins: [
     {

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { Host } from '../../../../plugins/stream-radio/core/host'
-import { resolveTarget } from '../../../../plugins/stream-radio/core/nowplaying'
+import type { Host } from '@core/host'
+import { resolveTarget } from '@core/nowplaying'
 import { tilde, useRefState } from '../ui/hooks'
 import { NO_SELECTION, type Selection } from '../ui/selection'
 import type { TagBook } from '../ui/tagbook'
@@ -9,7 +9,7 @@ import { lastFolder, rememberFolder } from './remember'
 import { fileRows, parentOf, type FileRow, type FilesSort, type Listing } from './tree'
 import { listPlaylist, type Video } from '../media/youtube'
 import type { Tags } from '../media/tags'
-import type { QueueEntry } from '../../../../plugins/stream-radio/core/player'
+import type { QueueEntry } from '@core/player'
 
 export type Files = {
   root: string

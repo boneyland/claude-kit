@@ -1,4 +1,4 @@
-import type { Host } from '../../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 
 export type Video = { url: string; title: string; channel: string }
 export type PlaylistListing = { title: string; entries: Video[] } | { error: string }

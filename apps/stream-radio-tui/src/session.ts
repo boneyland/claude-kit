@@ -1,5 +1,5 @@
-import type { Host } from '../../../plugins/stream-radio/core/host'
-import { checkDefault, connect, detach, loadLast, loadRepeat, loadVolume, locate, start, stopPoller } from '../../../plugins/stream-radio/core/player'
+import type { Host } from '@core/host'
+import { checkDefault, connect, detach, loadLast, loadRepeat, loadVolume, locate, start, stopPoller } from '@core/player'
 import { DEFAULT_CONFIG, loadConfig, type TuiConfig } from './config'
 import { memoryStore, nodeHost } from './host-node'
 

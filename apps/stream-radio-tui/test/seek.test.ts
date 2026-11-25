@@ -2,7 +2,7 @@ import { afterEach, beforeAll, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { seek } from '../../../plugins/stream-radio/core/player'
+import { seek } from '@core/player'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
 

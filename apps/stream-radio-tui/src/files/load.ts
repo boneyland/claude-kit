@@ -1,5 +1,5 @@
-import type { Host } from '../../../../plugins/stream-radio/core/host'
-import { isPlayable } from '../../../../plugins/stream-radio/core/paths'
+import type { Host } from '@core/host'
+import { isPlayable } from '@core/paths'
 import type { FileEntry } from './tree'
 
 // How many files are stat'ed at once for their modification times.

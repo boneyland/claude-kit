@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box } from 'ink'
 import { Text } from './Text'
-import { textWidth } from '../../../../plugins/stream-radio/core/nowplaying'
+import { textWidth } from '@core/nowplaying'
 import { ICONS } from './Controls'
 import type { Tab } from './Tabs'
 

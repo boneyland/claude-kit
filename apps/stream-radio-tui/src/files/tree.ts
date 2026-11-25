@@ -1,4 +1,4 @@
-import { byName } from '../../../../plugins/stream-radio/core/paths'
+import { byName } from '@core/paths'
 import type { Tags } from '../media/tags'
 
 export type FileEntry = { path: string; name: string; kind: 'dir' | 'file'; mtimeMs: number }

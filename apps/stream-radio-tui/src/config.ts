@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
-import type { PlayerConfig } from '../../../plugins/stream-radio/core/player'
-import { clampVolume } from '../../../plugins/stream-radio/core/nowplaying'
+import type { PlayerConfig } from '@core/player'
+import { clampVolume } from '@core/nowplaying'
 
 // Pictures (art, a pixel waveform): asked of the terminal, or forced.
 export type GraphicsSetting = 'auto' | 'on' | 'off'

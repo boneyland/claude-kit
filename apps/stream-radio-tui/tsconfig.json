@@ -8,7 +8,9 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["node"]
+    "types": ["node"],
+    // the mod's core, which the TUI shares: esbuild and vitest.config.ts read this too
+    "paths": { "@core/*": ["../../plugins/stream-radio/core/*"] }
   },
   "include": ["src", "test", "vitest.config.ts", "../../plugins/stream-radio/core"],
   "exclude": ["../../plugins/stream-radio/core/**/*.test.ts", "node_modules"]

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { nodeHost, memoryStore } from '../src/host-node'
-import { splitEvents } from '../../../plugins/stream-radio/core/nowplaying'
+import { splitEvents } from '@core/nowplaying'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
 
 const events = { titleChanged: () => undefined, watching: () => undefined }

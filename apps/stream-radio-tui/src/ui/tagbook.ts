@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef } from 'react'
-import type { Host } from '../../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 import { tagReader, TAGS_KEPT, type TagReader, type Tags } from '../media/tags'
 
 // How many files are stat'ed at once for their modification times.

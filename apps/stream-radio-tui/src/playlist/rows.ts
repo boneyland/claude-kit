@@ -1,4 +1,4 @@
-import type { Queue } from '../../../../plugins/stream-radio/core/host'
+import type { Queue } from '@core/host'
 import type { Tags } from '../media/tags'
 import { tilde } from '../ui/hooks'
 

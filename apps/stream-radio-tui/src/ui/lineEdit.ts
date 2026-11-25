@@ -1,4 +1,4 @@
-import { textWidth } from '../../../../plugins/stream-radio/core/nowplaying'
+import { textWidth } from '@core/nowplaying'
 
 // A line of text being edited, and where the cursor is in it: a UTF-16 index,
 // always between two graphemes (a letter and its combining marks move as one).

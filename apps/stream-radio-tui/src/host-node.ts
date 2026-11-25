@@ -1,9 +1,9 @@
 import net from 'node:net'
 import fs from 'node:fs/promises'
 import { execFile } from 'node:child_process'
-import type { Host, PlayerKeys, StateStore, WatchStream } from '../../../plugins/stream-radio/core/host'
-import { NO_QUEUE, NO_RESUME } from '../../../plugins/stream-radio/core/player'
-import { stateDir } from '../../../plugins/stream-radio/core/paths'
+import type { Host, PlayerKeys, StateStore, WatchStream } from '@core/host'
+import { NO_QUEUE, NO_RESUME } from '@core/player'
+import { stateDir } from '@core/paths'
 
 const CONNECT_MS = 2000
 const OVERALL_MS = 3000

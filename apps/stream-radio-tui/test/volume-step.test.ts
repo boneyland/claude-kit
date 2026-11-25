@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { parseArgs, stepVolume } from '../../../plugins/stream-radio/core/nowplaying'
+import { parseArgs, stepVolume } from '@core/nowplaying'
 
 // mpv's volume is cubic: loudness in dB is 60·log10(volume / 100).
 const db = (v: number) => 60 * Math.log10(v / 100)

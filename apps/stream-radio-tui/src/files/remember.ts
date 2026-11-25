@@ -1,4 +1,4 @@
-import type { Host } from '../../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 
 // The TUI's own file beside the player's: the last folder browsed in Files.
 const fileOf = async (h: Host) => {

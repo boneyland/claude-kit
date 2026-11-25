@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest'
 import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
-import type { Host, PlayerKeys } from '../../../plugins/stream-radio/core/host'
-import * as player from '../../../plugins/stream-radio/core/player'
-import { moveBy, moveTo } from '../../../plugins/stream-radio/core/queue'
+import type { Host, PlayerKeys } from '@core/host'
+import * as player from '@core/player'
+import { moveBy, moveTo } from '@core/queue'
 import { DEFAULT_CONFIG } from '../src/config'
 import { memoryStore } from '../src/host-node'
 import type { Session } from '../src/session'
@@ -25,8 +25,8 @@ const { defaultMpv } = vi.hoisted(() => ({
 
 // The actions that would talk to mpv are spies; everything else in the core
 // (the rows, the times) is the real thing.
-vi.mock('../../../plugins/stream-radio/core/player', async original => {
-  const real = await original<typeof import('../../../plugins/stream-radio/core/player')>()
+vi.mock('@core/player', async original => {
+  const real = await original<typeof import('@core/player')>()
   return {
     ...real,
     togglePause: vi.fn(async () => true),

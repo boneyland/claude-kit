@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import type { Host } from '../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 import { listPlaylist } from '../src/media/youtube'
 
 const hostRunning = (result: { exitCode: number; stdout: string; stderr: string }) => {

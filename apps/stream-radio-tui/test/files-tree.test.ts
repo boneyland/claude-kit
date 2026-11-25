@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { Host } from '../../../plugins/stream-radio/core/host'
+import type { Host } from '@core/host'
 import { fileRows, type FileEntry, type Listing } from '../src/files/tree'
 import { loadFolder } from '../src/files/load'
 import { lastFolder, rememberFolder } from '../src/files/remember'

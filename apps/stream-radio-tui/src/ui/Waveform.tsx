@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo } from 'react'
 import { Box } from 'ink'
 import { RawText, Text } from './Text'
-import { formatTime } from '../../../../plugins/stream-radio/core/nowplaying'
+import { formatTime } from '@core/nowplaying'
 import { placeholderRow, WAVE_IDS } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
 import { brailleWave, waveRgba, type BrailleCell } from '../gfx/wave'

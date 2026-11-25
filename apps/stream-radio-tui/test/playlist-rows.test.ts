@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { Queue } from '../../../plugins/stream-radio/core/host'
+import type { Queue } from '@core/host'
 import { filterFlat, flatRows } from '../src/playlist/rows'
 import type { Tags } from '../src/media/tags'
 
