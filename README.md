@@ -93,7 +93,15 @@ An app, not a plugin: neither the marketplace nor `--plugin-dir` installs it. Fr
 curl -fsSL https://raw.githubusercontent.com/boneyland/claude-kit/main/apps/stream-radio-tui/install.sh | sh
 ```
 
-It downloads the latest build to `~/.local/bin/stream-radio-tui` (set `PREFIX` for another folder), checks it against the release's SHA-256, and says whether that folder is on your `PATH`. It needs `node` 22 or newer, `mpv` and `curl`; YouTube also needs `yt-dlp`. It works with or without Claude Code, and with the stream-radio mod installed both drive the same mpv. See [its README](apps/stream-radio-tui/README.md) for the keys and options.
+It downloads the latest build to `~/.local/bin/stream-radio-tui`, checks it against the release's SHA-256, and says whether that folder is on your `PATH`. It needs `node` 22 or newer, `mpv` and `curl`; YouTube also needs `yt-dlp`. It works with or without Claude Code, and with the stream-radio mod installed both drive the same mpv. See [its README](apps/stream-radio-tui/README.md) for the keys and options.
+
+To put it in another folder, set `STREAM_RADIO_TUI_DIR` to that folder, in front of `sh` (the program that reads it), not `curl`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/boneyland/claude-kit/main/apps/stream-radio-tui/install.sh | STREAM_RADIO_TUI_DIR=~/bin sh
+```
+
+That installs `~/bin/stream-radio-tui`: the variable names the folder itself, and nothing adds `/bin` to it.
 
 ## Update
 

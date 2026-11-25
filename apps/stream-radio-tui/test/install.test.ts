@@ -86,7 +86,7 @@ describe('install.sh', () => {
   it('installs an executable that runs, and says whether the folder is on PATH', async () => {
     const prefix = path.join(tmp, 'ok-bin')
     const bin = pathWith('ok-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url })
     expect(r.out).toContain(prefix)
     expect(r.code).toBe(0)
     const target = path.join(prefix, 'stream-radio-tui')
@@ -102,13 +102,24 @@ describe('install.sh', () => {
     expect(r.out).not.toContain('Removed')
   })
 
+  it('ignores PREFIX, which some systems set for other things', async () => {
+    const elsewhere = path.join(tmp, 'prefix-ignored')
+    const home = path.join(tmp, 'prefix-home')
+    fs.mkdirSync(home)
+    const bin = pathWith('prefix-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
+    const r = await run({ PATH: bin, HOME: home, PREFIX: elsewhere, STREAM_RADIO_TUI_URL: url })
+    expect(r.code).toBe(0)
+    expect(fs.existsSync(elsewhere)).toBe(false)
+    expect(fs.existsSync(path.join(home, '.local/bin/stream-radio-tui'))).toBe(true)
+  })
+
   it('names the version it removes and the one it installs', async () => {
     const prefix = path.join(tmp, 'old-bin')
     fs.mkdirSync(prefix)
     // a build from before the date+hash versions
     fs.writeFileSync(path.join(prefix, 'stream-radio-tui'), "console.log('stream-radio-tui 0.1.0 (abc1234)')\n", { mode: 0o755 })
     const bin = pathWith('old-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url })
     expect(r.code).toBe(0)
     expect(r.out).toContain('Removed stream-radio-tui 0.1.0 (abc1234)\n')
     expect(r.out).toMatch(/Installed stream-radio-tui \d{4}\.\d{2}\.\d{2}\+[0-9a-f]{7,} at /)
@@ -117,7 +128,7 @@ describe('install.sh', () => {
   it('says so when the version it installs is the one already there', async () => {
     const prefix = path.join(tmp, 'same-bin')
     const bin = pathWith('same-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
-    const env = { PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url }
+    const env = { PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url }
     await run(env)
     const r = await run(env)
     expect(r.code).toBe(0)
@@ -130,7 +141,7 @@ describe('install.sh', () => {
     fs.mkdirSync(prefix)
     fs.writeFileSync(path.join(prefix, 'stream-radio-tui'), 'this is not javascript', { mode: 0o755 })
     const bin = pathWith('broken-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url })
     expect(r.code).toBe(0)
     expect(r.out).toContain('Removed stream-radio-tui (version unknown)')
     expect(r.out).toMatch(/Installed stream-radio-tui \d{4}\./)
@@ -139,7 +150,7 @@ describe('install.sh', () => {
   it('exits 1 naming mpv when it is missing', async () => {
     const prefix = path.join(tmp, 'nompv-bin')
     const bin = pathWith('nompv-path', NEEDED)
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url })
     expect(r.code).toBe(1)
     expect(r.out).toContain('mpv')
     expect(fs.existsSync(path.join(prefix, 'stream-radio-tui'))).toBe(false)
@@ -151,7 +162,7 @@ describe('install.sh', () => {
     const good = checksum
     checksum = '0'.repeat(64)
     try {
-      const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
+      const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
       expect(r.code).not.toBe(0)
       expect(r.out).toContain('the download does not match its checksum; nothing was installed.')
       expect(r.out).toContain('(3 of 3)')
@@ -164,7 +175,7 @@ describe('install.sh', () => {
   it('leaves nothing behind when the download fails', async () => {
     const prefix = path.join(tmp, 'fail-bin')
     const bin = pathWith('fail-path', NEEDED, ['mpv'])
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url + '.missing', ...NOW })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url + '.missing', ...NOW })
     expect(r.code).not.toBe(0)
     expect(r.out).toContain(`could not download ${url}.missing; nothing was installed.`)
     expect(fs.existsSync(prefix) ? fs.readdirSync(prefix) : []).toEqual([])
@@ -175,7 +186,7 @@ describe('install.sh', () => {
     const bin = pathWith('nosum-path', NEEDED, ['mpv'])
     sumMisses = 99
     try {
-      const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
+      const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
       expect(r.code).not.toBe(0)
       expect(r.out).toContain(`could not download its checksum, ${url}.sha256; nothing was installed.`)
       expect(r.out).not.toContain('does not match')
@@ -190,7 +201,7 @@ describe('install.sh', () => {
     const bin = pathWith('retry-path', NEEDED, ['mpv'])
     sumMisses = 1
     sumAsks = 0
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
     expect(r.code).toBe(0)
     expect(sumAsks).toBe(2)
     expect(r.out).toContain('Trying again in 0 s (2 of 3)')

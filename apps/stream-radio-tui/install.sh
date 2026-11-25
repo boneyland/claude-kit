@@ -1,10 +1,11 @@
 #!/bin/sh
 # Installs stream-radio-tui: downloads the built file and puts it in
-# ${PREFIX:-$HOME/.local/bin}. Run it again to update.
+# ${STREAM_RADIO_TUI_DIR:-$HOME/.local/bin}. Run it again to update.
+# The folder is named in full: nothing adds /bin to it.
 set -eu
 
 URL="${STREAM_RADIO_TUI_URL:-https://github.com/boneyland/claude-kit/releases/download/stream-radio-tui-rolling/stream-radio-tui.mjs}"
-DEST="${PREFIX:-$HOME/.local/bin}"
+DEST="${STREAM_RADIO_TUI_DIR:-$HOME/.local/bin}"
 
 missing=""
 if command -v node >/dev/null 2>&1; then
