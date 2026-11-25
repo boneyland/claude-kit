@@ -640,7 +640,7 @@ async function notePlace(h: Host) {
 export async function recordPosition(h: Host, pos: number) {
   const url = await h.vars.read('lastUrl')
   const title = (await h.vars.read('chapter')) || (await h.vars.read('playing'))
-  if (pending || !url || !title || title === 'connecting…') return
+  if (pending || !url || !title || title === 'connecting…' || title === LOADING) return
   const q = await h.vars.read('queue')
   const index = q.kind === 'playlist' ? q.current : -1
   const path = q.kind === 'playlist' ? q.paths[index] : undefined
@@ -657,7 +657,10 @@ export async function recordPosition(h: Host, pos: number) {
 // starts it again.
 export async function onGone(h: Host, config: PlayerConfig, id: string) {
   const was = seen
-  await savePlace(h, true)
+  // Replaced by another start (another session's): the place is that start's
+  // queue's now, and this session's is of the player that went.
+  const before = await readIntent(h)
+  if (!before || before.id === id) await savePlace(h, true)
   await goIdle(h)
   await refreshFromStored(h)
   startPoller(h, config)
@@ -761,7 +764,11 @@ export async function reconnect(h: Host, config: PlayerConfig, intent: Intent, e
   }
   // from the queue at its place, as it is now
   const q = await readStored(h)
-  if (!q.entries.length) return releaseLock(h)
+  if (!q.entries.length) {
+    // emptied while it waited: nothing to start, and nothing to wait for
+    await h.vars.change('playing', () => '')
+    return releaseLock(h)
+  }
   launch(h, config, q, placeIn(q, await readPlace(h)), intent.client, tries + 1)
 }
 
@@ -911,30 +918,57 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
   })
 }
 
+// What the footer shows while what was asked is expanded (yt-dlp, curl), as
+// `connecting…` while mpv starts.
+export const LOADING = 'loading…'
+// What it showed before, to show again when the expansion comes to nothing.
+let beforeLoading = ''
+
 // Plays `source` (a URL, a file, a folder, a playlist file or a YouTube
-// playlist): expanded to its songs, they replace the queue, and the first plays.
-// Resolves once the queue is written, to what to show about the expansion
-// (a cap it hit) or ''; the player starts in the background.
+// playlist): expanded to its songs, they replace the queue, and the first plays
+// (a video link's own video, in its playlist). Resolves once the queue is
+// written, to what to show about the expansion (a cap it hit) or ''; the player
+// starts in the background. A hook does not wait on it: the expansion may run
+// yt-dlp or curl.
 export async function playSource(h: Host, config: PlayerConfig, source: string): Promise<string> {
-  // a newer play or a stop while it expands wins
+  // a newer play or a stop while it expands wins, and shows its own state
   const mine = ++asked
-  const { entries, root, note } = await expandSource(h, source)
-  if (mine !== asked) return note
-  if (!entries.length) return note || `Nothing to play in ${source}.`
-  return (await playNew(h, config, entries, source, root, mine)) || note
+  const now = await h.vars.read('playing')
+  if (now !== LOADING) beforeLoading = now
+  await h.vars.change('playing', () => LOADING)
+  // nothing started: what showed before shows again
+  const unload = async () => {
+    if (mine === asked) await h.vars.change('playing', p => (p === LOADING ? beforeLoading : p))
+  }
+  try {
+    const { entries, root, note, start } = await expandSource(h, source)
+    if (mine !== asked) return note
+    if (!entries.length) {
+      await unload()
+      return note || `Nothing to play in ${source}.`
+    }
+    const said = await playNew(h, config, entries, source, root, mine, start)
+    if (said) await unload()
+    return said || note
+  } catch (error) {
+    await unload()
+    throw error
+  }
 }
 
-// `entries` replace the queue and the first plays; '' when started, else what
-// to show. `mine`: what was asked that it answers; dropped once something
-// newer was asked.
-async function playNew(h: Host, config: PlayerConfig, entries: QueueEntry[], source: string, root: string, mine = asked): Promise<string> {
+// `entries` replace the queue and entry `start` plays; '' when started (or
+// overtaken), else what to show. `mine`: what was asked that it answers;
+// dropped once something newer was asked.
+async function playNew(h: Host, config: PlayerConfig, entries: QueueEntry[], source: string, root: string, mine = asked, start = 0): Promise<string> {
   const q = await updateStored(h, q => replaceWith(q, entries, source, root))
-  if (q === 'busy') return 'The queue is busy; try again.'
+  if (q === 'busy') return BUSY
   if (mine !== asked) return ''
-  await writePlace(h, { rev: q.rev, current: played(q)[0]!.id, seconds: 0 }).catch(() => undefined)
+  const shown = played(q)
+  const index = shown[start] ? start : 0
+  await writePlace(h, { rev: q.rev, current: shown[index]!.id, seconds: 0 }).catch(() => undefined)
   // launched first: it lets go of the player followed, whose list then gives
   // way to the new one
-  launch(h, config, q, { index: 0, seconds: 0 })
+  launch(h, config, q, { index, seconds: 0 })
   await refreshFromStored(h)
   return ''
 }
@@ -963,17 +997,42 @@ export async function playAt(h: Host, config: PlayerConfig, shownIndex: number):
 // Plays entry `index` of the queue, unpaused.
 export const pick = playAt
 
-// Starts the queue where it got to: its place's entry, sought to its seconds.
-// An empty queue brings back the one last cleared, else plays `fallback` (the
-// default stream). '' when started, else what to show.
-export async function resumeQueue(h: Host, config: PlayerConfig, fallback: string): Promise<string> {
+// Starts the queue where it got to: its place's entry, sought to its seconds
+// (`l`, `/stream last`, the panel's Resume). An empty queue brings back the one
+// last cleared, else plays `fallback` (the default stream). '' when started,
+// else what to show. `later`: given, a fallback that has to be expanded is not
+// waited on (a hook must not wait on yt-dlp or curl): it is handed what the
+// play resolves to, and this says `Starting <fallback>.`.
+export function resumeQueue(h: Host, config: PlayerConfig, fallback: string, later?: Later): Promise<string> {
+  return startQueue(h, config, fallback, true, later)
+}
+
+// Plays the queue from the start of its place's entry: Play after Stop (the
+// footer's ▶, the app's play button and space) starts the song from 0:00,
+// while `l` resumes it. Empty, as resumeQueue.
+export function playQueue(h: Host, config: PlayerConfig, fallback: string, later?: Later): Promise<string> {
+  return startQueue(h, config, fallback, false, later)
+}
+
+// What a play not waited on resolves to, for the caller to show.
+export type Later = (work: Promise<string>) => void
+
+async function startQueue(h: Host, config: PlayerConfig, fallback: string, isResume: boolean, later?: Later): Promise<string> {
   await migrating?.catch(() => undefined)
   let q = await readStored(h)
   if (!q.entries.length) {
-    if (!(await restorePrev(h))) return fallback ? playSource(h, config, fallback) : 'Nothing has played yet, and there is no default stream.'
+    const back = await restorePrev(h)
+    if (back === 'busy') return BUSY
+    if (!back) {
+      if (!fallback) return 'Nothing has played yet, and there is no default stream.'
+      if (!later) return playSource(h, config, fallback)
+      later(playSource(h, config, fallback))
+      return `Starting ${fallback}.`
+    }
     q = await readStored(h)
   }
-  launch(h, config, q, placeIn(q, await readPlace(h)))
+  const at = placeIn(q, await readPlace(h))
+  launch(h, config, q, isResume ? at : { index: at.index, seconds: 0 })
   await refreshFromStored(h)
   return ''
 }

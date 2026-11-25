@@ -50,6 +50,9 @@ export type FakeOptions = {
   refuses?: (argv: string[]) => string | undefined
   // what state.json holds at the start, as an earlier session saved it
   saved?: Record<string, unknown>
+  // answers a program run first (yt-dlp, curl), when it returns something:
+  // a promise the test settles, for a listing that takes long
+  run?: (argv: string[]) => Promise<{ exitCode: number; stdout: string }> | undefined
 }
 
 export function fakeMpv(on: On, options: FakeOptions = {}) {
@@ -179,6 +182,8 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
   on('ui.log', (_$, e) => (world.logs.push(e.text), { value: undefined }) as never)
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
+    const own = options.run?.(argv)
+    if (own) return own.then(r => ({ value: { ...r, stderr: '' } })) as never
     if (argv[0] === 'python3') {
       if (!world.isRunning || argv[3] !== SOCK) return fail()
       const c = JSON.parse(argv[4]!) as unknown[]

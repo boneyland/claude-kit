@@ -83,7 +83,7 @@ test('an unreadable playlist file says so', async () => {
 test('a remote pls is fetched with limits', async () => {
   const { h, runs } = hostOf({ curl: '[playlist]\nFile1=http://s.example/live\nTitle1=Live\n' })
   const r = await expandSource(h, 'http://x.example/a/r.pls')
-  expect(runs[0].slice(0, 6)).toEqual(['curl', '-fsSL', '--max-filesize', '1048576', '--max-time', '10'])
+  expect(runs[0]).toEqual(['curl', '-fsSL', '--max-filesize', '1048576', '--max-time', '10', '--proto', '=http,https', '--proto-redir', '=http,https', 'http://x.example/a/r.pls'])
   expect(r.entries).toEqual([{ path: 'http://s.example/live', title: 'Live' }])
 })
 
@@ -148,4 +148,24 @@ test('a remote playlist that cannot be fetched is added as one entry with a note
   const r = await expandSource(h, 'http://x.example/r.m3u')
   expect(r.entries).toEqual([{ path: 'http://x.example/r.m3u' }])
   expect(r.note).toContain('http://x.example/r.m3u')
+})
+
+test('a remote playlist never names a local file', async () => {
+  const { h } = hostOf({
+    curl: '[playlist]\nFile1=file:///etc/passwd\nFile2=/home/x.mp3\nFile3=http://s.example/live\nFile4=songs/a.mp3\nFile5=file:///m/list.m3u\nFile6=mms://r.example/old\n',
+    files: { '/m/list.m3u': '/home/y.mp3\n' },
+  })
+  const paths = (await expandSource(h, 'http://x.example/a/r.pls')).entries.map(e => e.path)
+  expect(paths).toEqual(['http://s.example/live', 'http://x.example/a/songs/a.mp3', 'mms://r.example/old'])
+})
+
+test('a YouTube link to a video in a playlist starts at that video', async () => {
+  const videos = ['a', 'b', 'c'].map(v => ({ url: `https://www.youtube.com/watch?v=${v}`, title: v.toUpperCase() }))
+  const { h } = hostOf({ ytdlp: JSON.stringify({ title: 'Mix', entries: videos }) })
+  const at = async (url: string) => (await expandSource(h, url)).start
+  expect(await at('https://www.youtube.com/watch?v=b&list=PL1')).toBe(1)
+  expect(await at('https://youtu.be/c?list=PL1')).toBe(2)
+  expect(await at('https://www.youtube.com/playlist?list=PL1')).toBe(0)
+  expect(await at('https://www.youtube.com/watch?v=gone&list=PL1')).toBe(0)
+  expect(await at('/m/x.mp3')).toBe(0)
 })

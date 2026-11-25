@@ -134,11 +134,11 @@ export async function backUpAndEmpty(h: Host): Promise<'busy' | void> {
 }
 
 // Brings the cleared queue back (rev + 1 over the empty one); false when there
-// is no backup.
-export async function restorePrev(h: Host): Promise<boolean> {
+// is no backup, 'busy' when the lock could not be had (nothing changed).
+export async function restorePrev(h: Host): Promise<boolean | 'busy'> {
   const p = await paths(h)
   const prev = await h.fs.read(p.prev).then(parseStored, () => EMPTY_QUEUE)
   if (prev.entries.length === 0) return false
   const done = await updateStored(h, q => ({ ...prev, rev: q.rev + 1 }))
-  return done !== 'busy'
+  return done === 'busy' ? 'busy' : true
 }

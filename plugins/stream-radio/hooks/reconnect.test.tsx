@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv } from './fake-mpv'
+import { fakeMpv, INTENT, PLACE, QUEUE_JSON } from './fake-mpv'
 
 const URL = 'https://example.com/live'
 const FOOTER = { plugin: 'stream-radio', component: 'SessionMode', surface: 'terminal', props: { modes: [] } } as const
@@ -99,4 +99,37 @@ test('stopping while it waits, or a playlist finishing with repeat off, does not
   await clock.advance(20_000)
   expect(world.launches.length).toBe(2)
   expect(await footer($)).toBe('▶ Play radio')
+})
+
+test('a drop after the queue was emptied does not leave reconnecting… up', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on, clock)
+  await $.session.start(start)
+  await $.command.run({ command: 'stream', args: URL } as never)
+  await clock.advance(10)
+  // another program empties the queue (its player would follow; this one drops)
+  const q = JSON.parse(world.files[QUEUE_JSON]!)
+  world.files[QUEUE_JSON] = JSON.stringify({ ...q, rev: q.rev + 1, entries: [] })
+  world.end()
+  await clock.advance(10)
+  expect(await footer($)).toBe('♪ reconnecting in 2 s…')
+  await clock.advance(2010)
+  expect(world.launches.length).toBe(1)
+  expect((await footer($)) ?? '').not.toContain('reconnecting')
+})
+
+test("a player another session replaced leaves that session's place alone", async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on, clock)
+  await $.session.start(start)
+  await $.command.run({ command: 'stream', args: URL } as never)
+  await clock.advance(10)
+  // another session starts something new: its intent first, its queue's place,
+  // then it ends the old player
+  world.files[INTENT] = JSON.stringify({ id: 'other', url: 'https://example.com/new', client: '', isStopped: false, attempt: 0, playedAt: 0 })
+  const theirs = JSON.stringify({ rev: 9, current: '9.0', seconds: 0 })
+  world.files[PLACE] = theirs
+  world.end('quit')
+  await clock.advance(10)
+  expect(world.files[PLACE]).toBe(theirs)
 })

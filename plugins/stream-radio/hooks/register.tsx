@@ -30,6 +30,7 @@ import {
   loadVolume,
   locate,
   pick,
+  playQueue,
   playSource,
   refreshFromStored,
   releaseLock,
@@ -200,12 +201,13 @@ async function seekBy($: EngineInterface, config: Config, seconds: number, isRel
   return seek(hostFor($, config), seconds, isRelative)
 }
 
-// The footer's ▶: the queue where it got to, else the default stream. A button
-// has no reply line, so what it says is a toast.
-async function playQueue($: EngineInterface, config: Config, defaultUrl: string) {
+// The footer's ▶: the queue from the start of its place's song (Play after
+// Stop starts it from 0:00; `l` resumes), else the default stream. A button has
+// no reply line, so what it says is a toast. Not waited on by the press.
+async function playButton($: EngineInterface, config: Config, defaultUrl: string) {
   const h = hostFor($, config)
   try {
-    const said = await resumeQueue(h, config, defaultUrl)
+    const said = await playQueue(h, config, defaultUrl)
     if (said) h.toast(said)
   } catch (error) {
     h.toast(`stream-radio failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -318,8 +320,10 @@ export const register: Register = (on, options) => {
       }
 
       if (parsed.kind === 'last') {
-        // The queue where it got to; the default stream before anything has played.
-        const said = await resumeQueue(hostFor($, config), config, defaultUrl)
+        // The queue where it got to; the default stream before anything has
+        // played, not waited on (it may be listed by yt-dlp): its note a toast.
+        const h = hostFor($, config)
+        const said = await resumeQueue(h, config, defaultUrl, work => void work.then(note => note && h.toast(note), () => undefined))
         if (said) return { text: said }
         const again = await read($, lastUrl)
         const where = resumable(await read($, resumeAt), again)
@@ -361,7 +365,7 @@ export const register: Register = (on, options) => {
             label={!title ? '▶' : paused ? '⏸' : '♪'}
             onPress={async () =>
               !title
-                ? void playQueue($, config, defaultUrl)
+                ? void playButton($, config, defaultUrl)
                 : config.toggleOnly
                   ? void togglePause(hostFor($, config))
                   : void togglePane($)
@@ -383,7 +387,7 @@ export const register: Register = (on, options) => {
           <Button
             key="stream-radio"
             label="▶ Play radio"
-            onPress={() => void playQueue($, config, defaultUrl)}
+            onPress={() => void playButton($, config, defaultUrl)}
           />
         </Box>
       )
@@ -446,8 +450,16 @@ export const register: Register = (on, options) => {
     }
     const at = title ? NO_RESUME : await read($, resumeAt)
     const resumeLabel = last && !title ? resumable(at, last) : ''
-    const play = (url: string) =>
-      act(() => playSource(hostFor($, config), config, url))
+    // A play not waited on (its expansion may run yt-dlp or curl, and a hook
+    // must not wait on that): what it says shows in the panel when it does.
+    const later = (work: Promise<string>) =>
+      void work
+        .then(
+          reply => reply && update($, notice, () => reply),
+          error => update($, notice, () => `stream-radio failed: ${error instanceof Error ? error.message : String(error)}`),
+        )
+        .catch(() => undefined)
+    const play = (url: string) => act(async () => (later(playSource(hostFor($, config), config, url)), ''))
     const state = [
       paused ? 'paused' : '',
       q.kind !== 'none' && q.current >= 0 ? `${q.current + 1} of ${q.items.length}` : '',
@@ -508,7 +520,7 @@ export const register: Register = (on, options) => {
                 label={resumeLabel ? `${cut(`▶ Resume ${resumeLabel}`, width - 4)} (l)` : 'Play last (l)'}
                 hotkey="l"
                 onPress={() =>
-                  act(() => resumeQueue(hostFor($, config), config, defaultUrl))
+                  act(() => resumeQueue(hostFor($, config), config, defaultUrl, later))
                 }
               />
             ) : null}
@@ -524,7 +536,7 @@ export const register: Register = (on, options) => {
           onSubmit={(value: string) => {
             return act(async () => {
               const parsed = await locate(hostFor($, config), value.trim(), '')
-              if (parsed.kind === 'play') return playSource(hostFor($, config), config, parsed.url)
+              if (parsed.kind === 'play') return (later(playSource(hostFor($, config), config, parsed.url)), '')
               return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
             })
           }}

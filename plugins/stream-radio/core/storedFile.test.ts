@@ -161,3 +161,13 @@ test('backUpAndEmpty says busy when the lock cannot be had', async () => {
   expect(await backUpAndEmpty(h)).toBe('busy')
   expect(files[`${D}/queue.json`]).toBe(before)
 })
+
+test('restorePrev says busy when the lock cannot be had', async () => {
+  const { h, files, clock, mtimes } = hostOf()
+  await updateStored(h, add('/a.mp3'))
+  await backUpAndEmpty(h)
+  files[LOCK] = 'held'
+  mtimes[LOCK] = clock.now
+  expect(await restorePrev(h)).toBe('busy')
+  expect((await readStored(h)).entries).toEqual([])
+})

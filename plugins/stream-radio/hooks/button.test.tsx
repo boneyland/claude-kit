@@ -123,7 +123,7 @@ test('on the desktop app the footer is an icon that opens the panel', async ($, 
   await clock.advance(10)
 })
 
-test('footer ▶ plays the queue, else the default', { options: { defaultUrl: 'https://example.com/default' } }, async ($, on) => {
+test('footer ▶ plays the queue from its song\'s start, else the default', { options: { defaultUrl: 'https://example.com/default' } }, async ($, on) => {
   const clock = mock.clock(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
@@ -154,10 +154,15 @@ test('footer ▶ plays the queue, else the default', { options: { defaultUrl: 'h
   })
   world.files[PLACE] = JSON.stringify({ rev: 5, current: '5.2', seconds: 80 })
   const before = world.launches.length
+  world.sent = []
   await press()
   expect(world.launches).toHaveLength(before + 1)
   expect(world.launches.at(-1)).toContain('--playlist-start=2')
   expect(world.urls.at(-1)).toBe('https://example.com/s2')
+  // Play after Stop starts the place's song from the beginning: no seek to 1:20
+  await clock.advance(10)
+  expect(world.sent.some(c => c[0] === 'seek')).toBe(false)
+  expect(JSON.parse(world.files[PLACE]!)).toMatchObject({ current: '5.2', seconds: 0 })
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(1000)
 })
