@@ -241,3 +241,23 @@ test('changing repeat never passes through a third mode on the way', async () =>
     }
   }
 })
+
+test("this session's repeat change shows the new mode throughout, not what mpv tells halfway", async () => {
+  const h = await loaded({ playlist: TWO, 'chapter-list': [] })
+  fake!.push(
+    { event: 'property-change', name: 'loop-file', data: 'inf' },
+    { event: 'property-change', name: 'loop-playlist', data: 'inf' },
+  )
+  await until(async () => (await h.vars.read('repeat')) === 'one')
+  await setRepeat(h, 'off')
+  // halfway: loop-playlist off, loop-file still on, which alone reads as one
+  fake!.push({ event: 'property-change', name: 'loop-playlist', data: 'no' })
+  await new Promise(r => setTimeout(r, 200))
+  expect(await h.vars.read('repeat')).toBe('off')
+  fake!.push({ event: 'property-change', name: 'loop-file', data: 'no' })
+  await new Promise(r => setTimeout(r, 200))
+  expect(await h.vars.read('repeat')).toBe('off')
+  // done: a change made elsewhere shows again
+  fake!.push({ event: 'property-change', name: 'loop-playlist', data: 'inf' })
+  await until(async () => (await h.vars.read('repeat')) === 'all')
+})
