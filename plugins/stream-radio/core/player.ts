@@ -21,6 +21,7 @@ import {
 import { listSongs, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
+import type { QueueEntry } from './stored'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
 
@@ -931,8 +932,8 @@ export async function markEdited(h: Host) {
 }
 
 // One thing to add to the queue: a file, a folder (its songs are added), or an
-// http(s) URL; title names a URL's entry.
-export type QueueEntry = { path: string; title?: string }
+// http(s) URL; title names a URL's entry. Defined with the stored queue.
+export type { QueueEntry }
 
 // A folder becomes its songs; a file or URL stays as it is.
 async function expand(h: Host, entries: readonly QueueEntry[]): Promise<QueueEntry[]> {
