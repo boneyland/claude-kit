@@ -17,7 +17,12 @@ const apc = (control: string, payload = '') => `\x1b_G${control}${payload ? `;${
 
 // `rgba` (width × height × 4 bytes), compressed and sent as image `id`.
 export function transmitRgba(id: number, width: number, height: number, rgba: Uint8Array): string {
-  const data = deflateSync(rgba).toString('base64')
+  return transmitDeflated(id, width, height, deflateSync(rgba))
+}
+
+// The same, from pixels already deflated (as screen.ts does off the main thread).
+export function transmitDeflated(id: number, width: number, height: number, deflated: Uint8Array): string {
+  const data = Buffer.from(deflated.buffer, deflated.byteOffset, deflated.byteLength).toString('base64')
   const chunks: string[] = []
   for (let i = 0; i < data.length; i += CHUNK) chunks.push(data.slice(i, i + CHUNK))
   if (chunks.length === 0) chunks.push('')

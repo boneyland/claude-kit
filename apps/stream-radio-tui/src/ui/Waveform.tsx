@@ -77,7 +77,7 @@ function Pixels({ wave, share, width, graphics, times, onClick }: PixelsProps) {
     const [w, h] = [drawn * cell.width, WAVE_ROWS * cell.height]
     return cutRows({ width: w, height: h, rgba: waveRgba(wave, w, h, playedPx) }, WAVE_ROWS)
   }, [wave, drawn, cell, playedPx])
-  useEffect(() => graphics.show(WAVE_IDS.first, strips, drawn), [graphics, strips, drawn])
+  useEffect(() => void graphics.show(WAVE_IDS.first, strips, drawn), [graphics, strips, drawn])
   useEffect(() => () => graphics.drop(WAVE_IDS.first, 0), [graphics])
   return (
     <Box flexDirection="column" width={width}>

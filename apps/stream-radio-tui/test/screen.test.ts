@@ -12,27 +12,27 @@ const capture = () => {
 const count = (text: string, part: string) => text.split(part).length - 1
 
 describe('kittyGraphics', () => {
-  test('each strip is sent and placed as one row', () => {
+  test('each strip is sent and placed as one row', async () => {
     const c = capture()
     const g = kittyGraphics(c.write, { width: 8, height: 16 })
-    g.show(1, [strip(), strip(), strip()], 20)
+    await g.show(1, [strip(), strip(), strip()], 20)
     for (const id of [1, 2, 3]) expect(c.text()).toContain(placeVirtual(id, 20, 1))
     expect(count(c.text(), 'a=t,')).toBe(3)
   })
-  test('fewer strips than last time deletes the rows no longer used', () => {
+  test('fewer strips than last time deletes the rows no longer used', async () => {
     const c = capture()
     const g = kittyGraphics(c.write, { width: 8, height: 16 })
-    g.show(1, [strip(), strip(), strip()], 20)
+    await g.show(1, [strip(), strip(), strip()], 20)
     c.out.length = 0
-    g.show(1, [strip(), strip()], 20)
+    await g.show(1, [strip(), strip()], 20)
     expect(c.text()).toContain(deleteImage(3))
     expect(c.text()).not.toContain(deleteImage(1))
   })
-  test('dropAll deletes every live image once', () => {
+  test('dropAll deletes every live image once', async () => {
     const c = capture()
     const g = kittyGraphics(c.write, { width: 8, height: 16 })
-    g.show(1, [strip(), strip()], 20)
-    g.show(201, [strip()], 20)
+    await g.show(1, [strip(), strip()], 20)
+    await g.show(201, [strip()], 20)
     g.drop(201, 1)
     c.out.length = 0
     g.dropAll()
@@ -41,13 +41,33 @@ describe('kittyGraphics', () => {
     g.dropAll()
     expect(c.text()).toBe('')
   })
+  test('a show overtaken while it compresses is never written', async () => {
+    const c = capture()
+    const g = kittyGraphics(c.write, { width: 8, height: 16 })
+    const first = g.show(1, [strip(), strip(), strip()], 20)
+    const second = g.show(1, [strip()], 10)
+    await Promise.all([first, second])
+    expect(count(c.text(), 'a=t,')).toBe(1)
+    expect(c.text()).toContain(placeVirtual(1, 10, 1))
+    expect(c.text()).not.toContain(placeVirtual(1, 20, 1))
+  })
+  test('a drop, or leaving, while a show compresses leaves nothing behind', async () => {
+    const c = capture()
+    const g = kittyGraphics(c.write, { width: 8, height: 16 })
+    const dropped = g.show(1, [strip()], 20)
+    g.drop(1, 0)
+    const left = g.show(201, [strip()], 20)
+    g.dropAll()
+    await Promise.all([dropped, left])
+    expect(c.text()).not.toContain('a=t,')
+  })
 })
 
 describe('leaveScreen', () => {
-  test('the pictures go before the alternate screen does', () => {
+  test('the pictures go before the alternate screen does', async () => {
     const c = capture()
     const g = kittyGraphics(c.write, { width: 8, height: 16 })
-    g.show(1, [strip()], 20)
+    await g.show(1, [strip()], 20)
     c.out.length = 0
     leaveScreen(g, c.write)
     expect(c.text()).toBe(deleteImage(1) + MOUSE_OFF + '\x1b[?1049l')

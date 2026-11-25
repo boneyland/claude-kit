@@ -1,4 +1,8 @@
 import { spawn as nodeSpawn } from 'node:child_process'
+import os from 'node:os'
+
+// The nice level of the TUI's own mpvs (0 is the usual, 19 the lowest).
+const BACKGROUND_PRIORITY = 10
 
 export type Spawn = typeof nodeSpawn
 
@@ -23,6 +27,14 @@ export function runMpv(args: string[], opts: Options): Promise<{ code: number | 
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('mpv: aborted'))
     const child = spawn(player, ['--no-config', ...args], { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
+    // A waveform decodes as fast as a core allows: behind the player and the
+    // TUI, so neither stutters while it runs.
+    if (child.pid)
+      try {
+        os.setPriority(child.pid, BACKGROUND_PRIORITY)
+      } catch {
+        // gone already, or not allowed: it runs at the usual priority
+      }
     const kept: Buffer[] = []
     let size = 0
     let failure: Error | undefined

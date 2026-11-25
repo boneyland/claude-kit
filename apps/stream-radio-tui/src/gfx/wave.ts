@@ -59,7 +59,13 @@ export function waveRgba(wave: Wave, width: number, height: number, playedPx: nu
   const rms = resampleRms(wave.rms, width)
   const mid = height / 2
   const paint = (x: number, h: number, [r, g, b]: readonly number[]) => {
-    for (let y = Math.max(0, Math.floor(mid - h)); y < Math.min(height, Math.ceil(mid + h)); y++) rgba.set([r, g, b, 255], (y * width + x) * 4)
+    for (let y = Math.max(0, Math.floor(mid - h)); y < Math.min(height, Math.ceil(mid + h)); y++) {
+      const p = (y * width + x) * 4
+      rgba[p] = r
+      rgba[p + 1] = g
+      rgba[p + 2] = b
+      rgba[p + 3] = 255
+    }
   }
   for (let x = 0; x < width; x++) {
     const colors = x < playedPx ? WAVE_COLORS.played : WAVE_COLORS.unplayed

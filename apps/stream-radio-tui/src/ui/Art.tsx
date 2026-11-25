@@ -42,7 +42,7 @@ function Placeholder({ cols, rows, graphics }: { cols: number; rows: number; gra
 // bigger box than this one (the terminal shrinking, not yet settled), blank
 // rows in their place until the refit comes.
 function Strips({ strips, cols, width, rows, graphics }: { strips: ArtPixels[]; cols: number; width: number; rows: number; graphics: Graphics }) {
-  useEffect(() => graphics.show(ART_IDS.first, strips, cols), [graphics, strips, cols])
+  useEffect(() => void graphics.show(ART_IDS.first, strips, cols), [graphics, strips, cols])
   useEffect(() => () => graphics.drop(ART_IDS.first, 0), [graphics])
   if (cols > width || strips.length > rows) return <Box height={Math.min(strips.length, rows)} />
   return (
