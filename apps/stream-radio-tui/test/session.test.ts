@@ -5,6 +5,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
+import * as player from '@core/player'
+
+// playSource is the real one, watched: the test asks what session.ts handed it.
+vi.mock('@core/player', async original => {
+  const real = await original<typeof import('@core/player')>()
+  return { ...real, playSource: vi.fn(real.playSource) }
+})
 
 // The core keeps the data folder for the process, so one for the whole file.
 const state = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-session-'))
@@ -167,5 +174,16 @@ describe('openSession', () => {
     const watch = session.host.watch(sock, ['pause'])
     expect(await watch.next()).toEqual({ done: true, value: undefined })
     expect(fake.received).toEqual([])
+  })
+
+  test('an argument starts the queue with playSource, given that argument', async () => {
+    orphanSocket()
+    const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
+    vi.mocked(player.playSource).mockClear()
+    session = await openSession([music], { env, run: recorder() })
+    await until(() => vi.mocked(player.playSource).mock.calls.length > 0)
+    expect(player.playSource).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(player.playSource).mock.calls[0]![2]).toBe(music)
   })
 })

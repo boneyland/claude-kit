@@ -1255,8 +1255,15 @@ describe('playlist editing', () => {
     await vi.waitFor(() => expect(status(lines())).toContain('Stopped.'))
     expect(lines().join('\n')).toMatch(/Aa song[\s\S]*Bb song[\s\S]*Cc song[\s\S]*Dd song[\s\S]*Ee song/)
     expect(lines().join('\n')).toContain('Enter plays the picked song')
+    // the current row (Aa song, current: 0) keeps its mark while stopped
+    expect(lines()[lineOf(lines(), /Aa song/)]).toMatch(/▶\s+1\. Aa song/)
     await press('j', ENTER)
     expect(player.pick).toHaveBeenCalledWith(host, session.config, 1)
+  })
+
+  test('stopped with a saved place, now playing says l plays <song> at m:ss', async () => {
+    const { lines } = await show(100, { ...FIVE, playing: '', resumeAt: { url: ALBUM, index: 2, seconds: 83, title: 'Cc song' } })
+    expect(lines().join('\n')).toContain('l plays Cc song at 1:23')
   })
 
   test('a stopped playlist can still be edited', async () => {
