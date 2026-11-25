@@ -127,7 +127,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | Field | Default | |
 | --- | --- | --- |
 | `volume` | 60 | 0 to 100, where playback starts |
-| `player` | `mpv` | the mpv executable |
+| `player` | `mpv` | the mpv executable; it also decodes the art and waveforms |
 | `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md)) |
 | `defaultUrl` | empty | the URL shown at start when nothing else is known |
 | `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |

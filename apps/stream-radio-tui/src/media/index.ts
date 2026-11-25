@@ -11,13 +11,14 @@ export type Media = {
   isLocalFile(path: string): Promise<boolean>
 }
 
-export function nodeMedia(env: Record<string, string | undefined>): Media {
+// player: the mpv the config names, which decodes the art and waveforms too.
+export function nodeMedia(env: Record<string, string | undefined>, player: string): Media {
   const cache = cacheDir(env)
   // once a run, out of the way: the cache keeps under CACHE_MAX_BYTES
   void pruneCache(cache)
   return {
-    peaks: (file, signal) => decodePeaks(file, { signal, cache }),
-    art: (sources, signal) => loadArt(sources, { signal, cache }),
+    peaks: (file, signal) => decodePeaks(file, { signal, player, cache }),
+    art: (sources, signal) => loadArt(sources, { signal, player, cache }),
     sources: playing => artSources(playing),
     isLocalFile: async path => {
       try {

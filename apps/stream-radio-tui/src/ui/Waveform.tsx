@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { RawText, Text } from './Text'
 import { formatTime } from '../../../../plugins/stream-radio/core/nowplaying'
 import { placeholderRow, WAVE_IDS } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
@@ -83,7 +84,7 @@ function Pixels({ wave, share, width, graphics, times, onClick }: PixelsProps) {
       {times}
       <Clickable flexDirection="column" onClick={onClick}>
         {strips.map((_, i) => (
-          <Text key={i}>{drawn <= width ? placeholderRow(WAVE_IDS.first + i, drawn) : ' '}</Text>
+          <RawText key={i}>{drawn <= width ? placeholderRow(WAVE_IDS.first + i, drawn) : ' '}</RawText>
         ))}
       </Clickable>
     </Box>

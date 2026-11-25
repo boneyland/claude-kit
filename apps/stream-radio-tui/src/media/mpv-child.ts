@@ -9,6 +9,8 @@ type Options = {
   maxBytes: number
   // stdout passed on as it comes, not kept
   onData?: (chunk: Buffer) => void
+  // the mpv to run: the config's `player`
+  player?: string
   spawn?: Spawn
 }
 
@@ -17,10 +19,10 @@ type Options = {
 // it and its process group at once. The person's mpv config is skipped, so a
 // script or profile there can't change the output.
 export function runMpv(args: string[], opts: Options): Promise<{ code: number | null; stdout: Buffer }> {
-  const { signal, timeoutMs, maxBytes, onData, spawn = nodeSpawn } = opts
+  const { signal, timeoutMs, maxBytes, onData, player = 'mpv', spawn = nodeSpawn } = opts
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('mpv: aborted'))
-    const child = spawn('mpv', ['--no-config', ...args], { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
+    const child = spawn(player, ['--no-config', ...args], { stdio: ['ignore', 'pipe', 'ignore'], detached: true })
     const kept: Buffer[] = []
     let size = 0
     let failure: Error | undefined

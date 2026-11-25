@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
 import type { FlatRow } from '../playlist/rows'

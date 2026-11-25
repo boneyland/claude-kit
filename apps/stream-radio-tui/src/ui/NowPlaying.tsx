@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 import { formatTime } from '../../../../plugins/stream-radio/core/nowplaying'
 import { resumable } from '../../../../plugins/stream-radio/core/player'
 import type { View } from './hooks'

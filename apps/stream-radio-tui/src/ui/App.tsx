@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useApp, useInput } from 'ink'
+import { Box, useApp, useInput } from 'ink'
+import { Text } from './Text'
 import { nextRepeat, stepVolume } from '../../../../plugins/stream-radio/core/nowplaying'
 import { addToQueue, pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '../../../../plugins/stream-radio/core/player'
 import { moveBy, moveTo, type Moved } from '../../../../plugins/stream-radio/core/queue'
@@ -389,7 +390,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return exit()
       case 'type':
       case 'erase': {
-        const change = (t: string) => (a.kind === 'type' ? t + a.text : t.slice(0, -1))
+        // Backspace takes off a whole character: an emoji is two UTF-16 units
+        const change = (t: string) => (a.kind === 'type' ? t + a.text : edit({ text: t, at: t.length }, { kind: 'erase' }).text)
         return mode === 'filter' ? setFilter(change) : undefined
       }
       case 'lineEdit':

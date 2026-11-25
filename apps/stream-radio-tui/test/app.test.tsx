@@ -780,6 +780,34 @@ describe('files', () => {
     })
   })
 
+  test('G for a song its folder never lists leaves no jump waiting for later', async () => {
+    const song = '/h/Music/Album/03 Three.flac'
+    const playing: Partial<PlayerKeys> = {
+      ...PLAYING,
+      queue: { kind: 'playlist', items: ['Three'], paths: [song], root: '/h/Music/Album', current: 0 },
+    }
+    // the folder can't be read at first; read again later, it has the song
+    let isReadable = false
+    const fs = fsOf(TREE)
+    const list = async (p: string) => {
+      if (p !== '/h/Music/Album') return fs.list(p)
+      if (!isReadable) throw new Error('EACCES')
+      return [...TREE[p], { name: '03 Three.flac', kind: 'file' as const }]
+    }
+    const { lines, press, host, session } = await show(100, playing, '', '/h', { fs: { ...fs, list } })
+    await press('G')
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music/Album'))
+    await vi.waitFor(() => expect(lines().join('\n')).toContain("Can't read /h/Music/Album"))
+    isReadable = true
+    await press('U')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))
+    // the cursor on Album, which opens: the song shows, and the cursor stays
+    await press(...Array(1).fill('\x1b[B'), '\x1b[C')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('03 Three.flac'))
+    await press('a')
+    expect(player.addToQueue).toHaveBeenLastCalledWith(host, session.config, [{ path: '/h/Music/Album' }], 'end')
+  })
+
   test('G with nothing playing says so and stays', async () => {
     const { lines, press } = await showFiles()
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
@@ -1468,5 +1496,44 @@ describe('the key list', () => {
     expect(lines().join('\n')).not.toContain('Keys')
     await press(...Array(40).fill('k'))
     expect(lines().join('\n')).toContain('Keys')
+  })
+})
+
+describe('audit fixes', () => {
+  // OSC 52 sets the clipboard: a tag, a title or a file name could carry it.
+  const CLIPBOARD = '\x1b]52;c;cHduZWQ=\x07'
+
+  test('titles, tags and messages reach the screen without their escape sequences', async () => {
+    vi.mocked(player.mpv).mockImplementation(async (_h, command) =>
+      command[1] === 'metadata' ? { data: { ARTIST: `Band${CLIPBOARD}` } } : command[1] === 'duration' ? { data: 245 } : undefined,
+    )
+    const state: Partial<PlayerKeys> = {
+      ...PLAYING,
+      playing: `Song${CLIPBOARD}`,
+      queue: { ...(PLAYING.queue as PlayerKeys['queue']), items: [`Intro${CLIPBOARD}`, 'Song two', 'Song three', 'Other'] },
+    }
+    const { lines, say } = await show(100, state)
+    say(`yt-dlp: ERROR${CLIPBOARD}`)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Band]52;c;'))
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('yt-dlp: ERROR]52;c;'))
+    const all = lines().join('\n')
+    expect(all).toContain('Song]52;c;cHduZWQ=')
+    expect(all).toContain('Intro]52;c;')
+    expect(all).not.toContain('\x1b]')
+    expect(all).not.toContain('\x07')
+  })
+
+  test('Backspace in the filter takes off a whole emoji', async () => {
+    const { press, lines } = await show(100)
+    await press('/', 'a', '🎵', '\x7f')
+    expect(lines().join('\n')).toContain('/ filter: a_')
+  })
+
+  test('the hints say that o goes to a location, not that it plays', async () => {
+    const { press, lines } = await show(100)
+    await press('o')
+    const all = lines().join('\n')
+    expect(all).toContain('Enter goes there')
+    expect(all).not.toContain('Enter plays it')
   })
 })

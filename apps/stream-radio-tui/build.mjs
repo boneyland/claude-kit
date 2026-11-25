@@ -5,7 +5,15 @@ import { readFile } from 'node:fs/promises'
 import { INK_OUTPUT, patchInkOutput } from './ink-width-fix.mjs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
-const commit = process.env.GITHUB_SHA?.slice(0, 7) || execSync('git rev-parse --short HEAD').toString().trim()
+// The commit for --version; 'unknown' outside a git checkout (a source tarball).
+const gitCommit = () => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return 'unknown'
+  }
+}
+const commit = process.env.GITHUB_SHA?.slice(0, 7) || gitCommit()
 
 // Ink imports react-devtools-core only under DEV=true, from a module it loads
 // with a dynamic import; bundled into one file that import becomes a top-level

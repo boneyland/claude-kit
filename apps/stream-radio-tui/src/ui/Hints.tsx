@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 import type { Mode } from '../keys'
 import type { Tab } from './Tabs'
 
@@ -8,7 +9,7 @@ const FIRST = {
   list: ['space pause  n/p next/prev  u/d move  Del remove  S sort  / filter  +/- vol', 'space pause  n/p  u/d move  Del remove  S sort'],
   files: ['Enter open  a add  A play next  m menu  Shift-↑↓ pick  S sort  space pause', 'a add  A play next  m menu  S sort  space pause'],
   filter: ['type to narrow the list  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
-  open: ['type a URL or a file or folder path  Enter plays it  Esc cancels', 'type a URL or path  Enter plays  Esc cancels'],
+  open: ['type a folder path or a YouTube playlist URL  Enter goes there  Esc leaves it', 'type a folder or URL  Enter goes there  Esc leaves it'],
   help: ['↑/↓ or j/k scroll  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
   menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],
 }

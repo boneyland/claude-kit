@@ -133,6 +133,11 @@ describe('loadArt', () => {
     expect(art && { width: art.width, height: art.height, bytes: art.rgba.length }).toEqual({ width: 600, height: 300, bytes: 600 * 300 * 4 })
     expect(children.at(-1)!.args).toEqual(expect.arrayContaining(['--vf=scale=w=600:h=300,format=rgba', '--o=-', '--ytdl=no']))
   })
+  test('both mpv runs use the player it is given', async () => {
+    const { spawn, children } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 2 2\n'], code: 0 } : { chunks: [Buffer.alloc(16)], code: 0 }))
+    await loadArt(sources().slice(1), { spawn, player: 'mpv-git' })
+    expect(children.map(c => c.cmd)).toEqual(['mpv-git', 'mpv-git'])
+  })
   test('too few bytes back is no art', async () => {
     const { spawn } = fakeSpawn(args => (args.includes('--vo=null') ? { chunks: ['SIZE 100 100\n'], code: 0 } : { chunks: [Buffer.alloc(10)], code: 0 }))
     expect(await loadArt(sources(), { spawn })).toBeUndefined()

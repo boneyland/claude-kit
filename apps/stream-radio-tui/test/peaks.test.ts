@@ -87,6 +87,11 @@ describe('decodePeaks', () => {
     expect(args).toEqual(expect.arrayContaining(['--no-config', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-samplerate=8000', '--audio-channels=stereo', '--ytdl=no', song]))
     expect(args.some(a => a.startsWith('--ao'))).toBe(false)
   })
+  test('decodes with the player it is given', async () => {
+    const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm([1, 1])], code: 0 }))
+    await decodePeaks(song, { spawn, player: 'mpv-git' })
+    expect(children[0].cmd).toBe('mpv-git')
+  })
   test('a second time comes from the cache', async () => {
     const { spawn, children } = fakeSpawn(() => ({ chunks: [pcm(Array(320).fill(32767))], code: 0 }))
     const cache = path.join(dir, 'cache')

@@ -134,11 +134,11 @@ const PROBE_MS = 15_000
 
 // One source's picture, at most ART_MAX_PX on its longest side; undefined
 // when it has none or mpv can't read it.
-async function loadOne(source: ArtSource, signal: AbortSignal | undefined, spawn: Spawn | undefined): Promise<Art | undefined> {
+async function loadOne(source: ArtSource, signal: AbortSignal | undefined, spawn: Spawn | undefined, player: string | undefined): Promise<Art | undefined> {
   if (source.kind === 'none') return undefined
   const target = source.kind === 'file' ? source.path : source.url
   const common = ['--audio=no', '--frames=1', '--ytdl=no']
-  const probe = await runMpv([...common, '--vo=null', '--term-playing-msg=SIZE ${width} ${height}', '--', target], { signal, spawn, timeoutMs: PROBE_MS, maxBytes: 64_000 })
+  const probe = await runMpv([...common, '--vo=null', '--term-playing-msg=SIZE ${width} ${height}', '--', target], { signal, spawn, player, timeoutMs: PROBE_MS, maxBytes: 64_000 })
   const size = /^SIZE (\d+) (\d+)$/m.exec(probe.stdout.toString())
   if (probe.code !== 0 || !size) return undefined
   const [w, h] = [Number(size[1]), Number(size[2])]
@@ -146,7 +146,7 @@ async function loadOne(source: ArtSource, signal: AbortSignal | undefined, spawn
   const scale = Math.min(1, ART_MAX_PX / Math.max(w, h))
   const [width, height] = [even(w * scale), even(h * scale)]
   const bytes = width * height * 4
-  const raw = await runMpv([...common, `--vf=scale=w=${width}:h=${height},format=rgba`, '--o=-', '--of=rawvideo', '--ovc=rawvideo', '--really-quiet', '--', target], { signal, spawn, timeoutMs: PROBE_MS, maxBytes: bytes })
+  const raw = await runMpv([...common, `--vf=scale=w=${width}:h=${height},format=rgba`, '--o=-', '--of=rawvideo', '--ovc=rawvideo', '--really-quiet', '--', target], { signal, spawn, player, timeoutMs: PROBE_MS, maxBytes: bytes })
   if (raw.code !== 0 || raw.stdout.length !== bytes) return undefined
   return { width, height, rgba: new Uint8Array(raw.stdout) }
 }
@@ -175,8 +175,8 @@ function fromCache(data: Buffer | undefined): Art | undefined {
 
 // The first source that has a picture, from the cache or through mpv. A
 // failure moves on to the next source; an abort is passed on.
-export async function loadArt(sources: ArtSource[], opts: { signal?: AbortSignal; spawn?: Spawn; cache?: string } = {}): Promise<Art | undefined> {
-  const { signal, spawn, cache = '' } = opts
+export async function loadArt(sources: ArtSource[], opts: { signal?: AbortSignal; spawn?: Spawn; player?: string; cache?: string } = {}): Promise<Art | undefined> {
+  const { signal, spawn, player, cache = '' } = opts
   for (const source of sources) {
     if (source.kind === 'none') continue
     let name = ''
@@ -187,7 +187,7 @@ export async function loadArt(sources: ArtSource[], opts: { signal?: AbortSignal
       } else name = `${cacheKey('art', source.url)}.art`
       const cached = fromCache(await readCache(cache, name))
       if (cached) return cached
-      const art = await loadOne(source, signal, spawn)
+      const art = await loadOne(source, signal, spawn, player)
       if (!art) continue
       await writeCache(cache, name, toCache(art))
       return art

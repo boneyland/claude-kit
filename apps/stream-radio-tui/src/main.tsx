@@ -92,7 +92,7 @@ async function main(argv: string[]) {
   // Clicks come out of stdin before Ink reads it; Ink gets the keys.
   const input = session.config.mouse === 'on' ? mouseInput(process.stdin, () => write(MOUSE_OFF)) : undefined
   if (input) write(MOUSE_ON)
-  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env)} graphics={graphics} mouse={input?.subscribe} />, {
+  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env, session.config.player)} graphics={graphics} mouse={input?.subscribe} />, {
     exitOnCtrlC: false,
     stdin: input?.stdin ?? process.stdin,
   })

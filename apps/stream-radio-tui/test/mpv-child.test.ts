@@ -8,6 +8,12 @@ describe('runMpv', () => {
     const r = await runMpv(['x'], { timeoutMs: 1000, maxBytes: 10, spawn })
     expect(r).toEqual({ code: 0, stdout: Buffer.from('abcd') })
     expect(children[0].args[0]).toBe('--no-config')
+    expect(children[0].cmd).toBe('mpv')
+  })
+  test('runs the player it is given', async () => {
+    const { spawn, children } = fakeSpawn(() => ({ code: 0 }))
+    await runMpv([], { timeoutMs: 1000, maxBytes: 10, spawn, player: '/opt/mpv/bin/mpv' })
+    expect(children[0].cmd).toBe('/opt/mpv/bin/mpv')
   })
   test('more than maxBytes kills it', async () => {
     const { spawn, children } = fakeSpawn(() => ({ chunks: [Buffer.alloc(20)] }))

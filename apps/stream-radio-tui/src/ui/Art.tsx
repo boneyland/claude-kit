@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { RawText, Text } from './Text'
 import { ART_IDS, placeholderRow } from '../gfx/kitty'
 import type { Graphics } from '../gfx/screen'
 import { noteRgba } from '../gfx/note'
@@ -47,7 +48,7 @@ function Strips({ strips, cols, width, rows, graphics }: { strips: ArtPixels[]; 
   return (
     <Box flexDirection="column" width={width} alignItems="center">
       {strips.map((_, i) => (
-        <Text key={i}>{placeholderRow(ART_IDS.first + i, cols)}</Text>
+        <RawText key={i}>{placeholderRow(ART_IDS.first + i, cols)}</RawText>
       ))}
     </Box>
   )

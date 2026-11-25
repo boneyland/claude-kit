@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 
 export type Tab = 'files' | 'playlist'

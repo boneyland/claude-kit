@@ -32,7 +32,7 @@ export function useTagBook(h: Host, reader?: TagReader): TagBook {
     const want = (paths: string[]) => r.want(paths.map(path => ({ path, mtimeMs: mtimes.get(path)! })), redraw)
     // Hands the files found to the reader together, once the stats in flight settle.
     const flush = () => {
-      if (running.current > 0 && waiting.length) return
+      if (running.current > 0 || waiting.length) return
       if (found.length) want(found.splice(0))
     }
     // Stats the waiting paths, STATS_AT_ONCE at a time; each file found is read.

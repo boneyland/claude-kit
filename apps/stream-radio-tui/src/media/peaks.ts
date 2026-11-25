@@ -73,8 +73,8 @@ export function peakFolder(samplesPerPeak = BUCKET): { add(chunk: Buffer): void;
 
 // The song's peaks, from the cache or decoded by mpv; undefined when mpv
 // can't decode it in time. An abort is passed on.
-export async function decodePeaks(file: string, opts: { signal?: AbortSignal; spawn?: Spawn; cache?: string } = {}): Promise<Wave | undefined> {
-  const { signal, spawn, cache = '' } = opts
+export async function decodePeaks(file: string, opts: { signal?: AbortSignal; spawn?: Spawn; player?: string; cache?: string } = {}): Promise<Wave | undefined> {
+  const { signal, spawn, player, cache = '' } = opts
   const stat = await fs.stat(file)
   // 'wave': peak then rms; the older peaks-only (and clipped mono) files differ
   const name = `${cacheKey('wave', file, stat.size, stat.mtimeMs)}.wave`
@@ -89,7 +89,7 @@ export async function decodePeaks(file: string, opts: { signal?: AbortSignal; sp
   // mpv can't open() a socket by that path.
   const args = ['--no-video', '--ytdl=no', '--o=-', '--of=s16le', '--oac=pcm_s16le', '--audio-format=s16', `--audio-samplerate=${SAMPLE_RATE}`, '--audio-channels=stereo', '--really-quiet', '--', file]
   try {
-    const { code } = await runMpv(args, { signal, spawn, timeoutMs: DECODE_TIMEOUT_MS, maxBytes: Infinity, onData: chunk => folder.add(chunk) })
+    const { code } = await runMpv(args, { signal, spawn, player, timeoutMs: DECODE_TIMEOUT_MS, maxBytes: Infinity, onData: chunk => folder.add(chunk) })
     if (code !== 0) return undefined
   } catch (error) {
     if (signal?.aborted) throw error

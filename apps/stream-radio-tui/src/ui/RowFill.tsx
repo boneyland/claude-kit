@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 
 // The rest of a row after its text, inverse on the cursor's row so the
 // highlight runs the row's whole width. Ink 5's Box has no background, so this

@@ -114,12 +114,19 @@ export function useFiles(h: Host, book: TagBook): Files {
   }
   const rows = rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []
   const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
+  // Its folder read (or not readable) without it: the reveal is given up, so
+  // the cursor doesn't jump to it whenever it turns up later.
+  const revealIn = revealing.current ? listingsRef.current.get(parentOf(revealing.current)) : undefined
+  const isRevealSettled = revealIn !== undefined && revealIn !== 'loading'
   useEffect(() => {
-    if (revealAt < 0) return
+    if (revealAt < 0) {
+      if (isRevealSettled) revealing.current = ''
+      return
+    }
     revealing.current = ''
     setSel({ cursor: revealAt, anchor: revealAt, picked: [] })
     setTop(undefined)
-  }, [revealAt])
+  }, [revealAt, isRevealSettled])
   return {
     root: rootRef.current,
     rootLabel: home => {

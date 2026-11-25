@@ -1,5 +1,6 @@
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box } from 'ink'
+import { Text } from './Text'
 import { VOLUME_STEP } from '../../../../plugins/stream-radio/core/nowplaying'
 import { Clickable } from '../mouse/Clickable'
 import type { Action } from '../keys'
