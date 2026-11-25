@@ -37,7 +37,21 @@ fi
 command -v yt-dlp >/dev/null 2>&1 || echo "warning: yt-dlp not found; YouTube URLs will not play without it." >&2
 command -v python3 >/dev/null 2>&1 || echo "warning: python3 not found; yt-dlp needs it." >&2
 
+# What `$1 --version` says, without its name; '' when it says nothing, as a
+# damaged file. Every build has --version. stdin is closed so nothing can wait
+# on it.
+version_of() {
+  v=$(node "$1" --version </dev/null 2>/dev/null) || v=""
+  printf '%s' "${v#stream-radio-tui }"
+}
+
 mkdir -p "$DEST"
+# the build being replaced, if any, and its version
+had="" old=""
+if [ -f "$DEST/stream-radio-tui" ]; then
+  had=1
+  old=$(version_of "$DEST/stream-radio-tui")
+fi
 tmp=$(mktemp "$DEST/.stream-radio-tui.XXXXXX")
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 # The release publishes the file's SHA-256 beside it: a download cut short
@@ -73,8 +87,16 @@ done
 chmod +x "$tmp"
 mv -f "$tmp" "$DEST/stream-radio-tui"
 trap - EXIT HUP INT TERM
+# asked of it in place: node reads the temp name's random suffix as an
+# unknown file extension and won't run it
+new=$(version_of "$DEST/stream-radio-tui")
 
-echo "Installed $DEST/stream-radio-tui"
+if [ -n "$had" ] && [ -n "$old" ] && [ "$old" = "$new" ]; then
+  echo "Reinstalled stream-radio-tui $new at $DEST/stream-radio-tui (it was already this version)"
+else
+  [ -n "$had" ] && echo "Removed stream-radio-tui ${old:-(version unknown)}"
+  echo "Installed stream-radio-tui ${new:-(version unknown)} at $DEST/stream-radio-tui"
+fi
 case ":${PATH:-}:" in
   *":$DEST:"*) ;;
   *) echo "$DEST is not on your PATH; add it, or run $DEST/stream-radio-tui directly." ;;

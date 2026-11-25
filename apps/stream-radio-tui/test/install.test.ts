@@ -98,6 +98,42 @@ describe('install.sh', () => {
     // the commit's date, then its short hash
     expect(v).toMatch(/^stream-radio-tui \d{4}\.\d{2}\.\d{2}\+[0-9a-f]{7,}\n$/)
     expect(r.out).toMatch(/not on your PATH/)
+    expect(r.out).toContain(`Installed ${v.trim()} at ${target}`)
+    expect(r.out).not.toContain('Removed')
+  })
+
+  it('names the version it removes and the one it installs', async () => {
+    const prefix = path.join(tmp, 'old-bin')
+    fs.mkdirSync(prefix)
+    // a build from before the date+hash versions
+    fs.writeFileSync(path.join(prefix, 'stream-radio-tui'), "console.log('stream-radio-tui 0.1.0 (abc1234)')\n", { mode: 0o755 })
+    const bin = pathWith('old-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
+    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('Removed stream-radio-tui 0.1.0 (abc1234)\n')
+    expect(r.out).toMatch(/Installed stream-radio-tui \d{4}\.\d{2}\.\d{2}\+[0-9a-f]{7,} at /)
+  })
+
+  it('says so when the version it installs is the one already there', async () => {
+    const prefix = path.join(tmp, 'same-bin')
+    const bin = pathWith('same-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
+    const env = { PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url }
+    await run(env)
+    const r = await run(env)
+    expect(r.code).toBe(0)
+    expect(r.out).toMatch(/Reinstalled stream-radio-tui \S+ at .*\(it was already this version\)/)
+    expect(r.out).not.toContain('Removed')
+  })
+
+  it('still installs when the old file says no version', async () => {
+    const prefix = path.join(tmp, 'broken-bin')
+    fs.mkdirSync(prefix)
+    fs.writeFileSync(path.join(prefix, 'stream-radio-tui'), 'this is not javascript', { mode: 0o755 })
+    const bin = pathWith('broken-path', NEEDED, ['mpv', 'yt-dlp', 'python3'])
+    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('Removed stream-radio-tui (version unknown)')
+    expect(r.out).toMatch(/Installed stream-radio-tui \d{4}\./)
   })
 
   it('exits 1 naming mpv when it is missing', async () => {
