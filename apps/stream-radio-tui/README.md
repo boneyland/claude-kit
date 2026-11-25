@@ -18,7 +18,7 @@ To put it in another folder, set `STREAM_RADIO_TUI_DIR` to that folder, in front
 curl -fsSL https://raw.githubusercontent.com/boneyland/claude-kit/main/apps/stream-radio-tui/install.sh | STREAM_RADIO_TUI_DIR=~/bin sh
 ```
 
-That installs `~/bin/stream-radio-tui`: the variable names the folder itself, and nothing adds `/bin` to it.
+That installs `~/bin/stream-radio-tui`: the file goes straight into the folder you name. Without the variable, the folder is `~/.local/bin`.
 
 Needs `node` 22 or newer, `mpv`, `curl`, and `sha256sum` or `shasum`. YouTube also needs `yt-dlp` (and `python3` for it); the installer warns when they are missing.
 
