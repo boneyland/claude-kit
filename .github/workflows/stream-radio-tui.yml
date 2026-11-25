@@ -43,9 +43,9 @@ jobs:
 
       - run: npm ci
 
-      # The core's own tests run under `claude plugin test`, which needs Claude
-      # Code and is not available here. The TUI's suite drives the real core,
-      # and tsc type-checks the core files the TUI imports.
+      # The core's own tests run under `claude plugin test`, in the plugins
+      # workflow. Here the TUI's suite drives the real core, and tsc
+      # type-checks the core files the TUI imports.
       - run: npx tsc --noEmit
       - run: npx vitest run
 
