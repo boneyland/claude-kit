@@ -73,7 +73,7 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
         {second || ' '}
       </Text>
       {time}
-      <Controls isPaused={isPaused} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} onAction={onAction} onVolume={onVolume} />
+      <Controls isPaused={isPaused} isStopped={!playing} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} onAction={onAction} onVolume={onVolume} />
       <Box>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
         <Text>{'   '}</Text>
@@ -103,7 +103,7 @@ function Column({ view, duration, width, full, second, time, onAction, onVolume,
         {second || ' '}
       </Text>
       {tags ? <Text wrap="truncate-end">{tags}</Text> : null}
-      <Controls isPaused={isPaused} volume={view.volume} width={width} onAction={onAction} onVolume={onVolume} />
+      <Controls isPaused={isPaused} isStopped={!playing} volume={view.volume} width={width} onAction={onAction} onVolume={onVolume} />
       <Box>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
         <Text>{'   '}</Text>

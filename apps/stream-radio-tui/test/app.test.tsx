@@ -1453,6 +1453,11 @@ describe('mouse controls', () => {
     const { lines } = await show(100, { ...PLAYING, isPaused: true })
     expect(lines().some(l => l.includes(`${ICONS.prev}  ${ICONS.play}  ${ICONS.next}  ${ICONS.stop}`))).toBe(true)
   })
+
+  test('stopped, the middle control shows play: it plays the queue', async () => {
+    const { lines } = await show(100, { ...PLAYING, playing: '', isPaused: false, elapsed: -1 })
+    expect(lines().some(l => l.includes(`${ICONS.prev}  ${ICONS.play}  ${ICONS.next}  ${ICONS.stop}`))).toBe(true)
+  })
 })
 
 describe('mouse seek', () => {
