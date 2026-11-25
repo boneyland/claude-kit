@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
-import { addToQueue, pick, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
+import { addToQueue, pick, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
@@ -201,7 +201,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'sortReverse':
         return isPl() ? playlist.sortReverse() : undefined
       case 'enter':
-        if (isPl()) return row ? act(() => pick(h, row.index)) : undefined
+        if (isPl()) return row ? act(() => pick(h, session.config, row.index)) : undefined
         if (fileRow?.kind === 'up') return files.goUp()
         if (fileRow?.kind === 'dir') return files.setOpen(fileRow.path)
         if (fileRow?.kind === 'file') addFiles('end')
@@ -249,7 +249,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           if (!view.lastUrl) return 'Nothing played yet: add songs from the Files tab.'
           // lastUrl is what plays, so starting it again would only jump back
           if (view.playing) return `Already playing ${view.playing}.`
-          resume(h, session.config, view.lastUrl, view.resumeAt)
+          return resumeQueue(h, session.config, session.config.defaultUrl)
         })
       case 'stop':
         return act(async () => {
@@ -289,7 +289,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           return act(async () => {
             const [queue, text] = await Promise.all([h.vars.read('queue'), h.vars.read('filter')])
             const first = filterFlat(flatRows(queue, book.get, home), text.trim())[0]
-            return first ? pick(h, first.index) : 'Nothing matches.'
+            return first ? pick(h, session.config, first.index) : 'Nothing matches.'
           })
         }
         const text = lineRef.current.text

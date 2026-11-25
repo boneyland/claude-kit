@@ -1,8 +1,8 @@
-import { afterEach, beforeAll, expect, test } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { addToQueue, removeFromQueue, reorderQueue, resume, setRepeat } from '@core/player'
+import { addToQueue, removeFromQueue, reorderQueue, setRepeat, stopPlaying } from '@core/player'
 import { loopsFor, repeatOf } from '@core/nowplaying'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
@@ -39,6 +39,10 @@ async function loaded(props: Record<string, unknown>) {
 }
 
 beforeAll(() => fs.mkdirSync(dir, { recursive: true }))
+// Each test starts with no stored queue: what it shows comes from the player.
+beforeEach(() => {
+  for (const f of ['queue.json', 'queue-place.json']) fs.rmSync(path.join(dir, f), { force: true })
+})
 afterEach(async () => {
   session?.close()
   session = undefined
@@ -129,32 +133,19 @@ test('a folder adds all its songs in one command', async () => {
 
 test('adding while nothing plays writes the queue file and starts it', async () => {
   const ran: string[][] = []
-  const recording = async (argv: readonly string[]) => (ran.push([...argv]), { exitCode: 0, stdout: '', stderr: '' })
+  // the queue's files are written whole, moved over the old ones
+  const recording = async (argv: readonly string[]) => {
+    ran.push([...argv])
+    if (argv[0] === 'mv') fs.renameSync(argv[2]!, argv[3]!)
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
   session = await openSession([], { env, run: recording })
   const h = session.host
   expect(await addToQueue(h, session.config, [{ path: '/n/c.flac', title: 'C' }], 'end')).toBe('')
   await until(() => ran.some(argv => argv.at(-1) === QUEUE_FILE))
   expect(fs.readFileSync(QUEUE_FILE, 'utf8')).toBe('#EXTM3U\n#EXTINF:-1,C\n/n/c.flac\n')
-})
-
-test('resume finds the song by path after a reorder', async () => {
-  const props = { playlist: TWO, 'chapter-list': [] }
-  fake = await fakeMpv(dir, props)
-  session = await openSession([], { env, run })
-  const h = session.host
-  resume(h, session.config, QUEUE_FILE, { url: QUEUE_FILE, index: 0, path: '/m/b.flac', seconds: 30, title: 'B' })
-  await until(() => commands().some(c => c[0] === 'observe_property'))
-  fake.push(
-    { event: 'property-change', name: 'playlist-count', data: 2 },
-    { event: 'property-change', name: 'playlist-pos', data: 0 },
-    { event: 'property-change', name: 'chapter', data: -1 },
-    { event: 'file-loaded' },
-  )
-  await until(() => sent('playlist-play-index').length > 0)
-  expect(sent('playlist-play-index')).toEqual([['playlist-play-index', 1]])
-  fake.push({ event: 'property-change', name: 'playlist-pos', data: 1 }, { event: 'file-loaded' })
-  await until(() => sent('seek').length > 0)
-  expect(sent('seek')).toEqual([['seek', 30, 'absolute']])
+  // no player comes up: the start waiting for one gives up
+  await stopPlaying(h, session.config)
 })
 
 // --- removing and reordering ---

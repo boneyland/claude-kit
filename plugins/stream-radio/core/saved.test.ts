@@ -176,24 +176,18 @@ test("each program keeps the saved volume while its own setting is unchanged", a
   expect(changed.vars.volume).toBe(70)
 })
 
-test("a changed default stream clears the last URL only for its own program", async () => {
+test("a changed default stream is only recorded, per program: what played stays", async () => {
   const text = JSON.stringify({ version: 1, last: { url: '/m', resumeAt: AT }, knownDefault: { mod: 'A' } })
-  // the TUI's own default, different from the mod's: the last URL stays
   const tui = hostOf('tui', { [STATE]: text })
   await checkDefault(tui.h, 'B')
   expect(await readSaved(tui.h)).toMatchObject({ last: { url: '/m' }, knownDefault: { mod: 'A', tui: 'B' } })
-  // the mod's default unchanged: it stays too
-  const same = hostOf('mod', { ...tui.files })
-  await checkDefault(same.h, 'A')
-  expect((await readSaved(same.h)).last).toEqual({ url: '/m', resumeAt: AT })
-  // the mod's default changed: it goes
   const mod = hostOf('mod', { ...tui.files })
   mod.vars.lastUrl = '/m'
   mod.vars.resumeAt = AT
   await checkDefault(mod.h, 'C')
-  expect(await readSaved(mod.h)).toMatchObject({ last: null, knownDefault: { mod: 'C', tui: 'B' } })
-  expect(mod.vars.lastUrl).toBe('')
-  expect(mod.vars.resumeAt).toEqual(NO_RESUME)
+  expect(await readSaved(mod.h)).toMatchObject({ last: { url: '/m', resumeAt: AT }, knownDefault: { mod: 'C', tui: 'B' } })
+  expect(mod.vars.lastUrl).toBe('/m')
+  expect(mod.vars.resumeAt).toEqual(AT)
 })
 
 test("the song's path in a resume point is kept, so a reordered queue resumes the same song", async () => {

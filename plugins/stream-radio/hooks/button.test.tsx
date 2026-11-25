@@ -9,11 +9,20 @@ for (const surface of ['terminal', 'desktop'] as const) {
     async ($, on) => {
       mock.clock(on)
       const ran: string[][] = []
+      // the data folder's files, for the queue the click plays
+      const files: Record<string, string> = {}
       on('process.run', (_$, e) => {
         ran.push([...e.argv])
+        if (e.argv[0] === 'mv') files[e.argv[3]!] = files[e.argv[2]!]!
 
         return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
       })
+      on('fs.write', (_$, e) => ((files[e.path] = e.text), { value: undefined }) as never)
+      on('fs.read', (_$, e) => {
+        if (!(e.path in files)) throw new Error(`ENOENT: ${e.path}`)
+        return { value: files[e.path] } as never
+      })
+      on('fs.exists', (_$, e) => ({ value: e.path in files }) as never)
       on('env.get', (_$, e) => ({ value: (e as { name: string }).name === 'XDG_STATE_HOME' ? '/tmp/stream-radio-test' : undefined }) as never)
       on('ui.toast', () => ({ value: undefined }) as never)
 

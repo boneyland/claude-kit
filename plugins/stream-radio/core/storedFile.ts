@@ -46,7 +46,7 @@ export async function withFileLock<T>(h: Host, lockPath: string, staleMs: number
 }
 
 // Whole-file write: temp file, then moved over `path`.
-async function writeWhole(h: Host, path: string, text: string): Promise<void> {
+export async function writeWhole(h: Host, path: string, text: string): Promise<void> {
   const tmp = `${path}.${Math.random().toString(36).slice(2, 10)}.tmp`
   try {
     await h.fs.write(tmp, text)

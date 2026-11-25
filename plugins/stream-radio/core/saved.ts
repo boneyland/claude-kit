@@ -1,6 +1,8 @@
 // What is kept across sessions, in state.json in the player's folder, shared by
-// every program that drives the player (the mod, the TUI): the last URL and
-// where it got to, the volume and repeat. The values that depend on a setting
+// every program that drives the player (the mod, the TUI): the volume and
+// repeat, and each program's default stream. `last`, the last URL and where it
+// got to, is what earlier versions kept before the queue had its own files: it
+// is only read, to make the queue from it once (player.ts migrateLast). The values that depend on a setting
 // (the default stream, the Volume setting) are kept per program, so two
 // programs with different settings never undo each other's saved state.
 import type { Host, Resume } from './host'

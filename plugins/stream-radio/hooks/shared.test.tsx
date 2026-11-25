@@ -189,7 +189,7 @@ test('a drop reconnects from one session only: the one holding the lock', async 
   expect(world.files[LOCK]).toBeTruthy()
   await clock.advance(2000)
   expect(world.launches).toHaveLength(3)
-  expect(world.launches[2]!.at(-1)).toBe(URL)
+  expect(world.urls[2]).toBe(URL)
   await clock.advance(10)
   expect(world.files[LOCK]).toBe(undefined)
 

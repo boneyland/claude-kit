@@ -36,9 +36,9 @@ vi.mock('@core/player', async original => {
     toggleShuffle: vi.fn(async () => 'Shuffled.'),
     setRepeat: vi.fn(async () => 'Repeat: this song.'),
     stopPlaying: vi.fn(async () => undefined),
-    resume: vi.fn(),
+    resumeQueue: vi.fn(async () => ''),
     seek: vi.fn(async () => ''),
-    start: vi.fn(),
+    playSource: vi.fn(async () => ''),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
     mpv: vi.fn(defaultMpv),
     // as the core does: the queue in the store follows the new order
@@ -527,14 +527,14 @@ describe('keys', () => {
   test('l while the last URL plays leaves it be and says so', async () => {
     const { press, lines } = await show(100)
     await press('l')
-    expect(player.resume).not.toHaveBeenCalled()
+    expect(player.resumeQueue).not.toHaveBeenCalled()
     expect(lines().join('\n')).toContain('Already playing Song three.')
   })
 
   test('l after a stop picks the last URL up again', async () => {
     const { press, host } = await show(100, { ...PLAYING, playing: '', elapsed: -1 })
     await press('l')
-    expect(player.resume).toHaveBeenCalledWith(host, expect.anything(), ALBUM, expect.anything())
+    expect(player.resumeQueue).toHaveBeenCalledWith(host, expect.anything(), expect.anything())
   })
 
   test('keys that arrive together each step from the volume the one before set', async () => {
@@ -555,7 +555,7 @@ describe('keys', () => {
   test('Enter on a song plays it', async () => {
     const { press, host } = await show(100)
     await press(UP, ENTER)
-    expect(player.pick).toHaveBeenCalledWith(host, 1)
+    expect(player.pick).toHaveBeenCalledWith(host, expect.anything(), 1)
   })
 
   test('/ filters as you type; Enter plays the first match', async () => {
@@ -564,7 +564,7 @@ describe('keys', () => {
     expect(lines().join('\n')).toContain('/ filter: oth')
     expect(lines().join('\n')).not.toContain('Intro')
     await press(ENTER)
-    expect(player.pick).toHaveBeenCalledWith(host, 3)
+    expect(player.pick).toHaveBeenCalledWith(host, expect.anything(), 3)
   })
 
 })
@@ -590,14 +590,14 @@ describe('mouse rows', () => {
     await click(at.x, at.y)
     expect(player.pick).not.toHaveBeenCalled()
     await press(ENTER)
-    expect(player.pick).toHaveBeenCalledWith(host, 1)
+    expect(player.pick).toHaveBeenCalledWith(host, expect.anything(), 1)
   })
 
   test('a double-click plays it', async () => {
     const { dblclick, where, host } = await show(100)
     const at = where('Song two')
     await dblclick(at.x, at.y)
-    expect(player.pick).toHaveBeenCalledWith(host, 1)
+    expect(player.pick).toHaveBeenCalledWith(host, expect.anything(), 1)
   })
 
   test('the wheel scrolls the list, not the selection; a click then lands where it points; a key brings the view back', async () => {
@@ -608,13 +608,13 @@ describe('mouse rows', () => {
     expect(firstShown(lines())).toBe(4)
     // the selection stayed on the first track
     await press(ENTER)
-    expect(player.pick).toHaveBeenLastCalledWith(host, 0)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), 0)
     // the row now under the pointer
     const under = Number(/(\d+)\. Track/.exec(lines()[list.y])![1])
     await click(list.x, list.y)
     expect(firstShown(lines())).toBe(4)
     await press(ENTER)
-    expect(player.pick).toHaveBeenLastCalledWith(host, under - 1)
+    expect(player.pick).toHaveBeenLastCalledWith(host, expect.anything(), under - 1)
     await press('j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'j')
     expect(lines().some(l => l.includes(`${under + 20}. Track ${under + 20}`))).toBe(true)
   })
@@ -933,7 +933,7 @@ describe('files actions', () => {
     await dblclick(where('loose.mp3').x, where('loose.mp3').y)
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'end')
     expect(player.pick).not.toHaveBeenCalled()
-    expect(player.start).not.toHaveBeenCalled()
+    expect(player.playSource).not.toHaveBeenCalled()
   })
 
   test('A with three rows picked adds them in one call, to play next; the pick clears and the status says how many', async () => {
@@ -1030,7 +1030,7 @@ describe('youtube in files', () => {
       { path: 'https://www.youtube.com/watch?v=1', title: 'Drive One' },
       { path: 'https://www.youtube.com/watch?v=2', title: 'Drive Two' },
     ], 'end')
-    expect(player.start).not.toHaveBeenCalled()
+    expect(player.playSource).not.toHaveBeenCalled()
     expect(player.pick).not.toHaveBeenCalled()
   })
 
@@ -1048,7 +1048,7 @@ describe('youtube in files', () => {
     await vi.waitFor(() => expect(lines().join('\n')).toContain('Private video'))
     expect(lines().join('\n')).toContain('Files · ~/Music')
     expect(lines().join('\n')).toContain('loose.mp3')
-    expect(player.start).not.toHaveBeenCalled()
+    expect(player.playSource).not.toHaveBeenCalled()
     expect(player.addToQueue).not.toHaveBeenCalled()
   })
 
@@ -1283,7 +1283,7 @@ describe('review fixes', () => {
     // the click only closed the menu: still on the Playlist, where Enter plays the row
     expect(lines()[lineOf(lines(), /Files\s+Playlist/) + 1]).toMatch(/^\s*Playlist/)
     await press(ENTER)
-    expect(player.pick).toHaveBeenCalledWith(expect.anything(), 1)
+    expect(player.pick).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1)
     expect(player.addToQueue).not.toHaveBeenCalled()
   })
 

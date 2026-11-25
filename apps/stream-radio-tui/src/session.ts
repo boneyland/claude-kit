@@ -1,5 +1,5 @@
 import type { Host } from '@core/host'
-import { checkDefault, connect, detach, loadLast, loadRepeat, loadVolume, locate, start, stopPoller } from '@core/player'
+import { checkDefault, connect, detach, loadRepeat, loadVolume, locate, migrateLast, playSource, refreshFromStored, stopPoller } from '@core/player'
 import { DEFAULT_CONFIG, loadConfig, type TuiConfig } from './config'
 import { memoryStore, nodeHost } from './host-node'
 
@@ -61,14 +61,16 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
   try {
     config = await loadConfig(env)
     await checkDefault(host, config.defaultUrl)
-    await loadLast(host)
+    await migrateLast(host)
+    await refreshFromStored(host)
     await loadVolume(host, config.volume)
     await loadRepeat(host)
     await connect(host, config)
 
     if (argv[0]) {
       const target = await locate(host, argv[0], config.defaultUrl)
-      if (target.kind === 'play') start(host, config, target.url)
+      // in the background, as a start always was; what it says shows when it does
+      if (target.kind === 'play') void playSource(host, config, target.url).then(note => note && say(note))
       else if (target.kind === 'error') say(target.text)
     }
   } catch (error) {

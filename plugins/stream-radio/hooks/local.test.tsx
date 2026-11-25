@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { type Entry, fakeMpv, type FakeOptions } from './fake-mpv'
+import { type Entry, fakeMpv, type FakeOptions, QUEUE_JSON, QUEUE_M3U } from './fake-mpv'
 
 const FILES = ['/home/me/Music/Album', '/home/me/Music/one.flac']
 const PANE = {
@@ -19,13 +19,21 @@ function engine(on: On, options: FakeOptions = {}) {
 
 test('/stream plays a local folder, skipping its pictures', async ($, on) => {
   const clock = mock.clock(on)
-  const world = engine(on)
+  const world = engine(on, {
+    stat: path => ({ kind: path === '/home/me/Music/Album' ? 'dir' : 'file' }),
+    list: () => [
+      { name: '01 a.flac', kind: 'file' },
+      { name: 'cover.jpg', kind: 'file' },
+      { name: '02 b.flac', kind: 'file' },
+    ],
+  })
   const reply = await $.command.run({ command: 'stream', args: '~/Music/Album' } as never)
   expect(JSON.stringify(reply)).toContain('Starting /home/me/Music/Album')
   await clock.advance(10)
+  // The app lists the folder's songs; mpv is handed them as a playlist file.
   const argv = world.launches[0]!
-  expect(argv.at(-1)).toBe('/home/me/Music/Album')
-  expect(argv.at(-2)).toBe('--')
+  expect(argv.slice(-2)).toEqual(['--', QUEUE_M3U])
+  expect(world.files[QUEUE_M3U]).toBe('#EXTM3U\n/home/me/Music/Album/01 a.flac\n/home/me/Music/Album/02 b.flac\n')
   expect(argv).toContain('--directory-filter-types=audio,video,playlist')
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)
@@ -41,7 +49,7 @@ test('a relative path reads from the session folder; a missing one says so', asy
 
   await $.command.run({ command: 'stream', args: 'one.flac' } as never)
   await clock.advance(10)
-  expect(world.launches[0]!.at(-1)).toBe('/home/me/Music/one.flac')
+  expect(world.urls[0]).toBe('/home/me/Music/one.flac')
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
@@ -60,15 +68,18 @@ test('a YouTube URL does not get the folder filter', async ($, on) => {
 
 test('the panel marks a folder listed in a playlist file', async ($, on) => {
   const clock = mock.clock(on)
-  engine(on, {
+  const world = engine(on, {
     title: 'Intro',
     exists: () => true,
     stat: path => ({ kind: path.endsWith('Live') ? 'dir' : 'file' }),
     playlist: [{ filename: '/m/Album/01 Intro.flac', title: 'Intro', current: true }, { filename: '/m/Album/02 Song.flac' }, { filename: '/m/Album/Live' }],
   })
 
-  // A playlist file can name a folder, which mpv opens only when it gets there.
-  await $.command.run({ command: 'stream', args: '/m/mix.m3u' } as never)
+  // A queue can hold a folder (mpv opens it only when it gets there), as one
+  // an earlier version played from a playlist file did.
+  const entries = [{ id: '1.0', path: '/m/Album/01 Intro.flac', title: 'Intro' }, { id: '1.1', path: '/m/Album/02 Song.flac' }, { id: '1.2', path: '/m/Album/Live' }]
+  world.files[QUEUE_JSON] = JSON.stringify({ version: 1, rev: 1, entries, arrangement: { kind: 'none' }, root: '', source: '/m/mix.m3u' })
+  await $.command.run({ command: 'stream', args: 'last' } as never)
   await clock.advance(10)
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ type: 'Button', key: 'item-0' }))?.props.label).toBe('▶ 1. Intro')
@@ -131,12 +142,28 @@ test('a song change asks mpv nothing, and files under the folder are not looked 
   const world = engine(on, {
     title: '01 A.flac',
     exists: () => true,
-    stat: () => ((stats += 1), { kind: 'file' }),
+    // the folder played is looked at to list it; its files never
+    stat: path => {
+      if (path.startsWith('/m/Album/')) stats += 1
+      return { kind: path === '/m/Album' || path.endsWith('Disc 2') ? 'dir' : 'file' }
+    },
+    list: path =>
+      path === '/m/Album'
+        ? [
+            { name: '01 A.flac', kind: 'file' },
+            { name: 'Disc 2', kind: 'dir' },
+          ]
+        : [
+            { name: '01 B.flac', kind: 'file' },
+            { name: '02 C.flac', kind: 'file' },
+          ],
     playlist,
   })
 
   await $.command.run({ command: 'stream', args: '/m/Album' } as never)
   await clock.advance(10)
+  const reads = () => world.sent.filter(c => c[1] === 'playlist').length
+  const atStart = reads()
   // The watcher tells the new position; the list stays as read.
   world.set('playlist-pos', 1)
   world.set('media-title', '01 B.flac')
@@ -147,8 +174,9 @@ test('a song change asks mpv nothing, and files under the folder are not looked 
   world.load()
   await clock.advance(10)
 
-  // The whole list once, at the start; nothing asked at each song.
-  expect(world.sent.filter(c => c[1] === 'playlist').length).toBe(1)
+  // The whole list at most once, at the start; nothing asked at each song.
+  expect(atStart).toBeLessThanOrEqual(1)
+  expect(reads()).toBe(atStart)
   expect(world.sent.filter(c => c[1] === 'playlist-pos').length).toBe(0)
   expect(stats).toBe(0)
   const pane = await $.ui.mount(PANE)

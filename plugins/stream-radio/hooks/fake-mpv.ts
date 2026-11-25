@@ -2,7 +2,8 @@
 // the plugin sees it. A start runs `sh -c '… setsid -f mpv …'`; commands go
 // through mpv-ipc.py; a session follows the player with `mpv-ipc.py --watch`,
 // a stream of JSON lines; the data folder holds the socket, player.json,
-// reconnect.lock and state.json.
+// reconnect.lock, state.json and the queue's files. A start hands mpv
+// queue.m3u, which it expands, starting at --playlist-start.
 import type { On } from 'claude-code'
 
 export const DATA = '/tmp/stream-radio-test/stream-radio'
@@ -11,6 +12,9 @@ export const INTENT = `${DATA}/player.json`
 export const LOCK = `${DATA}/reconnect.lock`
 export const LOG = `${DATA}/mpv.log`
 export const STATE = `${DATA}/state.json`
+export const QUEUE_JSON = `${DATA}/queue.json`
+export const PLACE = `${DATA}/queue-place.json`
+export const QUEUE_M3U = `${DATA}/queue.m3u`
 
 export type Entry = { filename?: string; title?: string; current?: boolean }
 type Event = Record<string, unknown>
@@ -23,7 +27,8 @@ export type FakeOptions = {
   title?: string
   // more properties a started player has (time-pos, duration, metadata, chapter-metadata…)
   props?: Record<string, unknown>
-  // the playlist mpv answers; its length is playlist-count
+  // the playlist mpv answers; its length is playlist-count. Without it, what
+  // queue.m3u lists when it lists more than one.
   playlist?: Entry[] | (() => Entry[])
   chapters?: { title?: string }[]
   // answers a command first; undefined leaves it to the fake
@@ -31,6 +36,8 @@ export type FakeOptions = {
   // what `$.fs.exists` / `$.fs.stat` answer outside the data folder
   exists?: (path: string) => boolean
   stat?: (path: string) => { kind: 'file' | 'dir' | 'other' }
+  // what `$.fs.list` answers for a folder
+  list?: (path: string) => { name: string; kind: 'file' | 'dir' | 'other' }[]
   // the time a lock file is stamped with
   now?: () => number
   // `mpv --version` fails: no player installed
@@ -51,11 +58,15 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
   let mtimes = 0
   let isLoaded = false
   const lockTimes: Record<string, number> = {}
-  const playlist = () => (typeof options.playlist === 'function' ? options.playlist() : options.playlist)
+  // what the playlist file a start was handed lists
+  let listed: Entry[] | undefined
+  const playlist = () => (typeof options.playlist === 'function' ? options.playlist() : options.playlist) ?? listed
 
   const world = {
     // the player argv of each start, the plugin's or another session's
     launches: [] as string[][],
+    // what each start played first: the entry of its playlist file it starts at
+    urls: [] as string[],
     // commands sent over IPC, pid probes left out
     sent: [] as unknown[][],
     // files in the data folder (the socket aside)
@@ -99,13 +110,20 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       isLoaded = true
       world.props['user-data/stream-radio/url'] = url
       world.files[INTENT] = JSON.stringify({ id: 'other', url, client: '', isStopped: false, attempt: 0, playedAt: 1 })
+      // the queue the other session played it from
+      world.files[QUEUE_JSON] = JSON.stringify({ version: 1, rev: 1, entries: [{ id: '1.0', path: url }], arrangement: { kind: 'none' }, root: '', source: url })
     },
   }
 
   function launch(argv: string[], extra: { title?: string; props?: Record<string, unknown> } = {}) {
     world.launches.push(argv)
-    const url = argv.at(-1) ?? ''
     const flag = (name: string) => argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3)
+    const file = argv.at(-1) ?? ''
+    const lines = file.endsWith('.m3u') && file in world.files ? m3uEntries(world.files[file]!) : undefined
+    listed = lines && lines.length > 1 ? lines : undefined
+    const start = Number(flag('playlist-start') ?? 0)
+    const url = lines?.[start]?.filename ?? lines?.[0]?.filename ?? file
+    world.urls.push(url)
     const list = playlist()
     world.isRunning = true
     isLoaded = options.loadsBeforeWatch === true
@@ -118,7 +136,7 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       'loop-file': flag('loop-file') ?? 'no',
       'loop-playlist': flag('loop-playlist') ?? 'no',
       'playlist-count': list?.length ?? 1,
-      'playlist-pos': Math.max(0, list?.findIndex(e => e.current) ?? 0),
+      'playlist-pos': start > 0 && start < (list?.length ?? 1) ? start : Math.max(0, list?.findIndex(e => e.current) ?? 0),
       ...(options.loadsBeforeWatch ? { 'time-pos': 0 } : {}),
       ...options.props,
       ...extra.props,
@@ -250,8 +268,17 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     if (!(e.path in world.files)) throw new Error(`ENOENT: ${e.path}`)
     return { value: world.files[e.path] } as never
   })
+  on('fs.list', (_$, e) => {
+    const entries = options.list?.(e.path)
+    if (!entries) throw new Error(`ENOENT: ${e.path}`)
+    return { value: entries.map(x => ({ ...x, size: 0, mtimeMs: 0, isLink: false })) } as never
+  })
   on('fs.write', (_$, e) => ((world.files[e.path] = e.text), { value: undefined }) as never)
-  on('fs.exists', (_$, e) => ({ value: e.path === SOCK ? sockMtime !== undefined : e.path in world.files || (options.exists?.(e.path) ?? false) }) as never)
+  on('fs.exists', (_$, e) => {
+    if (e.path === SOCK) return { value: sockMtime !== undefined } as never
+    // the data folder holds what is in it; `exists` answers for the rest
+    return { value: e.path in world.files || (!e.path.startsWith(`${DATA}/`) && (options.exists?.(e.path) ?? false)) } as never
+  })
   on('fs.stat', (_$, e) => {
     if (e.path === SOCK) {
       if (sockMtime === undefined) throw new Error('ENOENT')
@@ -263,4 +290,22 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     return { value: { size: 0, mtimeMs: 0, isLink: false, ...kind } } as never
   })
   return world
+}
+
+// The entries of an .m3u as mpv reads them: each line a file, titled by the
+// #EXTINF before it.
+function m3uEntries(text: string): Entry[] {
+  const out: Entry[] = []
+  let title: string | undefined
+  for (const line of text.split('\n').map(l => l.trim())) {
+    if (!line) continue
+    if (line.startsWith('#')) {
+      const m = /^#EXTINF:[^,]*,(.*)$/.exec(line)
+      if (m) title = m[1]
+      continue
+    }
+    out.push(title ? { filename: line, title } : { filename: line })
+    title = undefined
+  }
+  return out
 }

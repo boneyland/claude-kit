@@ -32,7 +32,7 @@ function recorder(missing = false) {
       return ok
     }
     if (argv[0] === 'rm') fs.rmSync(argv[2], { force: true })
-    if (argv[0] === 'sh') fake = await (starting = fakeMpv(dir))
+    if (argv[0] === 'sh' && argv[2]?.includes('setsid')) fake = await (starting = fakeMpv(dir))
     return ok
   }
 }
@@ -72,6 +72,7 @@ describe('openSession', () => {
   test('a stale socket is removed and one detached mpv is started', async () => {
     orphanSocket()
     const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
     session = await openSession([music], { env, run: recorder() })
     await until(() => fake !== undefined && fake.received.length > 0)
     const rm = ran.findIndex(a => a.join(' ') === `rm -f ${sock}`)
@@ -82,7 +83,8 @@ describe('openSession', () => {
     expect(starts[0].slice(0, 3)).toEqual(['sh', '-c', expect.stringContaining('exec setsid -f "$@"')])
     expect(starts[0]).toContain(`--input-ipc-server=${sock}`)
     expect(starts[0]).toContain('mpv')
-    expect(starts[0].at(-1)).toBe(music)
+    // the folder's songs became the queue, handed to mpv as a playlist file
+    expect(starts[0].slice(-3)).toEqual(['--playlist-start=0', '--', path.join(dir, 'queue.m3u')])
   })
 
   test('close sends no quit and no stop to mpv', async () => {
@@ -99,6 +101,7 @@ describe('openSession', () => {
   test('a missing mpv shows in status and does not throw', async () => {
     orphanSocket()
     const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
     session = await openSession([music], { env, run: recorder(true) })
     await until(() => session!.status() !== '')
     expect(session.status()).toContain(`Can't start "mpv"`)
