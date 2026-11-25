@@ -77,7 +77,8 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
             <Box flexGrow={1}>
               <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
                 {` ${isPicked ? '+' : ' '}${label(row)}`}
-                {artist ? <Text dimColor>{` · ${artist}`}</Text> : null}
+                {/* dim on the highlight would be hard to read: full strength there */}
+                {artist ? <Text dimColor={at !== selected}>{` · ${artist}`}</Text> : null}
               </Text>
               <RowFill on={at === selected} width={width} />
             </Box>

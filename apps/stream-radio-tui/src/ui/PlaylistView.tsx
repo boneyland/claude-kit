@@ -42,7 +42,8 @@ export function PlaylistView({ heading, rows, selected, picked, dropAt, current,
             <Box flexGrow={1}>
             <Text inverse={at === selected} bold={isPlaying} color={isPicked ? 'cyan' : undefined} underline={dropAt === at + 1 && dropAt !== undefined} wrap="truncate-end">
               {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${row.title}`}
-              {extra ? <Text dimColor>{` · ${extra}`}</Text> : null}
+              {/* dim on the highlight would be hard to read: full strength there */}
+              {extra ? <Text dimColor={at !== selected}>{` · ${extra}`}</Text> : null}
             </Text>
             <RowFill on={at === selected} width={width} />
             </Box>

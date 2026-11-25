@@ -31,6 +31,17 @@ test('the cursor row is inverse across the whole width, ⋯ included', () => {
   expect(other).not.toContain(INVERSE)
 })
 
+test("the artist and where are dim, except on the cursor's row", () => {
+  const withExtra = (index: number) => ({ ...row(index, 'Song'), artist: 'The Band', where: 'Album' }) as FlatRow
+  const { lastFrame } = render(
+    <PlaylistView heading="Playlist" rows={[withExtra(0), withExtra(1)]} selected={0} current={-1} height={2} width={40} first={0} />,
+  )
+  const [, cursor, other] = lastFrame()!.split('\n')
+  expect(cursor).toContain('The Band · Album')
+  expect(cursor).not.toContain('\x1b[2m')
+  expect(other).toContain('\x1b[2m')
+})
+
 test('a row too long for the width is still one line, truncated', () => {
   const { lastFrame } = render(
     <PlaylistView heading="Playlist" rows={[row(0, 'x'.repeat(80))]} selected={0} current={-1} height={1} width={30} first={0} />,
