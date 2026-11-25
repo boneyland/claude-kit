@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
-import { addToQueue, pick, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
+import { addToQueue, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
@@ -225,7 +225,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'tab':
         return setTab(tabRef.current === 'files' ? 'playlist' : 'files')
       case 'pause':
-        return act(async () => ((await togglePause(h)) ? '' : 'The player is not ready yet.'))
+        return act(async () => {
+          // stopped with a queue: play it, its song from the start, as the
+          // mod's ▶ does (l resumes mid-song)
+          const [playing, queue] = await Promise.all([h.vars.read('playing'), h.vars.read('queue')])
+          if (!playing && queue.kind !== 'none') return playQueue(h, session.config, session.config.defaultUrl)
+          return (await togglePause(h)) ? '' : 'The player is not ready yet.'
+        })
       case 'next':
       case 'prev':
         return act(() => step(h, a.kind === 'next' ? 1 : -1))

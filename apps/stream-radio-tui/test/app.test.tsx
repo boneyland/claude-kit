@@ -37,6 +37,7 @@ vi.mock('@core/player', async original => {
     setRepeat: vi.fn(async () => 'Repeat: this song.'),
     stopPlaying: vi.fn(async () => undefined),
     resumeQueue: vi.fn(async () => ''),
+    playQueue: vi.fn(async () => ''),
     seek: vi.fn(async () => ''),
     playSource: vi.fn(async () => ''),
     locate: vi.fn(async (_h: Host, args: string) => ({ kind: 'play', url: args })),
@@ -486,6 +487,14 @@ describe('keys', () => {
     const { press, host } = await show(100)
     await press(' ')
     expect(player.togglePause).toHaveBeenCalledWith(host)
+  })
+
+  test("space while stopped with a queue plays it from its song's start, as ▶ does", async () => {
+    const { press, host, session, ui } = await show(100, { ...PLAYING, playing: '', elapsed: -1 })
+    await press(' ')
+    expect(player.playQueue).toHaveBeenCalledWith(host, session.config, session.config.defaultUrl)
+    expect(player.togglePause).not.toHaveBeenCalled()
+    expect(ui.lastFrame()).not.toContain('The player is not ready yet.')
   })
 
   test('q lets go of the player and never stops it', async () => {

@@ -9,7 +9,7 @@ export const KEY_HELP: [string, string][] = [
   ['Tab  Shift-Tab', 'switch tabs: Files and the queue'],
   ['↑ ↓  k j', 'move'],
   ['Shift-↑ ↓', 'pick rows from the cursor'],
-  ['space', 'pause or resume; while rows are picked, pick or unpick this one'],
+  ['space', 'pause or resume; stopped, play the playlist from its song\'s start; while rows are picked, pick or unpick this one'],
   ['Esc', 'clear the pick'],
   ['m', "the row's menu"],
   ['S', 'sort by the next field; after the last, as queued'],
