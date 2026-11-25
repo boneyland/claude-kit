@@ -210,8 +210,13 @@ async function playButton($: EngineInterface, config: Config, defaultUrl: string
     const said = await playQueue(h, config, defaultUrl)
     if (said) h.toast(said)
   } catch (error) {
-    h.toast(`stream-radio failed: ${error instanceof Error ? error.message : String(error)}`)
+    h.toast(failedText(error))
   }
+}
+
+// A start not waited on has no reply line: why it failed is a toast.
+function failedText(error: unknown): string {
+  return `stream-radio failed: ${error instanceof Error ? error.message : String(error)}`
 }
 
 export const register: Register = (on, options) => {
@@ -323,7 +328,7 @@ export const register: Register = (on, options) => {
         // The queue where it got to; the default stream before anything has
         // played, not waited on (it may be listed by yt-dlp): its note a toast.
         const h = hostFor($, config)
-        const said = await resumeQueue(h, config, defaultUrl, work => void work.then(note => note && h.toast(note), () => undefined))
+        const said = await resumeQueue(h, config, defaultUrl, work => void work.then(note => note && h.toast(note), error => h.toast(failedText(error))))
         if (said) return { text: said }
         const again = await read($, lastUrl)
         const where = resumable(await read($, resumeAt), again)
@@ -334,7 +339,7 @@ export const register: Register = (on, options) => {
       // In the background, as a start always was: a hook that takes long is
       // reported as unanswered. What the expansion says shows as a toast.
       const h = hostFor($, config)
-      void playSource(h, config, parsed.url).then(note => note && h.toast(note), () => undefined)
+      void playSource(h, config, parsed.url).then(note => note && h.toast(note), error => h.toast(failedText(error)))
 
       return {
         text: `Starting ${parsed.url}. Click the footer title for the panel; /stream pause, next, prev or stop work too.`,

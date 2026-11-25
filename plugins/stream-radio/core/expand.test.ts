@@ -166,6 +166,24 @@ test('a YouTube link to a video in a playlist starts at that video', async () =>
   expect(await at('https://www.youtube.com/watch?v=b&list=PL1')).toBe(1)
   expect(await at('https://youtu.be/c?list=PL1')).toBe(2)
   expect(await at('https://www.youtube.com/playlist?list=PL1')).toBe(0)
+  // not in the playlist: that video goes first
   expect(await at('https://www.youtube.com/watch?v=gone&list=PL1')).toBe(0)
+  expect((await expandSource(h, 'https://www.youtube.com/watch?v=gone&list=PL1')).entries[0]!.path).toBe('https://www.youtube.com/watch?v=gone')
   expect(await at('/m/x.mp3')).toBe(0)
+})
+
+test("another site's ?list= plays as it is, without yt-dlp", async () => {
+  const { h, runs } = hostOf({})
+  const r = await expandSource(h, 'http://radio.example/live?list=main')
+  expect(r).toEqual({ entries: [{ path: 'http://radio.example/live?list=main' }], root: '', note: '', start: 0 })
+  expect(runs).toEqual([])
+})
+
+test('a linked video past the listed cap plays first, then the playlist, and the note says so', async () => {
+  const videos = ['a', 'b', 'c'].map(v => ({ url: `https://www.youtube.com/watch?v=${v}`, title: v.toUpperCase() }))
+  const { h } = hostOf({ ytdlp: JSON.stringify({ title: 'Mix', entries: videos }) })
+  const r = await expandSource(h, 'https://www.youtube.com/watch?v=z&list=PL1', 2)
+  expect(r.entries.map(e => e.path)).toEqual(['https://www.youtube.com/watch?v=z', 'https://www.youtube.com/watch?v=a'])
+  expect(r.start).toBe(0)
+  expect(r.note).toContain('plays first')
 })

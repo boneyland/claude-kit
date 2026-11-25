@@ -157,17 +157,18 @@ export async function backUpAndEmpty(h: Host): Promise<'busy' | void> {
   if (done === 'busy') return 'busy'
 }
 
-// Brings the cleared queue back (rev + 1 over the empty one); false when there
-// is no backup, 'busy' when the lock could not be had (nothing changed). Its
-// entries keep their ids, made at revs up to its own; the rev goes past that
-// too, so no later add makes one of those ids again (the queue file may have
-// started over meanwhile, from a lower rev).
-export async function restorePrev(h: Host): Promise<boolean | 'busy'> {
+// Brings the cleared queue back (rev + 1 over the empty one), only while the
+// queue is still empty: songs another program added since are kept, not
+// replaced. Resolves to the queue now on file (restored, or the one filled
+// meanwhile); false when there is no backup, 'busy' when the lock could not be
+// had (nothing changed). Its entries keep their ids, made at revs up to its
+// own; the rev goes past that too, so no later add makes one of those ids again
+// (the queue file may have started over meanwhile, from a lower rev).
+export async function restorePrev(h: Host): Promise<StoredQueue | false | 'busy'> {
   const p = await paths(h)
   const prev = await h.fs.read(p.prev).then(parseStored, () => EMPTY_QUEUE)
   if (prev.entries.length === 0) return false
-  const done = await updateStored(h, q => ({ ...prev, rev: Math.max(q.rev, prev.rev, highestIdRev(prev)) + 1 }))
-  return done === 'busy' ? 'busy' : true
+  return updateStored(h, q => (q.entries.length > 0 ? q : { ...prev, rev: Math.max(q.rev, prev.rev, highestIdRev(prev)) + 1 }))
 }
 
 // The highest rev an entry's id was made at (ids are `rev.i`); 0 for none.

@@ -207,9 +207,26 @@ async function expandPlaylistFile(h: Host, source: string, depth: number, budget
   }
 }
 
+// YouTube's own hosts: only their `list=` links are listed with yt-dlp (any
+// other site's `?list=` is a stream or a page mpv plays as it is).
+const YOUTUBE_HOST = /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i
+
+// Whether `url` is a playlist this expands into its songs before playing: a
+// playlist file's URL, or a YouTube link with a `list=`. Anything else plays as
+// one entry.
+export function isListedUrl(url: string): boolean {
+  if (isPlaylistExt(extOf(urlPath(url)))) return true
+  try {
+    const u = new URL(url)
+    return YOUTUBE_HOST.test(u.hostname) && u.searchParams.has('list') && extOf(u.pathname) !== 'm3u8'
+  } catch {
+    return false
+  }
+}
+
 // A YouTube video's id from its link: watch?v=ID, youtu.be/ID, /shorts/ID or
 // /live/ID; '' for anything else.
-function videoOf(url: string): string {
+export function videoOf(url: string): string {
   let u: URL
   try {
     u = new URL(url)
@@ -237,26 +254,23 @@ export async function expandSource(h: Host, source: string, limit = MAX_SONGS): 
       if (budget.capped) budget.notes.push(`Added the first ${limit} songs of ${source}.`)
       return { entries, root: '', note: budget.notes.join(' '), start: 0 }
     }
-    let query = ''
-    try {
-      query = new URL(source).searchParams.has('list') ? 'list' : ''
-    } catch {
-      query = ''
-    }
-    if (ext === 'm3u8' || !query) return one()
+    if (!isListedUrl(source)) return one()
     const listing = await listPlaylist(h, source)
     if ('error' in listing) return { entries: [{ path: source }], root: '', note: `Couldn't list ${source} (${listing.error}); added it as it is.`, start: 0 }
     const capped = listing.entries.length > limit
     const entries = listing.entries.slice(0, limit).map(v => ({ path: v.url, title: v.title }))
+    const note = capped ? `Added the first ${limit} songs of ${source}.` : ''
     // a link to a video in a playlist (v= and list=) starts at that video, as mpv did
     const video = videoOf(source)
     const start = video ? entries.findIndex(e => videoOf(e.path) === video) : -1
-    return {
-      entries,
-      root: '',
-      note: capped ? `Added the first ${limit} songs of ${source}.` : '',
-      start: Math.max(0, start),
+    // past what was listed (or not in it): that video goes first, then the list
+    if (video && start < 0) {
+      const own = { path: `https://www.youtube.com/watch?v=${video}` }
+      const rest = entries.slice(0, limit - 1)
+      const why = capped ? ` It is past the first ${limit - 1}, so it plays first, then the playlist from its start.` : ''
+      return { entries: [own, ...rest], root: '', note: capped ? `Added the first ${limit - 1} songs of ${source}.${why}` : '', start: 0 }
     }
+    return { entries, root: '', note, start: Math.max(0, start) }
   }
   const st = await h.fs.stat(source).catch(() => undefined)
   if (st?.kind === 'dir') {

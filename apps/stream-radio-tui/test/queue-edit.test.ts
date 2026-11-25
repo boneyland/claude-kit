@@ -495,6 +495,23 @@ test('clear backs up; l brings it back', async () => {
   await stopPlaying(h, session.config)
 })
 
+test('clear stops the player before it empties the file, so no mend writes the player\'s list back', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac', '/m/c.flac'])
+  // when the emptied queue lands, whether the player had been told to quit
+  let quitFirst: boolean | undefined
+  const was = session!.host.run
+  vi.spyOn(session!.host, 'run').mockImplementation(async (argv, opts) => {
+    if (argv[0] === 'mv' && argv[3] === QUEUE_JSON && JSON.parse(fs.readFileSync(argv[2]!, 'utf8')).entries.length === 0) {
+      quitFirst = commands().some(c => c[0] === 'quit')
+    }
+    return was(argv, opts)
+  })
+  expect(await clearQueue(h, session!.config)).toBe('Cleared the playlist. l brings it back.')
+  expect(quitFirst).toBe(true)
+  expect(readJson(QUEUE_JSON).entries).toEqual([])
+  expect(readJson(path.join(dir, 'player.json')).isStopped).toBe(true)
+})
+
 // each waits QUEUE_LOCK_WAIT_MS for the lock before it says so
 test('a busy queue says so', { timeout: 30_000 }, async () => {
   stored(['/m/a.flac', '/m/b.flac'])

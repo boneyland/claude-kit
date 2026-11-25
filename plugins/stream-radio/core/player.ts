@@ -18,7 +18,7 @@ import {
   trackTitle,
   WATCHED,
 } from './nowplaying'
-import { expandSource, isNetwork, MAX_SONGS } from './expand'
+import { expandSource, isListedUrl, isNetwork, MAX_SONGS, videoOf } from './expand'
 import { isPlayable, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
@@ -144,7 +144,9 @@ async function migrate(h: Host) {
   const { url, resumeAt: at } = last
   // A URL without a playlist (index -1) was resumed as itself: its title names it.
   const one = at.url === url && at.index < 0 && at.title ? { path: url, title: at.title } : { path: url }
-  const { entries, root } = /^https?:/.test(url)
+  // A playlist URL is listed (as a play lists it), so the saved song in it is
+  // found again; any other URL is the one entry.
+  const { entries, root } = /^https?:/.test(url) && !isListedUrl(url)
     ? { entries: [one], root: '' }
     : await expandSource(h, url).catch(() => ({ entries: [] as QueueEntry[], root: '' }))
   // Nothing came of it (a folder gone, say): the empty queue is written, so a
@@ -154,7 +156,9 @@ async function migrate(h: Host) {
   )
   if (q === 'busy' || !entries.length || q.source !== url || at.url !== url) return
   const shown = played(q)
-  const byPath = at.path ? shown.find(e => e.path === at.path) : undefined
+  // mpv may name a YouTube video otherwise than the listing does: by its id
+  const video = at.path ? videoOf(at.path) : ''
+  const byPath = at.path ? (shown.find(e => e.path === at.path) ?? (video ? shown.find(e => videoOf(e.path) === video) : undefined)) : undefined
   const e = byPath ?? shown[Math.max(0, at.index)]
   if (e) await writePlace(h, { rev: q.rev, current: e.id, seconds: at.seconds }).catch(() => undefined)
 }
@@ -658,7 +662,7 @@ async function notePlace(h: Host) {
 export async function recordPosition(h: Host, pos: number) {
   const url = await h.vars.read('lastUrl')
   const title = (await h.vars.read('chapter')) || (await h.vars.read('playing'))
-  if (pending || !url || !title || title === 'connecting…' || title === LOADING) return
+  if (pending || !url || !title || title === CONNECTING || title === LOADING) return
   const q = await h.vars.read('queue')
   const index = q.kind === 'playlist' ? q.current : -1
   const path = q.kind === 'playlist' ? q.paths[index] : undefined
@@ -832,7 +836,6 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
   const client = retryClient ?? (androidClient || needsAndroid.has(url) ? 'android' : undefined)
   detach()
   run += 1
-  asked += 1
   const mine = run
   isStarting = true
   const seconds = index === at.index ? at.seconds : 0
@@ -846,7 +849,7 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
       await h.vars.change('chapter', () => '')
       await h.events.titleChanged()
       await h.vars.change('filter', () => '')
-      await h.vars.change('playing', () => 'connecting…')
+      await h.vars.change('playing', () => CONNECTING)
       h.events.watching(true)
       await savePlace(h, true)
 
@@ -874,7 +877,25 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
       await endPlayer(h)
       if (mine !== run) return
       await h.run(['rm', '-f', p.sock]).catch(() => undefined)
-      await writeWhole(h, p.queue, m3u(shown))
+      try {
+        await writeWhole(h, p.queue, m3u(shown))
+      } catch (error) {
+        // nothing plays now (the old player is gone): say why, as for a player
+        // that would not start, and find any player again
+        if (mine !== run) return
+        isStarting = false
+        started = undefined
+        // stopped, so no session reconnects to a player that never was
+        await writeIntent(h, { id, url, client: client ?? '', isStopped: true, attempt, playedAt: 0 }).catch(() => undefined)
+        await releaseLock(h)
+        await goIdle(h)
+        await refreshFromStored(h)
+        startPoller(h, config)
+        const why = error instanceof Error ? error.message : String(error)
+        h.log(`stream-radio: could not write the playlist file: ${why}`)
+        h.toast(`stream failed: could not write the playlist file${why ? ` (${plain(why).slice(0, 80)})` : ''}.`)
+        return
+      }
 
       const loops = loopsFor(await h.vars.read('repeat'))
       const argv = [
@@ -939,6 +960,8 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
 // What the footer shows while what was asked is expanded (yt-dlp, curl), as
 // `connecting…` while mpv starts.
 export const LOADING = 'loading…'
+// What the footer shows while mpv starts.
+export const CONNECTING = 'connecting…'
 // What it showed before, to show again when the expansion comes to nothing.
 let beforeLoading = ''
 
@@ -1009,6 +1032,8 @@ export async function playAt(h: Host, config: PlayerConfig, shownIndex: number):
   const e = played(q)[shownIndex]
   if (!e) return 'Nothing to pick from.'
   await writePlace(h, { rev: q.rev, current: e.id, seconds: 0 }).catch(() => undefined)
+  // asked for: a play still expanding gives way (a reconnect's launch does not)
+  asked += 1
   launch(h, config, q, { index: shownIndex, seconds: 0 })
   await refreshFromStored(h)
   return ''
@@ -1064,9 +1089,11 @@ async function startQueue(h: Host, config: PlayerConfig, fallback: string, isRes
       later(playSource(h, config, fallback))
       return `Starting ${fallback}.`
     }
-    q = await readStored(h)
+    // the backup, or the songs another program added meanwhile
+    q = back
   }
   const at = placeIn(q, await readPlace(h))
+  asked += 1
   launch(h, config, q, isResume ? at : { index: at.index, seconds: 0 })
   await refreshFromStored(h)
   return ''
@@ -1587,10 +1614,13 @@ export async function removeFromQueue(h: Host, config: PlayerConfig, shownIndexe
 // Stops the player and empties the queue; the queue cleared is kept, for `l`
 // to bring back.
 export async function clearQueue(h: Host, config: PlayerConfig): Promise<string> {
+  // Stopped first: a mend due while mpv still plays would find the file
+  // empty and write mpv's list back into it.
+  await stopPlaying(h, config)
   const done = await backUpAndEmpty(h).catch(() => 'failed' as const)
   if (done === 'busy') return BUSY
   if (done === 'failed') return 'Could not save the queue.'
-  await stopPlaying(h, config)
+  await refreshFromStored(h)
   return 'Cleared the playlist. l brings it back.'
 }
 

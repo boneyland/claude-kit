@@ -147,10 +147,23 @@ test('backUpAndEmpty then restorePrev gives the same entries back', async () => 
   const empty = await readStored(h)
   expect(empty.entries).toEqual([])
   expect(empty.rev).toBe(was.rev + 1)
-  expect(await restorePrev(h)).toBe(true)
+  const said = await restorePrev(h)
   const back = await readStored(h)
+  expect(said).toEqual(back)
   expect(back.entries).toEqual(was.entries)
   expect(back.rev).toBeGreaterThan(empty.rev)
+})
+
+test('restorePrev keeps songs added after the clear, and resolves to them', async () => {
+  const { h } = hostOf()
+  await updateStored(h, add('/a.mp3'))
+  await backUpAndEmpty(h)
+  // another program fills the queue between the empty check and the restore
+  await updateStored(h, add('/b.mp3'))
+  const filled = await readStored(h)
+  const said = await restorePrev(h)
+  expect(said).toEqual(filled)
+  expect((await readStored(h)).entries.map(e => e.path)).toEqual(['/b.mp3'])
 })
 
 test('backUpAndEmpty says busy when the lock cannot be had', async () => {

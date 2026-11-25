@@ -546,6 +546,17 @@ describe('keys', () => {
     expect(lines().join('\n')).toContain('Already playing Song three.')
   })
 
+  test('l while a play is still loading or connecting resumes, not "Already playing loading…"', async () => {
+    for (const playing of ['loading…', 'connecting…']) {
+      vi.mocked(player.resumeQueue).mockClear()
+      const { press, host, lines, ui } = await show(100, { ...PLAYING, playing })
+      await press('l')
+      expect(player.resumeQueue).toHaveBeenCalledWith(host, expect.anything(), expect.anything())
+      expect(lines().join('\n')).not.toContain('Already playing')
+      ui.unmount()
+    }
+  })
+
   test('l after a stop picks the last URL up again', async () => {
     const { press, host } = await show(100, { ...PLAYING, playing: '', elapsed: -1 })
     await press('l')

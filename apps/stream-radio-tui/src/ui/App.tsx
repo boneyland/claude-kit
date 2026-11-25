@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
-import { addToQueue, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
+import { addToQueue, CONNECTING, LOADING, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
@@ -252,8 +252,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return setMode('open')
       case 'last':
         return act(async () => {
-          // what plays is the queue, so resuming it again would only jump back
-          if (view.playing) return `Already playing ${view.playing}.`
+          // what plays is the queue, so resuming it again would only jump back;
+          // a play still loading or connecting is not playing yet: `l` wins
+          if (view.playing && view.playing !== LOADING && view.playing !== CONNECTING) return `Already playing ${view.playing}.`
           return resumeQueue(h, session.config, session.config.defaultUrl)
         })
       case 'stop':
