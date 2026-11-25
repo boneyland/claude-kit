@@ -1,19 +1,24 @@
 import { build } from 'esbuild'
 import { execSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { INK_OUTPUT, patchInkOutput } from './ink-width-fix.mjs'
 
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
-// The commit for --version; 'unknown' outside a git checkout (a source tarball).
-const gitCommit = () => {
+// The version: the commit's date (UTC), then its short hash, as
+// 2026.11.26+e23f472; the same commit builds the same version. 'unknown'
+// outside a git checkout (a source tarball). The workflow's Publish step
+// names the release with the same git command.
+const version = () => {
   try {
-    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    return execSync('git show -s --abbrev=7 --date=format-local:%Y.%m.%d --format=%cd+%h HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, TZ: 'UTC' },
+    })
+      .toString()
+      .trim()
   } catch {
     return 'unknown'
   }
 }
-const commit = process.env.GITHUB_SHA?.slice(0, 7) || gitCommit()
 
 // Ink imports react-devtools-core only under DEV=true, from a module it loads
 // with a dynamic import; bundled into one file that import becomes a top-level
@@ -48,7 +53,6 @@ await build({
   plugins: [noDevtools, inkWidth],
   define: {
     'process.env.NODE_ENV': '"production"',
-    __VERSION__: JSON.stringify(pkg.version),
-    __COMMIT__: JSON.stringify(commit),
+    __VERSION__: JSON.stringify(version()),
   },
 })
