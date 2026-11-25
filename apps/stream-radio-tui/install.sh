@@ -9,13 +9,13 @@ DEST="${PREFIX:-$HOME/.local/bin}"
 missing=""
 if command -v node >/dev/null 2>&1; then
   major=$(node -p 'process.versions.node.split(".")[0]')
-  if [ "$major" -lt 20 ]; then
+  if [ "$major" -lt 22 ]; then
     missing="$missing
-  node 20 or newer (found node $major)"
+  node 22 or newer (found node $major)"
   fi
 else
   missing="$missing
-  node 20 or newer"
+  node 22 or newer"
 fi
 command -v mpv >/dev/null 2>&1 || missing="$missing
   mpv"
