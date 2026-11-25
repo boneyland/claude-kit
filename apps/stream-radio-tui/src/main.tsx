@@ -11,9 +11,7 @@ import { MOUSE_OFF, MOUSE_ON } from './mouse/sgr'
 
 // Set by build.mjs; absent under vitest or tsx.
 declare const __VERSION__: string | undefined
-declare const __COMMIT__: string | undefined
 const VERSION = typeof __VERSION__ === 'string' ? __VERSION__ : 'dev'
-const COMMIT = typeof __COMMIT__ === 'string' ? __COMMIT__ : 'unknown'
 
 
 
@@ -29,7 +27,7 @@ const ENTER_ALT = '\x1b[?1049h'
 let shown: Graphics | undefined
 
 async function main(argv: string[]) {
-  if (argv.includes('--version')) return console.log(`stream-radio-tui ${VERSION} (${COMMIT})`)
+  if (argv.includes('--version')) return console.log(`stream-radio-tui ${VERSION}`)
   if (argv.includes('--help') || argv.includes('-h')) return console.log(USAGE)
 
   const listeners = new Set<() => void>()
