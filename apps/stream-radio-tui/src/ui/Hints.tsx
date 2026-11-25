@@ -13,7 +13,7 @@ const FIRST = {
   help: ['↑/↓ or j/k scroll  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
   menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],
 }
-const SECOND = ['? all keys  Tab switch tabs  o go to  l resume last  x stop  q quit (music keeps playing)', '? keys  Tab tabs  o go to  l resume  x stop  q quit']
+const SECOND = ['? all keys  Tab switch tabs  o go to  l resume  x stop  q quit (music keeps playing)', '? keys  Tab tabs  o go to  l resume  x stop  q quit']
 
 // The two lines of key hints, for the tab showing; shorter under 80 columns.
 export function Hints({ mode, isWide, tab = 'playlist' }: { mode: Mode; isWide: boolean; tab?: Tab }) {

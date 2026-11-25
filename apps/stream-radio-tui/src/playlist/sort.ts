@@ -4,8 +4,8 @@ export type SortField = 'title' | 'artist' | 'albumArtist' | 'album' | 'folder'
 const FIELDS: readonly SortField[] = ['title', 'artist', 'albumArtist', 'album', 'folder']
 export const SORT_LABEL: Record<SortField, string> = { title: 'title', artist: 'artist', albumArtist: 'album artist', album: 'album', folder: 'folder' }
 
-// The field after `f`, round again; title when none yet.
-export const nextSortField = (f?: SortField): SortField => FIELDS[(f ? FIELDS.indexOf(f) + 1 : 0) % FIELDS.length]
+// The field after `f`; title when none yet, and after the last one none: as queued.
+export const nextSortField = (f?: SortField): SortField | undefined => (f ? FIELDS[FIELDS.indexOf(f) + 1] : FIELDS[0])
 
 // title: the row's shown title (from tags, else the queue's name for it).
 export type SortRow = { path: string; title: string; tags?: Tags }

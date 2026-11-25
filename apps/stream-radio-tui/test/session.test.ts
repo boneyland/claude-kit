@@ -5,6 +5,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
+import * as player from '@core/player'
+
+// playSource is the real one, watched: the test asks what session.ts handed it.
+vi.mock('@core/player', async original => {
+  const real = await original<typeof import('@core/player')>()
+  return { ...real, playSource: vi.fn(real.playSource) }
+})
 
 // The core keeps the data folder for the process, so one for the whole file.
 const state = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-session-'))
@@ -32,7 +39,7 @@ function recorder(missing = false) {
       return ok
     }
     if (argv[0] === 'rm') fs.rmSync(argv[2], { force: true })
-    if (argv[0] === 'sh') fake = await (starting = fakeMpv(dir))
+    if (argv[0] === 'sh' && argv[2]?.includes('setsid')) fake = await (starting = fakeMpv(dir))
     return ok
   }
 }
@@ -72,6 +79,7 @@ describe('openSession', () => {
   test('a stale socket is removed and one detached mpv is started', async () => {
     orphanSocket()
     const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
     session = await openSession([music], { env, run: recorder() })
     await until(() => fake !== undefined && fake.received.length > 0)
     const rm = ran.findIndex(a => a.join(' ') === `rm -f ${sock}`)
@@ -82,7 +90,8 @@ describe('openSession', () => {
     expect(starts[0].slice(0, 3)).toEqual(['sh', '-c', expect.stringContaining('exec setsid -f "$@"')])
     expect(starts[0]).toContain(`--input-ipc-server=${sock}`)
     expect(starts[0]).toContain('mpv')
-    expect(starts[0].at(-1)).toBe(music)
+    // the folder's songs became the queue, handed to mpv as a playlist file
+    expect(starts[0].slice(-2)).toEqual(['--playlist-start=0', `--playlist=${path.join(dir, 'queue.m3u')}`])
   })
 
   test('close sends no quit and no stop to mpv', async () => {
@@ -99,9 +108,22 @@ describe('openSession', () => {
   test('a missing mpv shows in status and does not throw', async () => {
     orphanSocket()
     const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
     session = await openSession([music], { env, run: recorder(true) })
     await until(() => session!.status() !== '')
     expect(session.status()).toContain(`Can't start "mpv"`)
+  })
+
+  test('a play whose queue cannot be saved shows in status and does not throw', async () => {
+    const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
+    const rec = recorder()
+    // the state folder refuses the move that saves the queue
+    const run = async (argv: readonly string[]) => (argv[0] === 'mv' ? { exitCode: 1, stdout: '', stderr: 'read-only' } : rec(argv))
+    session = await openSession([music], { env, run })
+    await until(() => session!.status() !== '')
+    expect(session.status()).toContain(`Could not play ${music}`)
+    expect(ran.some(a => a.join(' ').includes('setsid'))).toBe(false)
   })
 
   test('a path that does not exist shows in status', async () => {
@@ -152,5 +174,16 @@ describe('openSession', () => {
     const watch = session.host.watch(sock, ['pause'])
     expect(await watch.next()).toEqual({ done: true, value: undefined })
     expect(fake.received).toEqual([])
+  })
+
+  test('an argument starts the queue with playSource, given that argument', async () => {
+    orphanSocket()
+    const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
+    vi.mocked(player.playSource).mockClear()
+    session = await openSession([music], { env, run: recorder() })
+    await until(() => vi.mocked(player.playSource).mock.calls.length > 0)
+    expect(player.playSource).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(player.playSource).mock.calls[0]![2]).toBe(music)
   })
 })

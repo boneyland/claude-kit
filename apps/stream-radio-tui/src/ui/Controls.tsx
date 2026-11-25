@@ -49,7 +49,8 @@ export function VolumeBar({ level, width, onSet }: BarProps) {
   )
 }
 
-type Props = { isPaused: boolean; volume: number; width: number; onAction?(a: Action): void; onVolume?(level: number): void }
+// isStopped: nothing plays (the pause key then plays the queue).
+type Props = { isPaused: boolean; isStopped: boolean; volume: number; width: number; onAction?(a: Action): void; onVolume?(level: number): void }
 
 // Nerd Font Material icons (kitty and Ghostty bundle the font): previous,
 // pause, play, next, stop. Each takes one column; kitty may draw it over the
@@ -57,8 +58,8 @@ type Props = { isPaused: boolean; volume: number; width: number; onAction?(a: Ac
 export const ICONS = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: '\u{F040A}', next: '\u{F04AD}', stop: '\u{F04DB}' }
 
 // 󰒮 󰏤 󰒭 󰓛 then the volume bar over the rest of `width`; the play icon for
-// pause while paused. Each does what its key does.
-export function Controls({ isPaused, volume, width, onAction, onVolume }: Props) {
+// pause while paused or stopped. Each does what its key does.
+export function Controls({ isPaused, isStopped, volume, width, onAction, onVolume }: Props) {
   const button = (icon: string, a: Action) => (
     <Clickable flexShrink={0} onClick={() => onAction?.(a)}>
       <Text>{`${icon} `}</Text>
@@ -70,7 +71,7 @@ export function Controls({ isPaused, volume, width, onAction, onVolume }: Props)
     <Box width={width} flexShrink={0}>
       {button(ICONS.prev, { kind: 'prev' })}
       <Text> </Text>
-      {button(isPaused ? ICONS.play : ICONS.pause, { kind: 'pause' })}
+      {button(isPaused || isStopped ? ICONS.play : ICONS.pause, { kind: 'pause' })}
       <Text> </Text>
       {button(ICONS.next, { kind: 'next' })}
       <Text> </Text>

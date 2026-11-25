@@ -25,17 +25,19 @@ import {
   connect,
   isFollowing,
   detach,
-  loadLast,
+  migrateLast,
   loadRepeat,
   loadVolume,
   locate,
   pick,
+  playQueue,
+  playSource,
+  refreshFromStored,
   releaseLock,
   resumable,
-  resume,
+  resumeQueue,
   setRepeat,
   setVolume,
-  start,
   step,
   stopPlaying,
   stopPoller,
@@ -199,6 +201,24 @@ async function seekBy($: EngineInterface, config: Config, seconds: number, isRel
   return seek(hostFor($, config), seconds, isRelative)
 }
 
+// The footer's ▶: the queue from the start of its place's song (Play after
+// Stop starts it from 0:00; `l` resumes), else the default stream. A button has
+// no reply line, so what it says is a toast. Not waited on by the press.
+async function playButton($: EngineInterface, config: Config, defaultUrl: string) {
+  const h = hostFor($, config)
+  try {
+    const said = await playQueue(h, config, defaultUrl)
+    if (said) h.toast(said)
+  } catch (error) {
+    h.toast(failedText(error))
+  }
+}
+
+// A start not waited on has no reply line: why it failed is a toast.
+function failedText(error: unknown): string {
+  return `stream-radio failed: ${error instanceof Error ? error.message : String(error)}`
+}
+
 export const register: Register = (on, options) => {
   const {
     defaultUrl = '',
@@ -228,11 +248,16 @@ export const register: Register = (on, options) => {
     await update($, elapsed, () => -1)
     await update($, chapter, () => '')
     await update($, scroll, () => 0)
-    await update($, queue, () => NO_QUEUE)
     await update($, notice, () => '')
     // Before state.json, saved state was in the store: brought over once.
     await migrateFromStore(hostFor($, config), { get: key => $.store.get(key) })
-    await loadLast(hostFor($, config))
+    // An earlier version's last URL becomes the queue, shown before anything
+    // plays. In the background: it can list a big folder, and a slow hook holds
+    // up the session.
+    const h = hostFor($, config)
+    void migrateLast(h)
+      .then(() => refreshFromStored(h))
+      .catch(error => h.log(`stream-radio: could not read the queue: ${error instanceof Error ? error.message : String(error)}`, 'debug'))
     await loadVolume(hostFor($, config), config.volume)
     await loadRepeat(hostFor($, config))
     await checkDefault(hostFor($, config), defaultUrl)
@@ -272,8 +297,8 @@ export const register: Register = (on, options) => {
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.
       if (!isFollowing() && parsed.kind !== 'play' && parsed.kind !== 'last') await connect(hostFor($, config), config).catch(() => undefined)
+      // The queue's own, playing or not.
       if (parsed.kind === 'shuffle') {
-        if (!isFollowing()) return { text: 'Nothing is playing.' }
         return { text: await toggleShuffle(hostFor($, config)) }
       }
       if (parsed.kind === 'repeat') return { text: await setRepeat(hostFor($, config), parsed.mode ?? nextRepeat(await read($, repeatMode))) }
@@ -300,17 +325,21 @@ export const register: Register = (on, options) => {
       }
 
       if (parsed.kind === 'last') {
-        // What played last in this session; the default stream before anything has.
-        const again = (await read($, lastUrl)) || defaultUrl
-        if (!again) return { text: 'Nothing has played yet, and there is no default stream.' }
-        const at = await read($, resumeAt)
-        resume(hostFor($, config), config, again, at)
-        const where = resumable(at, again)
+        // The queue where it got to; the default stream before anything has
+        // played, not waited on (it may be listed by yt-dlp): its note a toast.
+        const h = hostFor($, config)
+        const said = await resumeQueue(h, config, defaultUrl, work => void work.then(note => note && h.toast(note), error => h.toast(failedText(error))))
+        if (said) return { text: said }
+        const again = await read($, lastUrl)
+        const where = resumable(await read($, resumeAt), again)
 
         return { text: where ? `Resuming ${where}.` : `Starting ${again}.` }
       }
 
-      start(hostFor($, config), config, parsed.url)
+      // In the background, as a start always was: a hook that takes long is
+      // reported as unanswered. What the expansion says shows as a toast.
+      const h = hostFor($, config)
+      void playSource(h, config, parsed.url).then(note => note && h.toast(note), error => h.toast(failedText(error)))
 
       return {
         text: `Starting ${parsed.url}. Click the footer title for the panel; /stream pause, next, prev or stop work too.`,
@@ -341,7 +370,7 @@ export const register: Register = (on, options) => {
             label={!title ? '▶' : paused ? '⏸' : '♪'}
             onPress={async () =>
               !title
-                ? resume(hostFor($, config), config, again, await read($, resumeAt))
+                ? void playButton($, config, defaultUrl)
                 : config.toggleOnly
                   ? void togglePause(hostFor($, config))
                   : void togglePane($)
@@ -363,7 +392,7 @@ export const register: Register = (on, options) => {
           <Button
             key="stream-radio"
             label="▶ Play radio"
-            onPress={async () => resume(hostFor($, config), config, again, await read($, resumeAt))}
+            onPress={() => void playButton($, config, defaultUrl)}
           />
         </Box>
       )
@@ -426,11 +455,16 @@ export const register: Register = (on, options) => {
     }
     const at = title ? NO_RESUME : await read($, resumeAt)
     const resumeLabel = last && !title ? resumable(at, last) : ''
-    const play = (url: string) =>
-      act(async () => {
-        start(hostFor($, config), config, url)
-        return ''
-      })
+    // A play not waited on (its expansion may run yt-dlp or curl, and a hook
+    // must not wait on that): what it says shows in the panel when it does.
+    const later = (work: Promise<string>) =>
+      void work
+        .then(
+          reply => reply && update($, notice, () => reply),
+          error => update($, notice, () => `stream-radio failed: ${error instanceof Error ? error.message : String(error)}`),
+        )
+        .catch(() => undefined)
+    const play = (url: string) => act(async () => (later(playSource(hostFor($, config), config, url)), ''))
     const state = [
       paused ? 'paused' : '',
       q.kind !== 'none' && q.current >= 0 ? `${q.current + 1} of ${q.items.length}` : '',
@@ -491,10 +525,7 @@ export const register: Register = (on, options) => {
                 label={resumeLabel ? `${cut(`▶ Resume ${resumeLabel}`, width - 4)} (l)` : 'Play last (l)'}
                 hotkey="l"
                 onPress={() =>
-                  act(async () => {
-                    resume(hostFor($, config), config, last, at)
-                    return ''
-                  })
+                  act(() => resumeQueue(hostFor($, config), config, defaultUrl, later))
                 }
               />
             ) : null}
@@ -510,10 +541,7 @@ export const register: Register = (on, options) => {
           onSubmit={(value: string) => {
             return act(async () => {
               const parsed = await locate(hostFor($, config), value.trim(), '')
-              if (parsed.kind === 'play') {
-                start(hostFor($, config), config, parsed.url)
-                return ''
-              }
+              if (parsed.kind === 'play') return (later(playSource(hostFor($, config), config, parsed.url)), '')
               return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
             })
           }}
@@ -536,7 +564,7 @@ export const register: Register = (on, options) => {
                 onInput={(value: string) => void update($, listFilter, () => value)}
                 onSubmit={() => {
                   const first = rows.find(r => r.kind === 'item')
-                  return first?.kind === 'item' ? act(() => pick(hostFor($, config), first.index)) : act(async () => 'Nothing matches.')
+                  return first?.kind === 'item' ? act(() => pick(hostFor($, config), config, first.index)) : act(async () => 'Nothing matches.')
                 }}
               />
             ) : null}
@@ -566,7 +594,7 @@ export const register: Register = (on, options) => {
                   plain
                   dimColor={i !== q.current}
                   label={cut(`${i === q.current ? '▶' : ' '} ${indent}${row.number}. ${row.name}${row.where ? ` · ${row.where}` : ''}`, width)}
-                  onPress={() => act(() => pick(hostFor($, config), i))}
+                  onPress={() => act(() => pick(hostFor($, config), config, i))}
                 />
               )
             })}

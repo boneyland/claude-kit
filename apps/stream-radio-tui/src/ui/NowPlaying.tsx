@@ -50,7 +50,16 @@ type Props = { view: View; duration: number; width: number; full?: Full; onActio
 // five lines; with `full`, down the whole column.
 export function NowPlaying({ view, duration, width, full, onAction, onVolume, onSeek }: Props) {
   const { playing, isPaused, chapter, elapsed, lastUrl, resumeAt } = view
-  const second = playing ? chapter : lastUrl ? `l plays ${resumable(resumeAt, lastUrl) || lastUrl}` : ''
+  const place = lastUrl ? resumable(resumeAt, lastUrl) : ''
+  const second = playing
+    ? chapter
+    : place
+      ? `l plays ${place}`
+      : view.queue.kind === 'playlist' && view.queue.items.length
+        ? 'Enter plays the picked song'
+        : lastUrl
+          ? `l plays ${lastUrl}`
+          : ''
   const isLive = elapsed < 0 || duration <= 0
   const time = !playing ? <Text> </Text> : isLive ? <Text>♪ live</Text> : <Progress elapsed={elapsed} duration={duration} width={width} onSeek={onSeek} />
   if (full)
@@ -64,7 +73,7 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
         {second || ' '}
       </Text>
       {time}
-      <Controls isPaused={isPaused} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} onAction={onAction} onVolume={onVolume} />
+      <Controls isPaused={isPaused} isStopped={!playing} volume={view.volume} width={Math.min(width, NARROW_CONTROLS)} onAction={onAction} onVolume={onVolume} />
       <Box>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
         <Text>{'   '}</Text>
@@ -94,7 +103,7 @@ function Column({ view, duration, width, full, second, time, onAction, onVolume,
         {second || ' '}
       </Text>
       {tags ? <Text wrap="truncate-end">{tags}</Text> : null}
-      <Controls isPaused={isPaused} volume={view.volume} width={width} onAction={onAction} onVolume={onVolume} />
+      <Controls isPaused={isPaused} isStopped={!playing} volume={view.volume} width={width} onAction={onAction} onVolume={onVolume} />
       <Box>
         <Toggle text={`repeat ${view.repeat}`} action={{ kind: 'repeat' }} onAction={onAction} />
         <Text>{'   '}</Text>

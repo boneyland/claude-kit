@@ -1,5 +1,5 @@
 import type { Host } from '@core/host'
-import { checkDefault, connect, detach, loadLast, loadRepeat, loadVolume, locate, start, stopPoller } from '@core/player'
+import { checkDefault, connect, detach, loadRepeat, loadVolume, locate, migrateLast, playSource, refreshFromStored, stopPoller } from '@core/player'
 import { DEFAULT_CONFIG, loadConfig, type TuiConfig } from './config'
 import { memoryStore, nodeHost } from './host-node'
 
@@ -61,14 +61,24 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
   try {
     config = await loadConfig(env)
     await checkDefault(host, config.defaultUrl)
-    await loadLast(host)
+    // In the background: making the queue from what an earlier version saved
+    // can list a big folder, and the screen need not wait for it.
+    void migrateLast(host)
+      .then(() => refreshFromStored(host))
+      .catch(error => host.log(`stream-radio: could not read the queue: ${error instanceof Error ? error.message : String(error)}`, 'debug'))
     await loadVolume(host, config.volume)
     await loadRepeat(host)
     await connect(host, config)
 
     if (argv[0]) {
       const target = await locate(host, argv[0], config.defaultUrl)
-      if (target.kind === 'play') start(host, config, target.url)
+      // in the background, as a start always was; what it says shows when it does
+      if (target.kind === 'play') {
+        void playSource(host, config, target.url).then(
+          note => note && say(note),
+          error => say(`Could not play ${target.url}: ${error instanceof Error ? error.message : String(error)}`),
+        )
+      }
       else if (target.kind === 'error') say(target.text)
     }
   } catch (error) {

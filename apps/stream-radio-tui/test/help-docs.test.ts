@@ -16,6 +16,13 @@ describe('the key lists', () => {
     expect(missing).toEqual([])
   })
 
+  test('stop keeps the playlist, and S ends at as queued', () => {
+    expect(KEY_HELP).toContainEqual(['x', 'stop (the playlist stays)'])
+    expect(KEY_HELP.find(([k]) => k === 'S')![1]).toContain('as queued')
+    expect(USAGE).toContain('stop (the playlist stays)')
+    expect(README).toContain('as queued')
+  })
+
   test('--help lists every key', () => {
     for (const [label, what] of [...KEY_HELP, ...PLAYLIST_KEY_HELP, ...FILES_KEY_HELP]) {
       expect(USAGE).toContain(`  ${label} `)
