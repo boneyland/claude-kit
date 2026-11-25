@@ -25,7 +25,7 @@ const STEP_TOOL = 'mcp__savvy-progress__step'
 // skip it even with the tool listed; the same request in the brief is followed.
 const STEP_BRIEF = `
 
-Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. It only draws a progress bar.`
+Progress reporting: before any other work, call \`${STEP_TOOL}\` with \`total\` (your plan in 3-8 steps) and \`done: 0\`; call it again with \`done\` and a few-word \`note\` as each step finishes. When the task is done, make one last call right before your final report with \`done\` equal to \`total\`; if you stop blocked or partly done, leave \`done\` where it is. It only draws a progress bar.`
 const PANE = 'savvy-agents'
 // A worker of the flow: its name past any `<plugin>:` prefix starts with `savvy-`.
 // The raw type won't do: every agent of a plugin named `savvy-…` starts so.
@@ -200,8 +200,16 @@ const blank = (): Flow => ({
   tasks: [],
 })
 
+// A closed flow gives way only to a call that brings a flow of its own (a title,
+// a plan or a total). A bare report after the close (`done`, a phase) keeps the
+// closed flow, as it was reset to a blank one before; `finished: false` reopens it.
+const bringsFlow = (input: ProgressInput): boolean =>
+  input.title !== undefined || (input.tasks?.length ?? 0) > 0 || input.total !== undefined
+
 const isNewFlow = (prev: Flow | null, input: ProgressInput): boolean =>
-  !prev || prev.isFinished || (input.title !== undefined && clip(input.title.trim(), MAX_TITLE) !== prev.title)
+  !prev ||
+  (prev.isFinished && bringsFlow(input)) ||
+  (input.title !== undefined && clip(input.title.trim(), MAX_TITLE) !== prev.title)
 
 // Only a known tier is kept: the name is later a key into the tier tables.
 const tierName = (v: string): string => {
@@ -232,7 +240,8 @@ const merge = (prev: Flow | null, input: ProgressInput): Flow => {
     total,
     done,
     phase: input.finished ? 'close' : phase,
-    isFinished: input.finished === true,
+    // Left out, it stays as it was: false for an open or new flow, true for a closed one.
+    isFinished: input.finished ?? base.isFinished,
     tasks,
   }
 }
@@ -1045,7 +1054,8 @@ export const register: Register = (on, options) => {
       description:
         'For savvy-flow workers: report progress on your own task to the agents panel. ' +
         'Right after reading the brief, call it with `total` (your plan in 3-8 steps) and `done: 0`; ' +
-        'call it again as each step finishes. Cheap and silent: it only draws a bar.',
+        'call it again as each step finishes, and once more right before your final report with `done` equal to `total` when the task is done. ' +
+        'Cheap and silent: it only draws a bar.',
       inputSchema: {
         type: 'object',
         properties: {

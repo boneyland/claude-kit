@@ -148,3 +148,39 @@ test('desktop: the bar shrinks to leave the count and the dismiss on screen', as
   expect(await ui.find({ type: 'Button', key: 'savvy-dismiss' })).toBeDefined()
   await ui.unmount()
 })
+
+// upstream PR #50, its second fix
+test('a bare report after the close keeps the finished flow; finished: false reopens it', async ($, on) => {
+  mocks(on)
+  await start($)
+  await $.tool.call({ tool: PROGRESS, title: 'Closing flow', phase: 'delegate', total: 4, done: 3 } as never)
+  expect(await $.tool.call({ tool: PROGRESS, finished: true } as never)).toMatchObject({ result: 'ok: Done' })
+  expect(await $.tool.call({ tool: PROGRESS, done: 4 } as never)).toMatchObject({ result: 'ok: Done' })
+  expect(await bandText($)).toMatch(/Closing flow/)
+  expect(await $.tool.call({ tool: PROGRESS, finished: false } as never)).toMatchObject({ result: 'ok: Tasks 4/4' })
+  expect(await bandText($)).toMatch(/Closing flow/)
+})
+
+test('a flow brought after the close starts over', async ($, on) => {
+  mocks(on)
+  await start($)
+  await $.tool.call({ tool: PROGRESS, title: 'Closing flow', phase: 'delegate', total: 4, done: 3 } as never)
+  await $.tool.call({ tool: PROGRESS, finished: true } as never)
+  expect(await $.tool.call({ tool: PROGRESS, title: 'Fresh flow', phase: 'delegate', total: 2 } as never)).toMatchObject({ result: 'ok: Tasks 0/2' })
+  const text = await bandText($)
+  expect(text).toMatch(/Fresh flow/)
+  expect(text).not.toMatch(/Closing flow/)
+})
+
+// upstream PR #53
+test('a worker is asked to close its step count before its final report', async ($, on) => {
+  mocks(on)
+  let prompt = ''
+  on('agent.spawn', (_$, e) => {
+    prompt = e.prompt
+    return { model: 'claude-opus-5-5', agentId: 'a1' }
+  })
+  await start($)
+  await spawn($, 'savvy-light')
+  expect(prompt).toContain('right before your final report with `done` equal to `total`')
+})
