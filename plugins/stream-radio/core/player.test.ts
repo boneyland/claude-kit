@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Host } from './host'
-import { paths } from './player'
+import { entryName, paths } from './player'
 
 // Only dataDir and run are used: the rest of the Host is never reached.
 const ran: string[][] = []
@@ -22,4 +22,10 @@ test('a data folder not known yet is asked for again, not kept as the root', asy
   // Once known it is kept, and made once.
   expect((await paths(hostIn('/elsewhere'))).sock).toBe('/data/mpv.sock')
   expect(ran).toEqual([['mkdir', '-p', '/data']])
+})
+
+test('queue names come without control characters', async () => {
+  const h = {} as Host
+  expect(await entryName(h, { title: 'Song\x1b]52;c;eA==\x07' }, '')).toBe('Song]52;c;eA==')
+  expect(await entryName(h, { filename: 'https://x.test/a\x1b[2Jb.mp3' }, '')).toBe('a[2Jb.mp3')
 })

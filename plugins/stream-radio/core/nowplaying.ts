@@ -47,10 +47,19 @@ export function splitEvents(buffer: string): { events: PlayerEvent[]; rest: stri
 
 // A metadata map's value for `key`, any case (stream tags come as icy-title,
 // files' as title or TITLE); empty when absent.
+// C0 and C1 control characters, ESC among them. Titles, tags, chapter and
+// file names come from files and sites anyone can make, and the screens that
+// draw them would pass an escape sequence on to the terminal: OSC 52 sets the
+// clipboard, others make the terminal answer into the input.
+const CONTROL = /[\x00-\x1f\x7f-\x9f]/g
+
+// `text` without control characters; a line break or tab becomes a space.
+export const plain = (text: string): string => text.replace(/[\t\n\r]/g, ' ').replace(CONTROL, '')
+
 export function metaValue(meta: unknown, key: string): string {
   if (!meta || typeof meta !== 'object') return ''
   for (const [k, v] of Object.entries(meta as Record<string, unknown>)) {
-    if (k.toLowerCase() === key && typeof v === 'string') return v.trim()
+    if (k.toLowerCase() === key && typeof v === 'string') return plain(v).trim()
   }
   return ''
 }
@@ -58,7 +67,7 @@ export function metaValue(meta: unknown, key: string): string {
 // What the footer shows: a song title (stream metadata) wins over the page's
 // media title.
 export const trackTitle = (media: unknown, meta: unknown) =>
-  metaValue(meta, 'icy-title') || metaValue(meta, 'title') || (typeof media === 'string' ? media.trim() : '')
+  metaValue(meta, 'icy-title') || metaValue(meta, 'title') || (typeof media === 'string' ? plain(media).trim() : '')
 
 // The repeat mode mpv's loop-file and loop-playlist amount to.
 export function repeatOf(loopFile: unknown, loopPlaylist: unknown): 'all' | 'one' | 'off' {
@@ -313,7 +322,7 @@ export function playlistRows(items: readonly string[], paths: readonly string[],
     for (const folder of foldersOf(paths[index] ?? '', root)) {
       let next = byPath.get(folder)
       if (!next) {
-        next = { path: folder, name: baseName(folder), count: 0, hasCurrent: false, children: [] }
+        next = { path: folder, name: plain(baseName(folder)), count: 0, hasCurrent: false, children: [] }
         byPath.set(folder, next)
         node.children.push({ folder: next })
       }

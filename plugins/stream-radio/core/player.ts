@@ -11,6 +11,7 @@ import {
   foldersOf,
   metaValue,
   parseArgs,
+  plain,
   type PlayerEvent,
   repeatOf,
   splitEvents,
@@ -514,7 +515,7 @@ export async function failed(h: Host, config: PlayerConfig, what: Launch, error:
   }
   const why = lastError ? lastError.slice(0, 300) : 'the player exited before anything played; is the URL playable?'
   h.log(`stream-radio: could not play ${what.url}: ${why}`)
-  h.toast(`stream failed: ${why.slice(0, 120)}`)
+  h.toast(`stream failed: ${plain(why).slice(0, 120)}`)
 }
 
 // Why mpv would not play, from what it printed: yt-dlp's error when there is
@@ -755,9 +756,9 @@ export const isFolder = new Map<string, boolean>()
 // file) as `📁 Name/`. Under `root`, the folder played whole, mpv has read every
 // subfolder already, so an entry there is a file and needs no look.
 export async function entryName(h: Host, e: { filename?: string; title?: string }, root: string): Promise<string> {
-  if (e.title) return e.title
+  if (e.title) return plain(e.title)
   if (!e.filename) return '?'
-  const name = baseName(e.filename)
+  const name = plain(baseName(e.filename))
   if (!e.filename.startsWith('/') || (root && e.filename.startsWith(`${root}/`))) return name
   let folder = isFolder.get(e.filename)
   if (folder === undefined) {
@@ -824,7 +825,7 @@ export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Q
   const at = (await mpv(h, ['get_property', 'chapter']))?.data
   return {
     kind: 'chapters',
-    items: (chapters as { title?: string }[]).map((c, i) => c.title || `Chapter ${i + 1}`),
+    items: (chapters as { title?: unknown }[]).map((c, i) => (typeof c.title === 'string' && plain(c.title)) || `Chapter ${i + 1}`),
     current: typeof at === 'number' ? at : seen.chapter,
     paths: [],
     root: '',

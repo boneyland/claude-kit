@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, filterRows, fit, foldersOf, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, repeatOf, resolveTarget, splitEvents, textWidth, titleColumns, trackTitle } from './nowplaying'
+import { baseName, filterRows, fit, foldersOf, metaValue, plain, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, repeatOf, resolveTarget, splitEvents, textWidth, titleColumns, trackTitle } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
@@ -9,6 +9,28 @@ test('a song title beats the page title, any case', () => {
   expect(trackTitle('one.flac', { TITLE: 'One' })).toBe('One')
   expect(trackTitle(' lofi radio ', {})).toBe('lofi radio')
   expect(trackTitle(undefined, undefined)).toBe('')
+})
+
+// OSC 52 sets the terminal's clipboard: a tag, a title or a file name could carry it.
+const CLIPBOARD = '\x1b]52;c;cHduZWQ=\x07'
+
+test('plain drops control characters; line breaks and tabs become spaces', () => {
+  expect(plain(`Song${CLIPBOARD} title`)).toBe('Song]52;c;cHduZWQ= title')
+  expect(plain('a\x9b2Jb\x7fc\x00d')).toBe('a2Jbcd')
+  expect(plain('two\nlines\tand')).toBe('two lines and')
+  expect(plain('Café ♪ 日本')).toBe('Café ♪ 日本')
+})
+
+test('titles and tags from the stream come without control characters', () => {
+  expect(trackTitle(`Page${CLIPBOARD}`, {})).toBe('Page]52;c;cHduZWQ=')
+  expect(trackTitle('Page', { TITLE: `Song${CLIPBOARD}` })).toBe('Song]52;c;cHduZWQ=')
+  expect(metaValue({ artist: `\x1b[2JBand` }, 'artist')).toBe('[2JBand')
+})
+
+test('folder names in the playlist tree are drawn without control characters', () => {
+  const rows = playlistRows(['a.mp3'], [`/m/Bad\x1b]0;x\x07Dir/a.mp3`], '/m', new Set(), 0)
+  // the name is drawn; the path stays the real one, for finding the folder
+  expect(rows[0]).toMatchObject({ kind: 'folder', name: 'Bad]0;xDir', path: '/m/Bad\x1b]0;x\x07Dir' })
 })
 
 test('whole watcher lines become events; the rest waits', () => {
