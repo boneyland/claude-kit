@@ -28,10 +28,20 @@ export type TagReader = {
   stop(): void
 }
 
+// How many files' tags are kept: about 10 MB at most.
+export const TAGS_KEPT = 20_000
+
 // Songs not yet played have no tags from mpv, so the lists read them here,
 // a few at a time so a folder of hundreds doesn't open hundreds of files.
-export function tagReader(read: (path: string) => Promise<Tags> = readTags, limit = 4): TagReader {
+// At most `most` files' tags are kept, the least recently used going first.
+export function tagReader(read: (path: string) => Promise<Tags> = readTags, limit = 4, most = TAGS_KEPT): TagReader {
+  // in order of use, the least recent first
   const cache = new Map<string, { mtimeMs: number; tags: Tags }>()
+  const keep = (path: string, hit: { mtimeMs: number; tags: Tags }) => {
+    cache.delete(path)
+    cache.set(path, hit)
+    while (cache.size > most) cache.delete(cache.keys().next().value!)
+  }
   const reading = new Set<string>() // path\0mtime being read now
   let queue: Want[] = []
   let running = 0
@@ -71,7 +81,7 @@ export function tagReader(read: (path: string) => Promise<Tags> = readTags, limi
           running--
           reading.delete(key(w))
           if (isStopped) return
-          cache.set(w.path, { mtimeMs: w.mtimeMs, tags })
+          keep(w.path, { mtimeMs: w.mtimeMs, tags })
           announce()
           pump()
         })
@@ -81,7 +91,9 @@ export function tagReader(read: (path: string) => Promise<Tags> = readTags, limi
   return {
     get(path, mtimeMs) {
       const hit = cache.get(path)
-      return hit?.mtimeMs === mtimeMs ? hit.tags : undefined
+      if (hit?.mtimeMs !== mtimeMs) return undefined
+      keep(path, hit)
+      return hit.tags
     },
     want(paths, onTags) {
       if (isStopped) return

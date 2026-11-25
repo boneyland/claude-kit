@@ -49,6 +49,18 @@ export async function pruneCache(dir: string, maxBytes = CACHE_MAX_BYTES): Promi
   }
 }
 
+// How often a running TUI prunes again: a long session fills the cache too.
+export const PRUNE_EVERY_MS = 30 * 60 * 1000
+
+// pruneCache now and every `everyMs` after, until the returned stop is
+// called. The timer never keeps the process alive.
+export function keepPruned(dir: string, everyMs = PRUNE_EVERY_MS, maxBytes = CACHE_MAX_BYTES): () => void {
+  void pruneCache(dir, maxBytes)
+  const timer = setInterval(() => void pruneCache(dir, maxBytes), everyMs)
+  timer.unref()
+  return () => clearInterval(timer)
+}
+
 // Never throws: a cache that can't be written only means no cache. Written
 // whole, then renamed, so a reader never sees half a file.
 export async function writeCache(dir: string, name: string, data: Uint8Array): Promise<void> {

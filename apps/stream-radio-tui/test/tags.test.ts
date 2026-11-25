@@ -152,4 +152,21 @@ describe('readTags (music-metadata)', () => {
     fs.writeFileSync(file, Buffer.alloc(64))
     expect(await readTags(file).catch(() => EMPTY)).toEqual(EMPTY)
   })
+
+  test('it keeps at most `most` files, the least recently used going first', async () => {
+    const g = gatedRead()
+    const r = tagReader(g.read, 4, 2)
+    const want = (path: string) => r.want([{ path, mtimeMs: 1 }], () => {})
+    want('/a.mp3')
+    want('/b.mp3')
+    await g.releaseAll()
+    // a get is a use: /b.mp3 is now the least recently used
+    expect(r.get('/a.mp3', 1)).toBeDefined()
+    want('/c.mp3')
+    await g.releaseAll()
+    expect(r.get('/a.mp3', 1)).toBeDefined()
+    expect(r.get('/b.mp3', 1)).toBeUndefined()
+    expect(r.get('/c.mp3', 1)).toBeDefined()
+    r.stop()
+  })
 })

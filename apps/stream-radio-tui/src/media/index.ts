@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import { artSources, loadArt, type Art, type ArtSource } from './art'
-import { cacheDir, pruneCache } from './cache'
+import { cacheDir, keepPruned } from './cache'
 import { decodePeaks, type Wave } from './peaks'
 
 // What the screen asks of the files and mpv: a fake in tests.
@@ -14,8 +14,8 @@ export type Media = {
 // player: the mpv the config names, which decodes the art and waveforms too.
 export function nodeMedia(env: Record<string, string | undefined>, player: string): Media {
   const cache = cacheDir(env)
-  // once a run, out of the way: the cache keeps under CACHE_MAX_BYTES
-  void pruneCache(cache)
+  // out of the way, at start and every half hour: the cache keeps under CACHE_MAX_BYTES
+  keepPruned(cache)
   return {
     peaks: (file, signal) => decodePeaks(file, { signal, player, cache }),
     art: (sources, signal) => loadArt(sources, { signal, player, cache }),

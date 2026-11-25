@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { pruneCache, readCache } from '../src/media/cache'
+import { keepPruned, pruneCache, readCache } from '../src/media/cache'
 
 let dir: string
 beforeEach(() => {
@@ -40,5 +40,19 @@ describe('pruneCache', () => {
     await readCache(dir, 'read-me')
     await pruneCache(dir, 500)
     expect(fs.readdirSync(dir)).toEqual(['read-me'])
+  })
+})
+
+describe('keepPruned', () => {
+  test('prunes again every so often, until stopped', async () => {
+    const stop = keepPruned(dir, 20, 500)
+    put('old', 400, 300)
+    put('new', 400, 100)
+    await new Promise(r => setTimeout(r, 80))
+    expect(fs.readdirSync(dir)).toEqual(['new'])
+    stop()
+    put('older', 400, 400)
+    await new Promise(r => setTimeout(r, 80))
+    expect(fs.readdirSync(dir).sort()).toEqual(['new', 'older'])
   })
 })
