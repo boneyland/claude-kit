@@ -2,7 +2,8 @@ import { afterEach, beforeAll, expect, test } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { addToQueue, removeFromQueue, reorderQueue, resume } from '../../../plugins/stream-radio/core/player'
+import { addToQueue, removeFromQueue, reorderQueue, resume, setRepeat } from '../../../plugins/stream-radio/core/player'
+import { loopsFor, repeatOf } from '../../../plugins/stream-radio/core/nowplaying'
 import { openSession, type Session } from '../src/session'
 import { fakeMpv, type Fake } from './fake-mpv-socket'
 
@@ -215,4 +216,48 @@ test('a position that moved against a list already read still finds the song pla
   await until(async () => (await h.vars.read('queue')).current === 2)
   const q = await h.vars.read('queue')
   expect(q.paths[q.current]).toBe('/m/a.flac')
+})
+
+test('changing repeat never passes through a third mode on the way', async () => {
+  const h = await loaded({ playlist: TWO, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  const modes = ['all', 'one', 'off'] as const
+  for (const from of modes) {
+    for (const to of modes) {
+      if (from === to) continue
+      const state = { ...loopsFor(from) }
+      const start = fake!.received.length
+      await setRepeat(h, to)
+      const sets = commands()
+        .slice(start)
+        .filter(c => c[0] === 'set_property' && (c[1] === 'loop-file' || c[1] === 'loop-playlist'))
+      // each property as mpv tells it once set: never a mode neither old nor new
+      for (const [, prop, value] of sets) {
+        if (prop === 'loop-file') state.file = value as string
+        else state.playlist = value as string
+        expect([from, to]).toContain(repeatOf(state.file, state.playlist))
+      }
+      expect(repeatOf(state.file, state.playlist)).toBe(to)
+    }
+  }
+})
+
+test("this session's repeat change shows the new mode throughout, not what mpv tells halfway", async () => {
+  const h = await loaded({ playlist: TWO, 'chapter-list': [] })
+  fake!.push(
+    { event: 'property-change', name: 'loop-file', data: 'inf' },
+    { event: 'property-change', name: 'loop-playlist', data: 'inf' },
+  )
+  await until(async () => (await h.vars.read('repeat')) === 'one')
+  await setRepeat(h, 'off')
+  // halfway: loop-playlist off, loop-file still on, which alone reads as one
+  fake!.push({ event: 'property-change', name: 'loop-playlist', data: 'no' })
+  await new Promise(r => setTimeout(r, 200))
+  expect(await h.vars.read('repeat')).toBe('off')
+  fake!.push({ event: 'property-change', name: 'loop-file', data: 'no' })
+  await new Promise(r => setTimeout(r, 200))
+  expect(await h.vars.read('repeat')).toBe('off')
+  // done: a change made elsewhere shows again
+  fake!.push({ event: 'property-change', name: 'loop-playlist', data: 'inf' })
+  await until(async () => (await h.vars.read('repeat')) === 'all')
 })

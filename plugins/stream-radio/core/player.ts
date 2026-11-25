@@ -60,8 +60,14 @@ export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
   await updateSaved(h, s => ({ ...s, repeat: mode }))
   const loops = loopsFor(mode)
   if (control) {
-    await mpv(h, ['set_property', 'loop-file', loops.file])
-    await mpv(h, ['set_property', 'loop-playlist', loops.playlist])
+    // In an order where what mpv tells between the two is the old mode or the
+    // new one: loop-file off first left one → off showing all for a moment.
+    const file = ['set_property', 'loop-file', loops.file]
+    const playlist = ['set_property', 'loop-playlist', loops.playlist]
+    settingRepeat = { mode, until: (await h.now().catch(() => 0)) + SETTING_REPEAT_MS }
+    for (const command of mode === 'one' ? [file, playlist] : [playlist, file]) {
+      if (!(await mpv(h, command))) settingRepeat = undefined
+    }
   }
   return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
 }
@@ -182,6 +188,11 @@ let isStarting = false
 let launch: Launch | undefined
 // Where to jump once what this session started has loaded (its resume point).
 let pending: Resume | undefined
+// The repeat mode this session is setting, shown at once: what mpv tells
+// between its two loop properties is not shown over it, until mpv tells this
+// mode or SETTING_REPEAT_MS pass.
+let settingRepeat: { mode: Repeat; until: number } | undefined
+const SETTING_REPEAT_MS = 2000
 // Whether this session is reordering the playlist: its moves are not read one by one.
 let isReordering = false
 // Whether this session holds reconnect.lock.
@@ -384,6 +395,9 @@ export async function onEvent(h: Host, event: PlayerEvent) {
       else seen.loopPlaylist = data
       if (seen.loopFile !== undefined && seen.loopPlaylist !== undefined) {
         const mode = repeatOf(seen.loopFile, seen.loopPlaylist)
+        // this session's own change half made: the mode it shows already stays
+        if (settingRepeat && mode !== settingRepeat.mode && (await h.now().catch(() => 0)) < settingRepeat.until) return
+        settingRepeat = undefined
         await h.vars.change('repeat', () => mode)
       }
       return
