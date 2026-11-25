@@ -96,6 +96,9 @@ const EXPIRED_MIN_SAVING = 0.1
 export const OVERHEAD_MIN_SHARE = 0.6
 // ...and to at least this much a turn, so a large share of pennies stays quiet.
 export const OVERHEAD_MIN_USD = 0.05
+// ...and only when starting over or compacting pays for itself within this many
+// turns: a payback further out than that is a guess about the session's length.
+export const MAX_PAYBACK_TURNS = 5
 // Turns seen before the overhead is priced: one turn says little about the next.
 export const MIN_TURNS = 3
 // How many recent turns' request counts are kept.
@@ -184,16 +187,19 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
   const typical = costPerTurn(s.recentCosts)!.median
   if (perTurn < OVERHEAD_MIN_USD || perTurn < OVERHEAD_MIN_SHARE * typical) return null
 
-  const payback = (cost: number, saving: number) => {
-    const turns = Math.max(1, Math.ceil(cost / saving))
-    return `${turns} turn${turns === 1 ? '' : 's'}`
-  }
+  const paybackTurns = (cost: number, saving: number) => Math.max(1, Math.ceil(cost / saving))
+  const turnsText = (turns: number) => `${turns} turn${turns === 1 ? '' : 's'}`
   const parts = [`Carry cost ≈ ${usd(perTurn)}/turn (${tokens(old)} × ${steps} req)`]
+  let soonest = Infinity
 
   // The new session goes on carrying its baseline and warm-up, so it saves only the rest.
   const fresh = restartOf({ ...s, baseline: s.baseline, context: s.context })
   const freshSaving = (s.context * p.read - fresh.carried * fresh.read) * steps
-  if (freshSaving > 0) parts.push(`${fresh.label} ≈ ${usd(fresh.cost)} once → pays back in ${payback(fresh.cost, freshSaving)}`)
+  if (freshSaving > 0) {
+    const turns = paybackTurns(fresh.cost, freshSaving)
+    soonest = Math.min(soonest, turns)
+    parts.push(`${fresh.label} ≈ ${usd(fresh.cost)} once → pays back in ${turnsText(turns)}`)
+  }
 
   // A compaction reads the context once, writes the summary, then re-caches
   // baseline and summary; it saves what the summary does not carry.
@@ -202,8 +208,14 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
     const k = unitPrices(s, kept)!
     const cost = s.context * p.read + s.summary * p.output + kept * k.write1h
     const saving = (s.context * p.read - kept * k.read) * steps
-    if (saving > 0) parts.push(`/compact ≈ ${usd(cost)} once → pays back in ${payback(cost, saving)}`)
+    if (saving > 0) {
+      const turns = paybackTurns(cost, saving)
+      soonest = Math.min(soonest, turns)
+      parts.push(`/compact ≈ ${usd(cost)} once → pays back in ${turnsText(turns)}`)
+    }
   }
+  // Nothing to do about it soon enough: say nothing.
+  if (soonest > MAX_PAYBACK_TURNS) return null
   return { kind: 'overhead', text: parts.join(' · ') }
 }
 

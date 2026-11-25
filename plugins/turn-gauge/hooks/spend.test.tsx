@@ -78,8 +78,9 @@ test('a new session re-reads its warm-up: measured, else guessed, and pays back 
   expect(overheadWarning({ ...OPUS, context: 100_000, recentCosts: [0.4, 0.4, 0.4] })?.text).toBe(
     'Carry cost ≈ $0.26/turn (80k × 16 req) · new session + ~20k re-read (guess) ≈ $0.32 once → pays back in 2 turns',
   )
-  // A warm-up as large as the old context saves nothing: no new-session part.
-  expect(overheadWarning({ ...OPUS, warmup: 130_000 })?.text).toBe('Carry cost ≈ $0.42/turn (130k × 16 req)')
+  // A warm-up as large as the old context saves nothing: no new-session part, and
+  // with nothing else to do, no row.
+  expect(overheadWarning({ ...OPUS, warmup: 130_000 })).toBe(null)
   expect(overheadWarning({ ...OPUS, warmup: 200_000, summary: 10_000 })?.text).toBe(
     'Carry cost ≈ $0.42/turn (130k × 16 req) · /compact ≈ $0.47 once → pays back in 2 turns',
   )
@@ -95,6 +96,17 @@ test('the overhead shows once carrying the old context is 60% of a typical turn'
   const sonnet = { ...OPUS, model: 'claude-sonnet-5-5' }
   expect(overheadWarning({ ...sonnet, recentCosts: [0.3, 0.3, 0.3] })?.text).toContain('Carry cost ≈ $0.21/turn')
   expect(overheadWarning({ ...sonnet, recentCosts: [0.4, 0.4, 0.4] })).toBe(null)
+})
+
+test('the overhead stays quiet until starting over or compacting pays back within 5 turns', async () => {
+  // 178k carried over 5 requests is the whole of a $0.18 turn, but a new session
+  // re-reading 69k takes 8 turns to pay back, a compaction 13.
+  const slow = { ...OPUS, context: 209_000, baseline: 31_000, warmup: 69_000, summary: 47_000, recentSteps: [5, 5, 5], recentCosts: [0.18, 0.18, 0.18] }
+  expect(overheadWarning(slow)).toBe(null)
+  // Twice the requests a turn halve both paybacks: 4 turns for a new session, 7 for /compact.
+  expect(overheadWarning({ ...slow, recentSteps: [10, 10, 10], recentCosts: [0.36, 0.36, 0.36] })?.text).toBe(
+    'Carry cost ≈ $0.36/turn (178k × 10 req) · new session + 69k re-read ≈ $0.80 once → pays back in 4 turns · /compact ≈ $1.61 once → pays back in 7 turns',
+  )
 })
 
 test('the overhead waits for three turns and prices one at their median', async () => {

@@ -120,7 +120,8 @@ The row appears only when **all** of these hold:
 4. The **old context** is at least 60k tokens: that's the **context minus what a new session would start with**.
 5. At least 3 turns have finished, since one turn says little about the next.
 6. The carry cost is **at least 60% of a typical turn's cost** (the median of the last 10 turns, subagents included) **and at least $0.05**.
-7. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
+7. Starting over or `/compact` pays for itself within **5 turns** (see [Payback](#payback)). A payback further out than that bets on how long the session will run, so the row stays quiet; as the context grows, the payback shortens and the row appears.
+8. You haven't dismissed it with `×`. A dismissed row comes back once the context grows another 50k tokens, or after a compaction.
 
 So the trigger is a share, not a price line: the row says most of what you pay each turn goes to re-reading context a new session wouldn't carry. Both sides use the same model's prices, so it works the same on every model; the $0.05 floor keeps a large share of pennies quiet. Short question-and-answer turns rarely reach it; long tool-heavy turns over a long context do.
 

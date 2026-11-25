@@ -26,7 +26,7 @@
       "name": "turn-gauge",
       "source": "./plugins/turn-gauge",
       "description": "Mod: band above the prompt with turn, speed, cost, prompt cache countdown, git branch, model, effort, context, cache hit rate and token counts; plan-limit pace projection; warnings for running out before a reset, spend, cache misses and output-heavy turns; a compact-keeping-recent-turns button; notifies before the cache expires.",
-      "version": "0.22.0",
+      "version": "0.22.1",
       "category": "mod"
     },
     {
