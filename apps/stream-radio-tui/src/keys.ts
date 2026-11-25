@@ -1,7 +1,9 @@
 import type { Key } from 'ink'
 import type { Tab } from './ui/Tabs'
+import type { Edit } from './ui/lineEdit'
 
-// list: keys are commands; filter and open: keys edit a line of text; help:
+// list: keys are commands; filter and open: keys edit a line of text (open's
+// with a cursor, in the Files heading); help:
 // the key list shows, and keys scroll or close it; menu: a row's menu is
 // open, and keys choose from it.
 export type Mode = 'list' | 'filter' | 'open' | 'help' | 'menu'
@@ -34,6 +36,8 @@ export type Action =
   // in a text mode
   | { kind: 'type'; text: string }
   | { kind: 'erase' }
+  // open: the location being edited in the Files heading, with a cursor
+  | { kind: 'lineEdit'; edit: Edit }
   | { kind: 'submit' }
   | { kind: 'cancel' }
   // to the other tab
@@ -83,6 +87,26 @@ const LETTERS: Record<string, Action> = {
   '?': { kind: 'help' },
 }
 
+// A key that edits the Files location. Home and End are not here: Ink reads
+// them as no key at all.
+const CTRL_EDITS: Record<string, Edit> = {
+  a: { kind: 'start' },
+  e: { kind: 'end' },
+  u: { kind: 'eraseToStart' },
+  k: { kind: 'eraseToEnd' },
+  w: { kind: 'eraseWord' },
+  d: { kind: 'eraseAfter' },
+}
+function lineKey(input: string, key: Key): Edit | null {
+  if (key.leftArrow) return { kind: 'left' }
+  if (key.rightArrow) return { kind: 'right' }
+  // Ink names the key most terminals send for Backspace (DEL) `delete`.
+  if (key.backspace || key.delete) return { kind: 'erase' }
+  if (key.ctrl) return CTRL_EDITS[input] ?? null
+  if (key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null
+  return { kind: 'insert', text: input }
+}
+
 // Which tab shows, and whether any row of it is picked.
 export type KeyContext = { tab: Tab; hasPick: boolean }
 
@@ -105,6 +129,10 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
+    if (mode === 'open') {
+      const e = lineKey(input, key)
+      if (e) return { kind: 'lineEdit', edit: e }
+    }
     // Ink names the key most terminals send for Backspace (DEL) `delete`.
     if (key.backspace || key.delete) return { kind: 'erase' }
     if (key.ctrl || key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null

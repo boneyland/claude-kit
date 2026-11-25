@@ -15,6 +15,8 @@ export type Files = {
   root: string
   // the root as the heading shows it: a folder path, or a YouTube playlist's title
   rootLabel(home: string): string
+  // the root as a location to edit and go to: a folder's path, a playlist's URL
+  rootText(home: string): string
   rows: FileRow[]
   sel(): Selection
   setSel(sel: Selection): void
@@ -125,6 +127,10 @@ export function useFiles(h: Host, book: TagBook): Files {
       if (!root) return 'loading…'
       if (root.startsWith(YT)) return `${playlists.get(root.slice(YT.length))?.title ?? root.slice(YT.length)} (YouTube)`
       return tilde(root, home)
+    },
+    rootText: home => {
+      const root = rootRef.current
+      return root.startsWith(YT) ? root.slice(YT.length) : root ? tilde(root, home) : ''
     },
     tags,
     entriesOf: row => {

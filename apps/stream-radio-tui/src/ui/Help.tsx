@@ -39,6 +39,7 @@ export const FILES_KEY_HELP: [string, string][] = [
   ['Enter', 'open or shut a folder; on ../ go up; on a file, add to queue'],
   ['← →', 'shut or open a folder'],
   ['U', 'the folder above (../)'],
+  ['o, click heading', 'edit the location: ← → Ctrl-A/E/W/U/K/D, Enter goes'],
   ['a', 'add to queue: the picked rows, or this one'],
   ['A', 'play next: the same, after the song playing'],
 ]
@@ -52,6 +53,7 @@ export const MOUSE_HELP: [string, string][] = [
   ['right-click, ⋯', "the row's menu"],
   ['drag', 'Playlist: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
+  ['Files heading', 'edit the location there; Esc leaves it'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
   ['volume bar', 'set the volume there'],
   ['repeat, shuffle', 'switch them'],

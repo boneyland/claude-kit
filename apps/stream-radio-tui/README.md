@@ -55,6 +55,8 @@ Actions take the picked rows, or the cursor's row when none is picked. Adding or
 
 Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. The heading shows where you are; `../` is always the first row.
 
+Click the heading's location to edit it in place, the cursor where you clicked. `o` does the same from an empty line. While editing: `←` `→` or a click move the cursor, `Ctrl-A` `Ctrl-E` jump to the start or end, Backspace and `Ctrl-D` erase before or after it, `Ctrl-W` takes off a folder, `Ctrl-U` `Ctrl-K` erase to the start or end. `Enter` goes there; `Esc`, or a click on a row, leaves it as it was. (Home and End don't reach the TUI.)
+
 | Key | |
 | --- | --- |
 | `Enter` | open or shut a folder; on `../`, go up; on a file, add it to the queue |

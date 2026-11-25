@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Key } from 'ink'
 import { keyAction, type Action, type Mode } from '../src/keys'
+import type { Edit } from '../src/ui/lineEdit'
 
 const NONE: Key = {
   upArrow: false,
@@ -78,9 +79,34 @@ describe('keyAction in the list', () => {
   })
 })
 
-describe.each(['filter', 'open'] as Mode[])('keyAction in %s mode', mode => {
+describe('keyAction in filter mode', () => {
   test.each(textCases)('%s', (_name, input, k, expected) => {
-    expect(keyAction(input, k, mode)).toEqual(expected)
+    expect(keyAction(input, k, 'filter')).toEqual(expected)
+  })
+})
+
+// The Files location, edited in its heading: the same keys, at a cursor, and
+// the keys that move it.
+const lineEdit = (edit: Edit): Action => ({ kind: 'lineEdit', edit })
+const openCases: Case[] = [
+  ...textCases.map(([name, input, k, expected]): Case => {
+    if (expected?.kind === 'type') return [name, input, k, lineEdit({ kind: 'insert', text: expected.text })]
+    if (expected?.kind === 'erase') return [name, input, k, lineEdit({ kind: 'erase' })]
+    if (name === '←' || name === 'Ctrl-A') return [name, input, k, name === '←' ? lineEdit({ kind: 'left' }) : lineEdit({ kind: 'start' })]
+    return [name, input, k, expected]
+  }),
+  ['→', '', key({ rightArrow: true }), lineEdit({ kind: 'right' })],
+  ['Ctrl-E', 'e', key({ ctrl: true }), lineEdit({ kind: 'end' })],
+  ['Ctrl-U', 'u', key({ ctrl: true }), lineEdit({ kind: 'eraseToStart' })],
+  ['Ctrl-K', 'k', key({ ctrl: true }), lineEdit({ kind: 'eraseToEnd' })],
+  ['Ctrl-W', 'w', key({ ctrl: true }), lineEdit({ kind: 'eraseWord' })],
+  ['Ctrl-D', 'd', key({ ctrl: true }), lineEdit({ kind: 'eraseAfter' })],
+  ['Ctrl-X does nothing', 'x', key({ ctrl: true }), null],
+]
+
+describe('keyAction in open mode', () => {
+  test.each(openCases)('%s', (_name, input, k, expected) => {
+    expect(keyAction(input, k, 'open')).toEqual(expected)
   })
 })
 

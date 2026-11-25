@@ -802,12 +802,63 @@ describe('files', () => {
     const { lines, press } = await showFiles()
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     await press('o')
-    expect(lines().join('\n')).toContain('o go to: _')
+    expect(lines().join('\n')).toContain('go to a folder or URL')
+    expect(heading(lines())).not.toContain('~/Music')
     await press('/other', ENTER)
     await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
     await press('o', '/nope', ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /nope'))
     expect(heading(lines())).toContain('Files · /other')
+  })
+
+  test('a click on the heading edits the location there; a key types at the cursor', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const t = where('~/Music')
+    await click(t.x + 2, t.y)
+    // the cursor on the M
+    await press('X')
+    expect(stripAnsi(heading(lines()))).toContain('Files · ~/XMusic')
+    await press(ENTER)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /h/XMusic'))
+    expect(heading(lines())).toContain('Files · ~/Music')
+  })
+
+  test('editing the heading: Ctrl-K, a new path, Enter goes there', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const t = where('~/Music')
+    await click(t.x, t.y)
+    await press('\x0b', '/other', ENTER)
+    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+  })
+
+  test('arrows and Ctrl-W edit at the cursor; a click past the end puts it there', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const t = where('~/Music')
+    await click(t.x + 40, t.y)
+    await press('/Album', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D')
+    await press('\x17')
+    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Album')
+  })
+
+  test('Esc, or a click on a row, leaves the location as it was', async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const t = where('~/Music')
+    await click(t.x, t.y)
+    await press('zz', ESC)
+    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Music')
+    expect(lines().join('\n')).not.toContain('zz')
+    await click(t.x, t.y)
+    await press('zz')
+    await click(where('Album/').x, where('Album/').y)
+    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Music')
+    expect(lines().join('\n')).not.toContain('01 One.flac')
+    // keys are commands again
+    await press('U')
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
   })
 
   test('o from the Playlist goes to Files', async () => {

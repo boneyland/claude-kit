@@ -3,9 +3,15 @@ import { Box, Text } from 'ink'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import type { FileRow } from '../files/tree'
 import type { Tags } from '../media/tags'
+import { shown, type Line } from './lineEdit'
 
 type Props = {
+  // the root folder's name, after HEADING_PREFIX
   heading: string
+  // the location being edited in its place, with a cursor
+  editing?: Line
+  // a click on the heading, x cells from the location's start (less than 0 on the prefix)
+  onHeading?(x: number): void
   rows: FileRow[]
   selected: number
   picked?: ReadonlySet<number>
@@ -18,6 +24,12 @@ type Props = {
   onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
 }
+
+export const HEADING_PREFIX = 'Files · '
+const PREFIX_CELLS = HEADING_PREFIX.length
+
+// The cells a location being edited has in a list `width` wide.
+export const editCells = (width: number) => Math.max(1, width - PREFIX_CELLS)
 
 // x of a folder row's ▸/▾, from the row's left edge.
 export const arrowAt = (row: FileRow) => (row.kind === 'dir' ? 2 + 2 * row.depth : -1)
@@ -36,7 +48,7 @@ function label(row: FileRow): string {
 }
 
 // The Files tab: a tree from the root folder, ../ first.
-export function FilesView({ heading, rows, selected, picked, height, width, first, tags, onRow, onMenu, onWheel }: Props) {
+export function FilesView({ heading, editing, onHeading, rows, selected, picked, height, width, first, tags, onRow, onMenu, onWheel }: Props) {
   // how many times each path has been drawn so far, for keys
   const seen = new Map<string, number>()
   const copies = (path: string) => {
@@ -46,9 +58,13 @@ export function FilesView({ heading, rows, selected, picked, height, width, firs
   }
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
-      <Text dimColor wrap="truncate-end">
-        {heading}
-      </Text>
+      <Clickable onClick={hit => onHeading?.(hit.x - PREFIX_CELLS)}>
+        {editing ? <EditLine line={editing} width={editCells(width)} /> : (
+          <Text dimColor wrap="truncate-end">
+            {HEADING_PREFIX + heading}
+          </Text>
+        )}
+      </Clickable>
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         // a video can be in a playlist twice: each copy is its own row
@@ -72,5 +88,18 @@ export function FilesView({ heading, rows, selected, picked, height, width, firs
         )
       })}
     </Clickable>
+  )
+}
+
+// The heading as the location is edited: the cursor on a cell of its own.
+function EditLine({ line, width }: { line: Line; width: number }) {
+  const { before, under, after } = shown(line, width)
+  return (
+    <Text wrap="truncate-end">
+      <Text dimColor>{HEADING_PREFIX}</Text>
+      {before}
+      <Text inverse>{under}</Text>
+      {after}
+    </Text>
   )
 }

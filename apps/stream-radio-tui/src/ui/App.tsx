@@ -14,7 +14,8 @@ import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { PlaylistView } from './PlaylistView'
-import { FilesView } from './FilesView'
+import { editCells, FilesView } from './FilesView'
+import { edit, indexAt, type Line } from './lineEdit'
 import { CHAPTER_MENU, FILES_MENU, Menu, PLAYLIST_MENU, type MenuItem } from './Menu'
 import { useFiles } from '../files/useFiles'
 import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
@@ -78,7 +79,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const book = useTagBook(h, tagReader)
   const files = useFiles(h, book)
   const fRows = files.rows
-  const [typedRef, setTyped] = useRefState('')
+  // the Files location being edited in its heading (mode open)
+  const [lineRef, setLine] = useRefState<Line>({ text: '', at: 0 })
   // the Playlist's cursor and picked rows (places in its rows); undefined
   // follows the playing song
   const [plSelRef, setPlSel] = useRefState<Held | undefined>(undefined)
@@ -352,9 +354,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'filterMode':
         return setMode('filter')
       case 'openMode':
-        // o edits the Files tab's location
+        // o edits the Files tab's location, from nothing
         setTab('files')
-        setTyped('')
+        setLine({ text: '', at: 0 })
         return setMode('open')
       case 'last':
         return act(async () => {
@@ -387,9 +389,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return exit()
       case 'type':
       case 'erase': {
-        const edit = (t: string) => (a.kind === 'type' ? t + a.text : t.slice(0, -1))
-        return mode === 'filter' ? setFilter(edit) : setTyped(edit(typedRef.current))
+        const change = (t: string) => (a.kind === 'type' ? t + a.text : t.slice(0, -1))
+        return mode === 'filter' ? setFilter(change) : undefined
       }
+      case 'lineEdit':
+        return setLine(edit(lineRef.current, a.edit))
       case 'submit':
         if (mode === 'menu') return pickMenu(menuRef.current?.choice ?? 0)
         setMode('list')
@@ -401,7 +405,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
             return first ? pick(h, first.index) : 'Nothing matches.'
           })
         }
-        const text = typedRef.current
+        const text = lineRef.current.text
         return act(async () => {
           if (!text.trim()) return ''
           return files.goTo(text.trim(), setNotice)
@@ -429,7 +433,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No playlist or chapters.'
-  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? `o go to: ${typedRef.current}_` : filter ? `/ filter: ${filter}` : ' '
+  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? 'go to a folder or URL · Enter goes there · Esc leaves it' : filter ? `/ filter: ${filter}` : ' '
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
@@ -477,7 +481,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   // ../ goes up and a folder opens or shuts, at a click; a file only selects.
   const onFileRow = (index: number, hit: Hit) => {
-    if (dismissMenu()) return
+    if (dismissMenu() || leaveEdit()) return
     files.setTop(fFirst)
     const sel = filesSel()
     if (hit.mods.ctrl) return setF(toggle(sel, index))
@@ -492,6 +496,25 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       return addFiles('end')
     }
     if (row?.kind === 'dir') files.setOpen(row.path)
+  }
+  // A click outside the location being edited only leaves it, as Esc does.
+  const leaveEdit = () => {
+    if (modeRef.current !== 'open') return false
+    setMode('list')
+    return true
+  }
+  // A click on the Files heading edits the location in place, the cursor
+  // where it landed (at the end from the prefix, or from a playlist's title,
+  // which edits as its URL); while editing, it moves the cursor there.
+  const onHeading = (x: number) => {
+    const cells = editCells(listWidth)
+    if (modeRef.current === 'open') return setLine({ ...lineRef.current, at: indexAt(lineRef.current, cells, Math.max(0, x)) })
+    if (dismissMenu()) return
+    const text = files.rootText(home)
+    if (!text) return
+    const isAsShown = text === files.rootLabel(home)
+    setLine({ text, at: isAsShown && x >= 0 ? indexAt({ text, at: 0 }, cells, x) : text.length })
+    setMode('open')
   }
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
@@ -518,7 +541,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       <Tabs
         tab={tab}
         width={listWidth}
-        onTab={t => dismissMenu() || setTab(t)}
+        onTab={t => dismissMenu() || (leaveEdit(), setTab(t))}
         sortLabel={
           tab === 'files'
             ? FILES_SORT_LABEL[files.sort]
@@ -549,7 +572,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         />
       ) : (
         <FilesView
-          heading={`Files · ${files.rootLabel(home)}`}
+          heading={files.rootLabel(home)}
+          editing={mode === 'open' ? lineRef.current : undefined}
+          onHeading={onHeading}
           rows={fRows}
           selected={fSel.cursor}
           picked={new Set(fSel.picked)}
