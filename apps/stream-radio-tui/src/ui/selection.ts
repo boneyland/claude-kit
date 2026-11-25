@@ -4,6 +4,16 @@ export type Selection = { cursor: number; anchor: number; picked: readonly numbe
 
 export const NO_SELECTION: Selection = { cursor: 0, anchor: 0, picked: [] }
 
+// A selection and the rows it was made against: each row's file or URL (a
+// chapter's name), in order. A pick made against other rows has lapsed (a
+// shuffle, another session's edit, tags changing what a filter matches, a
+// folder opened above it), so it never acts on rows nobody picked.
+export type Held = Selection & { forKey?: string }
+
+// The selection, its pick dropped when the rows are no longer those it was made against.
+export const current = (held: Held | undefined, key: string): Held | undefined =>
+  held && held.forKey !== undefined && held.forKey !== key ? { ...held, picked: [] } : held
+
 const sorted = (xs: Iterable<number>) => [...new Set(xs)].sort((a, b) => a - b)
 
 export const select = (_sel: Selection, to: number): Selection => ({ cursor: to, anchor: to, picked: [] })

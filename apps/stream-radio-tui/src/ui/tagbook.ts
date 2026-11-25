@@ -12,12 +12,16 @@ export type TagBook = {
   need(paths: readonly string[]): void
   // the file's modification time, as a listing found it: saves a stat
   know(path: string, mtimeMs: number): void
+  // goes up each time more tags arrive: for memos that read get()
+  version(): number
 }
 
 // One tag reader for the app; the screen redraws as tags arrive.
 // `reader` stands in for music-metadata in tests.
 export function useTagBook(h: Host, reader?: TagReader): TagBook {
-  const [, redraw] = useReducer((n: number) => n + 1, 0)
+  const [version, redraw] = useReducer((n: number) => n + 1, 0)
+  const versionRef = useRef(version)
+  versionRef.current = version
   const r = useMemo(() => reader ?? tagReader(), [reader])
   // in the order found, the oldest dropped past TAGS_KEPT: a file dropped is stat-ed again when needed
   const mtimes = useRef(new Map<string, number>()).current
@@ -69,6 +73,7 @@ export function useTagBook(h: Host, reader?: TagReader): TagBook {
         return m === undefined ? undefined : r.get(path, m)
       },
       know: (path, mtimeMs) => remember(path, mtimeMs),
+      version: () => versionRef.current,
       need: paths => {
         const local = paths.filter(p => p.startsWith('/') && !notFiles.has(p))
         const known = local.filter(p => mtimes.has(p))

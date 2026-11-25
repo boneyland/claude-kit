@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Host } from '@core/host'
 import { resolveTarget } from '@core/nowplaying'
 import { tilde, useRefState } from '../ui/hooks'
-import { NO_SELECTION, type Selection } from '../ui/selection'
+import { NO_SELECTION, type Held } from '../ui/selection'
 import type { TagBook } from '../ui/tagbook'
 import { loadFolder } from './load'
 import { lastFolder, rememberFolder } from './remember'
@@ -18,8 +18,9 @@ export type Files = {
   // the root as a location to edit and go to: a folder's path, a playlist's URL
   rootText(home: string): string
   rows: FileRow[]
-  sel(): Selection
-  setSel(sel: Selection): void
+  // with the rows it was made against (see Held)
+  sel(): Held
+  setSel(sel: Held): void
   top: number | undefined
   setTop(top: number | undefined): void
   sort: FilesSort
@@ -50,7 +51,7 @@ export function useFiles(h: Host, book: TagBook): Files {
   const [rootRef, setRootState] = useRefState('')
   const [listingsRef, setListings] = useRefState<ReadonlyMap<string, Listing>>(new Map())
   const [openRef, setOpenSet] = useRefState<ReadonlySet<string>>(new Set())
-  const [selRef, setSel] = useRefState<Selection>(NO_SELECTION)
+  const [selRef, setSel] = useRefState<Held>(NO_SELECTION)
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
   const [sortRef, setSort] = useRefState<FilesSort>('name')
   // videos listed from URLs, by URL; the playlists' videos, by playlist URL
@@ -112,7 +113,15 @@ export function useFiles(h: Host, book: TagBook): Files {
     const v = videos.get(path)
     return v ? { title: v.title, artist: v.channel, albumArtist: '', album: '' } : book.get(path)
   }
-  const rows = rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []
+  // Worked out again only when what they show changes, not at each redraw.
+  // The playlists and videos change only along with the listings.
+  const tagsSeen = book.version()
+  const rows = useMemo(
+    () => (rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []),
+    // tags is read through the listings and the book's version
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rootRef.current, listingsRef.current, openRef.current, sortRef.current, tagsSeen],
+  )
   const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
   // Its folder read (or not readable) without it: the reveal is given up, so
   // the cursor doesn't jump to it whenever it turns up later.

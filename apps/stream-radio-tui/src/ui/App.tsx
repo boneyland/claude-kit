@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
-import { addToQueue, pick, removeFromQueue, reorderQueue, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
-import { moveBy, moveTo, type Moved } from '@core/queue'
+import { addToQueue, pick, resume, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
 import { keyAction, type Action, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
@@ -23,19 +22,12 @@ import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { Tabs, type Tab } from './Tabs'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
-import { filterFlat, flatRows, type FlatRow } from '../playlist/rows'
-import type { Queue } from '@core/host'
-import { nextSortField, SORT_LABEL, sortOrder, type SortField } from '../playlist/sort'
-import { clamp, clear, extend, NO_SELECTION, remap, select, targets, toggle, type Selection } from './selection'
+import { filterFlat, flatRows } from '../playlist/rows'
+import { SORT_LABEL } from '../playlist/sort'
+import { usePlaylist } from '../playlist/usePlaylist'
+import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, type Selection } from './selection'
+import { useTurns } from './turns'
 import { NOW_PLAYING_ROWS, NowPlaying } from './NowPlaying'
-
-// A selection and the rows it was made against (see plKeyOf).
-type Held = Selection & { forKey?: string }
-// The Playlist's rows as a key: each one's file or URL (a chapter's name), in order.
-const plKeyOf = (queue: Queue, rows: readonly FlatRow[]) => rows.map(r => queue.paths[r.index] || queue.items[r.index]).join('\n')
-// The selection, its pick dropped when the rows are no longer those it was made against.
-const current = (held: Held | undefined, key: string): Held | undefined =>
-  held && held.forKey !== undefined && held.forKey !== key ? { ...held, picked: [] } : held
 
 // Rows the wheel moves the list by.
 const WHEEL_ROWS = 3
@@ -82,20 +74,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const fRows = files.rows
   // the Files location being edited in its heading (mode open)
   const [lineRef, setLine] = useRefState<Line>({ text: '', at: 0 })
-  // the Playlist's cursor and picked rows (places in its rows); undefined
-  // follows the playing song
-  const [plSelRef, setPlSel] = useRefState<Held | undefined>(undefined)
-  // the Playlist's last sort, for R and the tab row
-  const [sortRef, setSort] = useRefState<{ field?: SortField; isReversed: boolean }>({ isReversed: false })
   // a drag in the Playlist: the row pressed and where the rows would land
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
   // a row's menu, open: its items, the row (a place in the tab's rows), the item chosen
   const [menuRef, setMenu] = useRefState<{ items: readonly MenuItem[]; at: number; choice: number } | undefined>(undefined)
   // a press on a picked row selects it only when let go without a drag
   const pendingSelect = useRef<number | undefined>(undefined)
-  // the list's first row once the wheel or a click has placed it; undefined
-  // keeps the view centred on the selection, as the keys move it
-  const [topRef, setTop] = useRefState<number | undefined>(undefined)
   // the key list's first line shown
   const [helpTopRef, setHelpTop] = useRefState(0)
   // when Ctrl-C was last pressed; 0 for not lately
@@ -106,105 +90,29 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [notice, setNotice] = useState('')
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
 
+  const { act, inTurn } = useTurns(setNotice)
+  const playlist = usePlaylist(h, session.config, view, book, home, { act, inTurn })
   const q = view.queue
   const filter = view.filter.trim()
-  const allRows = flatRows(q, book.get, home)
-  const rows = filter ? filterFlat(allRows, filter) : allRows
-  const playingRow = rows.findIndex(r => r.index === q.current)
-  // What the rows are, in order: a pick made against other rows has lapsed
-  // (a shuffle, another session's edit, tags changing what a filter matches,
-  // a folder opened above it), so it never acts on rows nobody picked.
-  const plKey = plKeyOf(q, rows)
-  const fKey = fRows.map(r => (r.kind === 'file' || r.kind === 'dir' ? r.path : r.kind)).join('\n')
-  // The Playlist's selection as it is now, within its rows.
-  const plSel = (): Selection => {
-    const at = Math.max(0, playingRow)
-    return clamp(current(plSelRef.current, plKey) ?? { cursor: at, anchor: at, picked: [] }, rows.length)
-  }
-  // key: the rows it is made against; the ones showing unless said
-  const setPl = (sel: Selection | undefined, key = plKey) => setPlSel(sel && { ...sel, forKey: key })
+  const rows = playlist.rows
+  const fKey = useMemo(() => fRows.map(r => (r.kind === 'file' || r.kind === 'dir' ? r.path : r.kind)).join('\n'), [fRows])
+  const plSel = playlist.sel
+  const setPl = playlist.setSel
   const filesSel = (): Selection => clamp(current(files.sel(), fKey) ?? NO_SELECTION, fRows.length)
-  const setF = (sel: Selection) => files.setSel({ ...sel, forKey: fKey } as Held)
-  // whether the Playlist holds queue entries (not a video's chapters) to edit
-  const isEditable = () => view.queue.kind === 'playlist'
+  const setF = (sel: Selection) => files.setSel({ ...sel, forKey: fKey })
+  const isEditable = playlist.isEditable
   // The tab showing: its selection, rows and scroll.
   const isPl = () => tabRef.current === 'playlist'
   const curSel = () => (isPl() ? plSel() : filesSel())
   const setCurSel = (sel: Selection) => (isPl() ? setPl(sel) : setF(sel))
   const curCount = () => (isPl() ? rows.length : fRows.length)
-  const setCurTop = (top: number | undefined) => (isPl() ? setTop(top) : files.setTop(top))
-  const selectedNow = () => plSel().cursor
-  const selected = selectedNow()
+  const setCurTop = (top: number | undefined) => (isPl() ? playlist.setTop(top) : files.setTop(top))
+  const selected = plSel().cursor
   const picked = plSel().picked
 
-  // Volume and repeat step from the value as it is when their turn comes, not
-  // from the last render: keys in one stdin chunk would all read the same one.
-  const turns = useRef<Promise<unknown>>(Promise.resolve())
-  const inTurn = (work: () => Promise<string | void>) => {
-    const run = turns.current.then(work)
-    turns.current = run.catch(() => undefined)
-    return run
-  }
-  const act = (work: () => Promise<string | void>) => {
-    work().then(
-      reply => setNotice(reply ?? ''),
-      error => setNotice(`stream-radio failed: ${error instanceof Error ? error.message : String(error)}`),
-    )
-  }
   const setFilter = (fn: (text: string) => string) => {
-    setPl(undefined)
-    setTop(undefined)
+    playlist.refilter()
     void h.vars.change('filter', fn)
-  }
-
-  // The queue and the Playlist's rows as the store has them now: an edit's
-  // turn may come after an earlier edit changed them.
-  const freshRows = async () => {
-    const [queue, text] = await Promise.all([h.vars.read('queue'), h.vars.read('filter')])
-    const all = flatRows(queue, book.get, home)
-    return { queue, rows: text.trim() ? filterFlat(all, text.trim()) : all }
-  }
-  // Moves the picked rows (or the cursor's); the pick follows them.
-  const moveRows = (make: (count: number, picked: number[]) => Moved) =>
-    act(() =>
-      inTurn(async () => {
-        const { queue, rows } = await freshRows()
-        const sel = clamp(current(plSelRef.current, plKeyOf(queue, rows)) ?? plSel(), rows.length)
-        const from = targets(sel).flatMap(at => (rows[at] ? [rows[at].index] : []))
-        if (!from.length) return
-        const moved = make(queue.items.length, from)
-        if (moved.order.every((old, i) => old === i)) return
-        // the rows shown after the move, by their new indexes
-        const shownOld = new Set(rows.map(r => r.index))
-        const shownNew = moved.order.flatMap((old, i) => (shownOld.has(old) ? [i] : []))
-        // the rows as they will be once the move is in the store
-        const nameOf = (i: number) => queue.paths[i] || queue.items[i]
-        setPl(remap(sel, moved.picked.map(n => shownNew.indexOf(n))), shownNew.map(i => nameOf(moved.order[i]!)).join('\n'))
-        setTop(undefined)
-        return reorderQueue(h, moved.order)
-      }),
-    )
-  // Each sort asked; S pressed four times to reach `album` sorts once, by album.
-  const sortSeq = useRef(0)
-  const sortBy = (field: SortField, isReversed: boolean) => {
-    setSort({ field, isReversed })
-    const seq = ++sortSeq.current
-    act(() =>
-      inTurn(async () => {
-        if (seq !== sortSeq.current) return
-        const queue = await h.vars.read('queue')
-        const sortRows = queue.items.map((item, i) => {
-          const path = queue.paths[i] ?? ''
-          const tags = book.get(path)
-          return { path, title: tags?.title || item, tags }
-        })
-        const unread = field === 'title' || field === 'folder' ? 0 : sortRows.filter(r => r.path.startsWith('/') && !r.tags).length
-        // the cursor follows the playing song again, not a place now holding another
-        setPl(undefined)
-        const reply = await reorderQueue(h, sortOrder(sortRows, field, isReversed))
-        return reply || (unread ? `Sorted; ${unread} songs' tags weren't read yet, so they went last.` : '')
-      }),
-    )
   }
 
   // Adds the picked Files rows (or the cursor's), folders whole, in row order.
@@ -274,22 +182,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'clearPick':
         return setCurSel(clear(curSel()))
       case 'move':
-        if (!isEditable()) return
-        return moveRows((count, from) => moveBy(count, from, a.by))
+        return playlist.move(a.by)
       case 'remove':
-        if (!isEditable()) return
-        // in its turn, from the queue as it is then: an earlier move or add may change it
-        return act(() =>
-          inTurn(async () => {
-            const { queue, rows } = await freshRows()
-            const key = plKeyOf(queue, rows)
-            const sel = clamp(current(plSelRef.current, key) ?? plSel(), rows.length)
-            const indexes = targets(sel).flatMap(i => (rows[i] ? [rows[i].index] : []))
-            if (!indexes.length) return
-            setPl(clear(sel), key)
-            return removeFromQueue(h, session.config, indexes)
-          }),
-        )
+        return playlist.remove()
       case 'clearPlaylist': {
         if (!isPl() || !isEditable()) return
         // a lone C only asks: hundreds of songs gone at one key is too easy
@@ -298,23 +193,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         clearAt.current = isAgain ? 0 : now
         if (!a.isSure && !isAgain) return setNotice(`Press C again to clear all ${q.items.length} songs.`)
         clearAt.current = 0
-        setPl(undefined)
-        setTop(undefined)
-        setSort({ isReversed: false })
-        return act(() =>
-          inTurn(async () => {
-            await stopPlaying(h, session.config)
-            return 'Cleared the playlist. l brings it back.'
-          }),
-        )
+        return playlist.clear()
       }
       case 'sortNext':
         if (!isPl()) return files.setSort(FILES_SORTS[(FILES_SORTS.indexOf(files.sort) + 1) % FILES_SORTS.length])
-        if (!isEditable()) return
-        return sortBy(nextSortField(sortRef.current.field), false)
+        return playlist.sortNext()
       case 'sortReverse':
-        if (!isPl() || !isEditable()) return
-        return sortBy(sortRef.current.field ?? 'title', !sortRef.current.isReversed)
+        return isPl() ? playlist.sortReverse() : undefined
       case 'enter':
         if (isPl()) return row ? act(() => pick(h, row.index)) : undefined
         if (fileRow?.kind === 'up') return files.goUp()
@@ -439,12 +324,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
-  const first = firstRow(selected, rows.length, listHeight, topRef.current)
+  const first = firstRow(selected, rows.length, listHeight, playlist.top)
   // A click selects and holds the view where it is; a double-click does what
   // Enter does. Ctrl-click picks one row; Shift- or Alt-click a range.
   const onRow = (index: number, hit: Hit) => {
     if (dismissMenu()) return
-    setTop(first)
+    playlist.setTop(first)
     pendingSelect.current = undefined
     const sel = plSel()
     if (hit.mods.ctrl) return setPl(toggle(sel, index))
@@ -474,10 +359,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       pendingSelect.current = undefined
     }
     if (!drag || drag.to === drag.from) return
-    const to = drag.to < rows.length ? rows[drag.to].index : q.items.length
-    moveRows((count, from) => moveTo(count, from, to))
+    playlist.moveTo(drag.to < rows.length ? rows[drag.to].index : q.items.length)
   }
-  const onWheel = (dir: 'up' | 'down') => setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const onWheel = (dir: 'up' | 'down') => playlist.setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const fSel = filesSel()
   const fFirst = firstRow(fSel.cursor, fRows.length, listHeight, files.top)
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
@@ -521,13 +405,16 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
   // every file's tags when sorting by them; the shown ones' first
-  const fAllKey = tab === 'files' && (files.sort === 'artist' || files.sort === 'albumArtist') ? fRows.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n') : ''
+  const fAllKey = useMemo(
+    () => (tab === 'files' && (files.sort === 'artist' || files.sort === 'albumArtist') ? fRows.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n') : ''),
+    [tab, files.sort, fRows],
+  )
   useEffect(() => book.need(fAllKey ? fAllKey.split('\n') : []), [book, fAllKey])
   useEffect(() => book.need(fShownKey ? fShownKey.split('\n') : []), [book, fShownKey])
   const shown = tab === 'playlist' ? rows.slice(first, first + listHeight) : []
   const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
   // every song's tags, for sorting; the shown rows' first (the newest asked is read first)
-  const allKey = tab === 'playlist' ? q.paths.join('\n') : ''
+  const allKey = useMemo(() => (tab === 'playlist' ? q.paths.join('\n') : ''), [tab, q.paths])
   useEffect(() => book.need(allKey ? allKey.split('\n') : []), [book, allKey])
   useEffect(() => book.need(shownKey ? shownKey.split('\n') : []), [book, shownKey])
   const menu = menuRef.current
@@ -548,8 +435,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           tab === 'files'
             ? FILES_SORT_LABEL[files.sort]
             : q.kind === 'playlist'
-              ? sortRef.current.field
-                ? `${SORT_LABEL[sortRef.current.field]}${sortRef.current.isReversed ? ' ↑' : ''}`
+              ? playlist.sort.field
+                ? `${SORT_LABEL[playlist.sort.field]}${playlist.sort.isReversed ? ' ↑' : ''}`
                 : 'as queued'
               : undefined
         }
