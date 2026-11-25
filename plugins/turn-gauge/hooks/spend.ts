@@ -97,7 +97,7 @@ export const OVERHEAD_MIN_SHARE = 0.6
 // ...and to at least this much a turn, so a large share of pennies stays quiet.
 export const OVERHEAD_MIN_USD = 0.05
 // ...and only when starting over or compacting pays for itself within this many
-// turns: a payback further out than that is a guess about the session's length.
+// turns (the `maxPaybackTurns` setting): further out is a guess at the session's length.
 export const MAX_PAYBACK_TURNS = 5
 // Turns seen before the overhead is priced: one turn says little about the next.
 export const MIN_TURNS = 3
@@ -173,7 +173,7 @@ export const expiredWarning = (s: SpendInputs): SpendWarning | null => {
 // With the cache warm each request still reads the whole context; what that costs
 // over reading a fresh session's baseline, times the requests a turn makes, is the
 // overhead. (A long prompt can pay higher rates on all of it, not just the old part.)
-export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
+export const overheadWarning = (s: SpendInputs, maxPayback = MAX_PAYBACK_TURNS): SpendWarning | null => {
   if (s.context === null || s.baseline === null) return null
   const p = unitPrices(s, s.context)
   const b = unitPrices(s, s.baseline)
@@ -215,7 +215,7 @@ export const overheadWarning = (s: SpendInputs): SpendWarning | null => {
     }
   }
   // Nothing to do about it soon enough: say nothing.
-  if (soonest > MAX_PAYBACK_TURNS) return null
+  if (soonest > maxPayback) return null
   return { kind: 'overhead', text: parts.join(' · ') }
 }
 

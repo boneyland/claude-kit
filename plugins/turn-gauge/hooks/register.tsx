@@ -16,6 +16,7 @@ import {
   formatUsd,
   median,
   overheadWarning,
+  MAX_PAYBACK_TURNS,
   predictUsd,
   costPerTurn,
   RECENT_TURNS,
@@ -782,6 +783,7 @@ const restoreWarnings = async ($: EngineInterface) => {
 export const register: Register = (on, options) => {
   const keepTurns = Math.min(20, Math.max(1, Math.round(Number(options.keepTurns ?? 3)) || 3))
   const warmupTurns = Math.min(3, Math.max(1, Math.round(Number(options.warmupTurns ?? 2)) || 2))
+  const maxPaybackTurns = Math.min(50, Math.max(1, Math.round(Number(options.maxPaybackTurns ?? MAX_PAYBACK_TURNS)) || MAX_PAYBACK_TURNS))
   const background = bandBackground(options.background)
   const glyphs = TERMINAL_ICONS[options.terminalIcons === 'glyphs' ? 'glyphs' : 'emoji']
 
@@ -1059,7 +1061,7 @@ export const register: Register = (on, options) => {
             isTurnDismissed ? null : missWarning,
             isTurnDismissed ? null : outputWarning(spendInputs(sp), tk.last),
             paceWarning,
-            isOverheadDismissed ? null : overheadWarning(spendInputs(sp, s.recentCosts ?? [])),
+            isOverheadDismissed ? null : overheadWarning(spendInputs(sp, s.recentCosts ?? []), maxPaybackTurns),
           ]
     const candidates = ranked.filter((w): w is Warning => w !== null)
     const rateColor = rate === null ? undefined : missWarning !== null ? ALERT : rate < RATE_WARN ? WARN : undefined

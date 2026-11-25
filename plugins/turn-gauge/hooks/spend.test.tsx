@@ -103,6 +103,10 @@ test('the overhead stays quiet until starting over or compacting pays back withi
   // re-reading 69k takes 8 turns to pay back, a compaction 13.
   const slow = { ...OPUS, context: 209_000, baseline: 31_000, warmup: 69_000, summary: 47_000, recentSteps: [5, 5, 5], recentCosts: [0.18, 0.18, 0.18] }
   expect(overheadWarning(slow)).toBe(null)
+  // The setting moves the line: at 8 turns the new session qualifies.
+  expect(overheadWarning(slow, 8)?.text).toBe(
+    'Carry cost ≈ $0.18/turn (178k × 5 req) · new session + 69k re-read ≈ $0.80 once → pays back in 8 turns · /compact ≈ $1.61 once → pays back in 13 turns',
+  )
   // Twice the requests a turn halve both paybacks: 4 turns for a new session, 7 for /compact.
   expect(overheadWarning({ ...slow, recentSteps: [10, 10, 10], recentCosts: [0.36, 0.36, 0.36] })?.text).toBe(
     'Carry cost ≈ $0.36/turn (178k × 10 req) · new session + 69k re-read ≈ $0.80 once → pays back in 4 turns · /compact ≈ $1.61 once → pays back in 7 turns',
@@ -222,6 +226,14 @@ test('the band shows the overhead warning while idle and the cache is warm', asy
   expect((await ui.find({ type: 'Text', text: /^Carry cost/ }))?.text).toMatch(/\$0\.42\/turn/)
   expect(await ui.find({ type: 'Button', key: 'dismiss-spend' })).not.toBe(undefined)
   expect((await ui.find({ type: 'Button', key: 'compact' }))?.props.label).toBe('compact, keep 3')
+  await ui.unmount()
+})
+
+test('the band hides the overhead row past the payback setting', { options: { maxPaybackTurns: 1 } }, async ($, on) => {
+  // A new session pays back in 2 turns: past a 1-turn setting.
+  seedBand(on, {})
+  const ui = await $.ui.mount(BAND())
+  expect(await ui.find({ type: 'Text', text: /^Carry cost/ })).toBe(undefined)
   await ui.unmount()
 })
 
