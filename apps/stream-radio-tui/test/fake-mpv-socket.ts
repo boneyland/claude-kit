@@ -73,3 +73,24 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
   }
   return fake
 }
+
+// Makes `fake` act as mpv on what it is sent, over `props`: properties set,
+// lists loaded (append or insert-at), entries moved and removed, and the list
+// cleared but for the playing entry (which keeps its mark).
+export function actAsMpv(fake: Fake, props: Record<string, unknown>) {
+  fake.onCommand = c => {
+    const list = props.playlist as { filename: string; current?: boolean }[]
+    if (c[0] === 'set_property') props[c[1] as string] = c[2]
+    if (c[0] === 'loadlist') {
+      const songs = fs.readFileSync(c[1] as string, 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(filename => ({ filename }))
+      list.splice(c[2] === 'insert-at' ? (c[3] as number) : list.length, 0, ...songs)
+    }
+    if (c[0] === 'playlist-remove') list.splice(c[1] as number, 1)
+    if (c[0] === 'playlist-clear') list.splice(0, list.length, ...list.filter(e => e.current))
+    if (c[0] === 'playlist-move') {
+      const [j, i] = [c[1] as number, c[2] as number]
+      const [moved] = list.splice(j, 1)
+      list.splice(j < i ? i - 1 : i, 0, moved!)
+    }
+  }
+}

@@ -79,7 +79,8 @@ export function updateStored(h: Host, fn: (q: StoredQueue) => StoredQueue): Prom
   return updateStoredWith(h, async q => fn(q))
 }
 
-function updateStoredWith(h: Host, fn: (q: StoredQueue) => Promise<StoredQueue>): Promise<StoredQueue | 'busy'> {
+// The same, with an `fn` that may wait (on the player, say) while it holds the lock.
+export function updateStoredWith(h: Host, fn: (q: StoredQueue) => Promise<StoredQueue>): Promise<StoredQueue | 'busy'> {
   const step = chain.then(async () => {
     const p = await paths(h)
     return withFileLock(h, p.queueLock, QUEUE_LOCK_STALE_MS, async () => {

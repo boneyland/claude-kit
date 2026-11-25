@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { checkDefault, playAt, playSource, resumeQueue, stopPlaying } from '@core/player'
+import { checkDefault, playAt, playSource, POLL_MS, resumeQueue, stopPlaying } from '@core/player'
 import { openSession, type Session } from '../src/session'
-import { fakeMpv, type Fake } from './fake-mpv-socket'
+import { actAsMpv, fakeMpv, type Fake } from './fake-mpv-socket'
 
 // The queue the app owns, played from its file. The core keeps the data folder
 // for the process, so one for the whole file.
@@ -230,4 +230,87 @@ test('a new play while a player is followed shows its list at once, and keeps it
   expect(session.status()).not.toBe('')
   const q = await h.vars.read('queue')
   expect([q.kind, q.paths]).toEqual(['playlist', Y])
+})
+
+// --- keeping sessions and mpv in step with the file ---
+
+const writeQueue = (rev: number, paths: string[], place?: string) => {
+  const entries = paths.map((p, i) => ({ id: `${rev}.${i}`, path: p }))
+  fs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev, entries, arrangement: { kind: 'none' }, root: '', source: '/src' }))
+  if (place) fs.writeFileSync(PLACE, JSON.stringify({ rev, current: place, seconds: 20 }))
+}
+const revSet = () => sent('set_property').filter(c => c[1] === 'user-data/stream-radio/rev').map(c => c[2])
+
+// A session following a player already playing `playlist` at `pos`, mpv acting
+// on what it is sent.
+async function following(props: Record<string, unknown>, pos: number) {
+  props['chapter-list'] = []
+  fake = await fakeMpv(dir, props)
+  actAsMpv(fake, props)
+  session = await openSession([], { env, run })
+  await until(() => commands().some(c => c[0] === 'observe_property'))
+  fake.push(
+    { event: 'property-change', name: 'playlist-count', data: (props.playlist as unknown[]).length },
+    { event: 'property-change', name: 'playlist-pos', data: pos },
+    { event: 'property-change', name: 'chapter', data: -1 },
+    { event: 'file-loaded' },
+  )
+  return session.host
+}
+
+test("stopped session follows another program's edit", { timeout: 20_000 }, async () => {
+  stored()
+  session = await openSession([], { env, run })
+  const h = session.host
+  await until(async () => (await h.vars.read('queue')).paths.length === 3)
+  // past a look of the poller's, so the change is what it notices next
+  await new Promise(r => setTimeout(r, POLL_MS + 200))
+  const Y = ['a', 'b'].map(n => path.join(music, 'Y', `${n}.flac`))
+  writeQueue(2, Y)
+  const from = Date.now()
+  for (let i = 0; i < 100 && (await h.vars.read('queue')).paths.join() !== Y.join(); i++) await new Promise(r => setTimeout(r, 50))
+  expect((await h.vars.read('queue')).paths).toEqual(Y)
+  expect(Date.now() - from).toBeLessThan(POLL_MS + 500)
+  expect(launches).toEqual([])
+})
+
+test("mpv's expansion of a cue is written back once", { timeout: 20_000 }, async () => {
+  writeQueue(1, ['/m/a.flac', '/m/X.cue', '/m/c.flac'], '1.1')
+  const playlist = [{ filename: '/m/a.flac' }, { filename: '/m/x1.flac', current: true }, { filename: '/m/x2.flac' }, { filename: '/m/c.flac' }]
+  const props: Record<string, unknown> = { playlist, 'user-data/stream-radio/rev': 1 }
+  const h = await following(props, 1)
+  await until(() => readJson(QUEUE_JSON).rev === 2)
+  const q = readJson(QUEUE_JSON)
+  expect(q.entries.map((e: { path: string }) => e.path)).toEqual(['/m/a.flac', '/m/x1.flac', '/m/x2.flac', '/m/c.flac'])
+  await until(() => revSet().length > 0)
+  expect(revSet()).toEqual([2])
+  // the place on the song playing, the first of the expansion
+  await until(() => readJson(PLACE).current === q.entries[1].id)
+  await until(async () => (await h.vars.read('queue')).paths.length === 4)
+  expect((await h.vars.read('queue')).current).toBe(1)
+  // once: in step now, nothing more is written or sent
+  await new Promise(r => setTimeout(r, 1500))
+  expect(readJson(QUEUE_JSON).rev).toBe(2)
+  expect(revSet()).toEqual([2])
+  for (const verb of ['playlist-clear', 'loadlist', 'playlist-move', 'playlist-remove', 'playlist-play-index']) expect(sent(verb)).toEqual([])
+})
+
+test('a stale mpv list is rebuilt from the file', { timeout: 20_000 }, async () => {
+  // the file moved on to rev 5 (a, b, c, b playing); mpv was left at rev 3
+  writeQueue(5, ['/m/a.flac', '/m/b.flac', '/m/c.flac'], '5.1')
+  const playlist = [{ filename: '/m/b.flac', current: true }, { filename: '/m/a.flac' }]
+  const props: Record<string, unknown> = { playlist, 'user-data/stream-radio/rev': 3 }
+  const h = await following(props, 0)
+  await until(() => revSet().length > 0)
+  expect(revSet()).toEqual([5])
+  const verbs = commands().map(c => c[0]).filter(v => ['playlist-clear', 'loadlist', 'playlist-move'].includes(v as string))
+  expect(verbs).toEqual(['playlist-clear', 'loadlist', 'playlist-move', 'loadlist'])
+  expect(playlist.map(e => e.filename)).toEqual(['/m/a.flac', '/m/b.flac', '/m/c.flac'])
+  // the song playing plays on: never restarted, jumped to or sought
+  expect(playlist.find(e => e.current)?.filename).toBe('/m/b.flac')
+  for (const verb of ['playlist-play-index', 'seek', 'loadfile', 'stop']) expect(sent(verb)).toEqual([])
+  expect(sent('loadlist').every(c => c[2] === 'append')).toBe(true)
+  expect(readJson(QUEUE_JSON).rev).toBe(5)
+  await until(async () => (await h.vars.read('queue')).current === 1)
+  expect(readJson(PLACE).current).toBe('5.1')
 })

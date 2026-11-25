@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { fakeMpv } from './fake-mpv'
+import { fakeMpv, QUEUE_JSON } from './fake-mpv'
 
 const PANE = {
   plugin: 'stream-radio',
@@ -17,14 +17,18 @@ const PLAYLIST = [
   { filename: '/m/Album/Live/01 Snowfall.flac', title: 'Snowfall' },
 ]
 
+// The queue of the folder's songs, as an earlier play left it.
 function engine(on: On) {
-  return fakeMpv(on, { title: 'Intro', props: { 'time-pos': 3, duration: true }, playlist: PLAYLIST, exists: () => true })
+  const world = fakeMpv(on, { title: 'Intro', props: { 'time-pos': 3, duration: true }, playlist: PLAYLIST, exists: () => true })
+  const entries = PLAYLIST.map((e, i) => ({ id: `1.${i}`, path: e.filename, title: e.title }))
+  world.files[QUEUE_JSON] = JSON.stringify({ version: 1, rev: 1, entries, arrangement: { kind: 'none' }, root: '/m/Album', source: '/m/Album' })
+  return world
 }
 
 test('typing in the filter narrows the list; Enter plays the first match', async ($, on) => {
   const clock = mock.clock(on)
   const world = engine(on)
-  await $.command.run({ command: 'stream', args: '/m/Album' } as never)
+  await $.command.run({ command: 'stream', args: 'last' } as never)
   await clock.advance(10)
 
   let pane = await $.ui.mount(PANE)

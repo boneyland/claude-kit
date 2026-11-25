@@ -94,13 +94,32 @@ test('the panel marks a folder listed in a playlist file', async ($, on) => {
 
 test("subfolders fold: the current song's opens by itself, a click shuts and opens one", async ($, on) => {
   const clock = mock.clock(on)
+  // The app lists the folder and its subfolders; mpv plays from Disc 2's A.
+  const folders: Record<string, { name: string; kind: 'file' | 'dir' }[]> = {
+    '/m/Album': [
+      { name: '01 Intro.flac', kind: 'file' },
+      { name: 'Disc 2', kind: 'dir' },
+      { name: 'Live', kind: 'dir' },
+    ],
+    '/m/Album/Disc 2': [
+      { name: '01 A.flac', kind: 'file' },
+      { name: '02 B.flac', kind: 'file' },
+    ],
+    '/m/Album/Live': [{ name: '01 C.flac', kind: 'file' }],
+  }
   const playlist: Entry[] = [
-    { filename: '/m/Album/01 Intro.flac', title: 'Intro' },
-    { filename: '/m/Album/Disc 2/01 A.flac', title: 'A', current: true },
-    { filename: '/m/Album/Disc 2/02 B.flac', title: 'B' },
-    { filename: '/m/Album/Live/01 C.flac', title: 'C' },
+    { filename: '/m/Album/01 Intro.flac' },
+    { filename: '/m/Album/Disc 2/01 A.flac', current: true },
+    { filename: '/m/Album/Disc 2/02 B.flac' },
+    { filename: '/m/Album/Live/01 C.flac' },
   ]
-  const world = engine(on, { title: 'A', exists: () => true, playlist })
+  const world = engine(on, {
+    title: 'A',
+    exists: () => true,
+    stat: path => ({ kind: path in folders ? 'dir' : 'file' }),
+    list: path => folders[path] ?? [],
+    playlist,
+  })
 
   await $.command.run({ command: 'stream', args: '/m/Album' } as never)
   await clock.advance(10)
@@ -114,8 +133,8 @@ test("subfolders fold: the current song's opens by itself, a click shuts and ope
 
   // The current song's folder is open; the other is shut.
   expect(await label('folder-/m/Album/Disc 2')).toBe('  ▾ 📁 Disc 2/ · 2')
-  expect(await label('item-1')).toBe('▶   1. A')
-  expect(await label('item-2')).toBe('    2. B')
+  expect(await label('item-1')).toBe('▶   1. 01 A.flac')
+  expect(await label('item-2')).toBe('    2. 02 B.flac')
   expect(await label('folder-/m/Album/Live')).toBe('  ▸ 📁 Live/ · 1')
   expect(await label('item-3')).toBe(undefined)
 
@@ -129,7 +148,7 @@ test("subfolders fold: the current song's opens by itself, a click shuts and ope
   pane = await $.ui.mount(PANE)
   await pane.press({ key: 'folder-/m/Album/Live' })
   await pane.unmount()
-  expect(await label('item-3')).toBe('    1. C')
+  expect(await label('item-3')).toBe('    1. 01 C.flac')
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)

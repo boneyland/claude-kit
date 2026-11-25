@@ -113,12 +113,10 @@ test('a shuffle made in another session shows here', async ($, on) => {
   await $.session.start(start)
   await $.command.run({ command: 'stream', args: 'last' } as never)
   await clock.advance(10)
-  const before = world.sent.filter(c => c[1] === 'playlist').length
 
   world.shuffledElsewhere()
   await clock.advance(10)
-  // Read whole again: its order changed.
-  expect(world.sent.filter(c => c[1] === 'playlist').length).toBe(before + 1)
+  // The queue's file read again: its order changed.
   expect(await labelOf($, 'shuffle')).toBe('🔀 Shuffle: on (s)')
   expect(await labelOf($, 'item-0')).toBe('  1. C')
   expect(await labelOf($, 'item-2')).toBe('▶ 3. A')

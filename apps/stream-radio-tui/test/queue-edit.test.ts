@@ -16,7 +16,7 @@ import {
 } from '@core/player'
 import { loopsFor, repeatOf } from '@core/nowplaying'
 import { openSession, type Session } from '../src/session'
-import { fakeMpv, type Fake } from './fake-mpv-socket'
+import { actAsMpv, fakeMpv, type Fake } from './fake-mpv-socket'
 
 // The core keeps the data folder for the process, so one for the whole file.
 const state = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-queue-'))
@@ -86,13 +86,16 @@ test('one video with chapters still lists its chapters', async () => {
   expect((await h.vars.read('queue')).items).toEqual(['One', 'Two', 'Three'])
 })
 
-test("another session's edit mark makes this one read the playlist again", async () => {
-  const two = [{ filename: '/m/a.flac', current: true }, { filename: '/m/b.flac' }]
-  const h = await loaded({ playlist: two, 'chapter-list': [] })
-  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
-  const before = asked('playlist')
+test("another session's edit mark makes this one read the queue's file again", async () => {
+  const songs = ['/m/a.flac', '/m/b.flac']
+  fs.writeFileSync(path.join(dir, 'queue.json'), JSON.stringify({ version: 1, rev: 1, entries: songs.map((p, i) => ({ id: `1.${i}`, path: p })), arrangement: { kind: 'none' }, root: '', source: '/src' }))
+  const h = await loaded({ playlist: TWO, 'chapter-list': [], 'user-data/stream-radio/rev': 1 })
+  await until(async () => (await h.vars.read('queue')).paths.length === 2)
+  // another session added a song to the file; mpv has not got it yet
+  fs.writeFileSync(path.join(dir, 'queue.json'), JSON.stringify({ version: 1, rev: 2, entries: [...songs, '/m/c.flac'].map((p, i) => ({ id: `1.${i}`, path: p })), arrangement: { kind: 'none' }, root: '', source: '/src' }))
   fake!.push({ event: 'property-change', name: 'user-data/stream-radio/edited', data: 1 })
-  await until(() => asked('playlist') > before)
+  await until(async () => (await h.vars.read('queue')).paths.length === 3)
+  expect((await h.vars.read('queue')).paths).toEqual([...songs, '/m/c.flac'])
 })
 
 // --- edits: the file first, then mpv ---
@@ -129,29 +132,10 @@ async function playing(songs: readonly string[], pos = 0, arrangement?: unknown)
   // handed the stored queue at its rev
   mpvProps = { playlist, 'chapter-list': [], 'user-data/stream-radio/rev': 1 }
   const h = await loaded(mpvProps, pos)
-  live(mpvProps)
+  actAsMpv(fake!, mpvProps)
   await until(async () => (await h.vars.read('queue')).current === pos)
   return h
 }
-// The fake acts as mpv on what an edit sends: properties set, lists loaded,
-// entries moved and removed (the playing one keeps its mark).
-function live(props: Record<string, unknown>) {
-  fake!.onCommand = c => {
-    const list = props.playlist as { filename: string; current?: boolean }[]
-    if (c[0] === 'set_property') props[c[1] as string] = c[2]
-    if (c[0] === 'loadlist') {
-      const songs = fs.readFileSync(c[1] as string, 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(filename => ({ filename }))
-      list.splice(c[2] === 'insert-at' ? (c[3] as number) : list.length, 0, ...songs)
-    }
-    if (c[0] === 'playlist-remove') list.splice(c[1] as number, 1)
-    if (c[0] === 'playlist-move') {
-      const [j, i] = [c[1] as number, c[2] as number]
-      const [moved] = list.splice(j, 1)
-      list.splice(j < i ? i - 1 : i, 0, moved!)
-    }
-  }
-}
-
 test('add to the end appends to the file, then to mpv', async () => {
   const h = await playing(['/m/a.flac', '/m/b.flac'])
   expect(await addToQueue(h, session!.config, [{ path: '/n/c.flac' }], 'end')).toBe('')
@@ -356,15 +340,34 @@ test('a sort of many songs rebuilds the list around the playing one, not a move 
   ])
 })
 
-test("an mpv list that is not the stored one is left alone: the file still changes", async () => {
+test('a player without a rev (an older build) is brought to the file around the song playing', async () => {
   stored(['/m/a.flac', '/m/b.flac'])
-  // mpv expanded something: three songs for two entries
-  const h = await loaded({ playlist: THREE, 'chapter-list': [] })
+  // three songs, and no rev: the file is what it is brought to
+  mpvProps = { playlist: THREE.map(e => ({ ...e })), 'chapter-list': [] }
+  const h = await loaded(mpvProps)
+  actAsMpv(fake!, mpvProps)
+  await until(() => revSet().length > 0)
+  expect(revSet()).toEqual([1])
+  expect(mpvPaths()).toEqual(['/m/a.flac', '/m/b.flac'])
+  expect(storedPaths()).toEqual(['/m/a.flac', '/m/b.flac'])
+  expect(sent('playlist-play-index')).toEqual([])
+  expect((await h.vars.read('queue')).paths).toEqual(['/m/a.flac', '/m/b.flac'])
+})
+
+test('a song playing that the file lacks plays on, and mpv\'s list is taken into the file', async () => {
+  // the file got only what was added (an add while an older player played)
+  fs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 2, entries: [{ id: '2.0', path: '/n/d.flac' }], arrangement: { kind: 'none' }, root: '', source: '' }))
+  mpvProps = { playlist: TWO.map(e => ({ ...e })), 'chapter-list': [] }
+  const h = await loaded(mpvProps)
+  actAsMpv(fake!, mpvProps)
+  await until(() => revSet().length > 0)
+  expect(storedPaths()).toEqual(['/m/a.flac', '/m/b.flac', '/n/d.flac'])
+  expect(readJson(QUEUE_JSON).rev).toBe(3)
+  expect(revSet()).toEqual([3])
+  expect(mpvPaths()).toEqual(storedPaths())
+  expect(sent('playlist-clear')).toEqual([])
+  expect(sent('playlist-play-index')).toEqual([])
   await until(async () => (await h.vars.read('queue')).paths.length === 3)
-  expect(await reorderQueue(h, [1, 0])).toBe('')
-  expect(storedPaths()).toEqual(['/m/b.flac', '/m/a.flac'])
-  expect(sent('playlist-move')).toEqual([])
-  expect(revSet()).toEqual([])
 })
 
 test('remove the playing song plays the next; remove all clears and stops (no reconnect)', async () => {
@@ -416,20 +419,18 @@ test('a busy queue says so', async () => {
   fs.rmSync(path.join(dir, 'queue.lock'), { force: true })
 })
 
-test('a position that moved against a list already read still finds the song playing', async () => {
-  // a sort elsewhere left the length as it was; only the new position came
-  const props: Record<string, unknown> = {
-    playlist: [{ filename: '/m/a.flac', current: true }, { filename: '/m/b.flac' }, { filename: '/m/c.flac' }],
-    'chapter-list': [],
-  }
-  const h = await loaded(props)
-  await until(async () => (await h.vars.read('queue')).paths.length === 3)
-  props.playlist = [{ filename: '/m/b.flac' }, { filename: '/m/c.flac' }, { filename: '/m/a.flac', current: true }]
-  props['playlist/2/filename'] = '/m/a.flac'
-  fake!.push({ event: 'property-change', name: 'playlist-pos', data: 2 })
-  await until(async () => (await h.vars.read('queue')).current === 2)
-  const q = await h.vars.read('queue')
-  expect(q.paths[q.current]).toBe('/m/a.flac')
+test('a position that comes before the sort it follows from still ends on the song playing', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac', '/m/c.flac'])
+  // a sort elsewhere left the length as it was: the file, mpv's list and rev
+  // change, and the new position comes before the rev
+  fs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 2, entries: ['/m/b.flac', '/m/c.flac', '/m/a.flac'].map((p, i) => ({ id: `1.${i}`, path: p })), arrangement: { kind: 'none' }, root: '', source: '/src' }))
+  mpvProps.playlist = [{ filename: '/m/b.flac' }, { filename: '/m/c.flac' }, { filename: '/m/a.flac', current: true }]
+  mpvProps['user-data/stream-radio/rev'] = 2
+  fake!.push({ event: 'property-change', name: 'playlist-pos', data: 2 }, { event: 'property-change', name: 'user-data/stream-radio/rev', data: 2 })
+  await until(async () => {
+    const q = await h.vars.read('queue')
+    return q.current === 2 && q.paths[2] === '/m/a.flac'
+  })
 })
 
 test('changing repeat never passes through a third mode on the way', async () => {

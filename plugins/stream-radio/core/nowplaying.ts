@@ -14,6 +14,8 @@ export const WATCHED = [
   'user-data/stream-radio/url',
   // a count another program raises after editing the queue: read it again
   'user-data/stream-radio/edited',
+  // the rev of queue.json mpv's list was last brought to
+  'user-data/stream-radio/rev',
   // last: its first value means a player already playing, and finds the rest known
   'time-pos',
 ] as const

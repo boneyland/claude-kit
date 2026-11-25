@@ -34,7 +34,9 @@ test('the footer opens the panel, which lists the playlist and picks, skips and 
   const clock = mock.clock(on)
   const world = engine(on)
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never).catch(() => undefined)
-  await clock.advance(10)
+  // mpv expands the URL into its three songs; they are written to the queue
+  // once its list has settled
+  await clock.advance(1100)
 
   // The footer button opens the panel; pressed again, closes it.
   const footer = await $.ui.mount(FOOTER)
