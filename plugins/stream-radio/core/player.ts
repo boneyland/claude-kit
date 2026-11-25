@@ -993,13 +993,20 @@ export async function addToQueue(h: Host, config: PlayerConfig, entries: readonl
     start(h, config, file)
     return ''
   }
-  const before = (await mpv(h, ['get_property', 'playlist-count']))?.data
-  const count = typeof before === 'number' ? before : seen.count
-  for (const s of songs) if (!(await mpv(h, ['loadfile', s.path, 'append']))) return 'The player is not ready yet.'
+  // All the songs in one list, loaded in one command: a loadfile per song made
+  // a folder trickle in, every session reading the queue again after each one.
+  const file = `${(await paths(h)).queue}.add`
+  await h.fs.write(file, m3u(songs))
   if (where === 'next') {
-    const at = seen.pos >= 0 ? seen.pos : 0
-    for (let i = 0; i < songs.length; i++) await mpv(h, ['playlist-move', count + i, at + 1 + i])
-  }
+    const at = (seen.pos >= 0 ? seen.pos : 0) + 1
+    // insert-at needs mpv 0.38; an older one appends, and the songs move up one by one
+    if (!(await mpv(h, ['loadlist', file, 'insert-at', at]))) {
+      const before = (await mpv(h, ['get_property', 'playlist-count']))?.data
+      const count = typeof before === 'number' ? before : seen.count
+      if (!(await mpv(h, ['loadlist', file, 'append']))) return 'The player is not ready yet.'
+      for (let i = 0; i < songs.length; i++) await mpv(h, ['playlist-move', count + i, at + i])
+    }
+  } else if (!(await mpv(h, ['loadlist', file, 'append']))) return 'The player is not ready yet.'
   await afterEdit(h)
   return ''
 }

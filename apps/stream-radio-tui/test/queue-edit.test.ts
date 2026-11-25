@@ -73,6 +73,7 @@ test("another session's edit mark makes this one read the playlist again", async
 // --- adding, the queue file, resuming by path ---
 
 const QUEUE_FILE = path.join(dir, 'queue.m3u')
+const ADD_FILE = `${QUEUE_FILE}.add`
 const TWO = [{ filename: '/m/a.flac', current: true }, { filename: '/m/b.flac' }]
 const sent = (verb: string) => commands().filter(c => c[0] === verb)
 
@@ -80,7 +81,9 @@ test('add to the end appends, and the queue file becomes what plays', async () =
   const h = await loaded({ playlist: TWO, 'chapter-list': [] })
   await until(async () => (await h.vars.read('queue')).kind === 'playlist')
   expect(await addToQueue(h, session!.config, [{ path: '/n/c.flac' }], 'end')).toBe('')
-  expect(sent('loadfile')).toEqual([['loadfile', '/n/c.flac', 'append']])
+  expect(sent('loadfile')).toEqual([])
+  expect(sent('loadlist')).toEqual([['loadlist', ADD_FILE, 'append']])
+  expect(fs.readFileSync(ADD_FILE, 'utf8')).toBe('#EXTM3U\n/n/c.flac\n')
   expect(await h.vars.read('lastUrl')).toBe(QUEUE_FILE)
   expect(commands()).toContainEqual(['set_property', 'user-data/stream-radio/url', QUEUE_FILE])
   expect(fs.readFileSync(QUEUE_FILE, 'utf8')).toContain('/m/a.flac')
@@ -90,21 +93,37 @@ test('play next puts the songs after the playing one, in their order', async () 
   const h = await loaded({ playlist: TWO, 'chapter-list': [] })
   await until(async () => (await h.vars.read('queue')).kind === 'playlist')
   await addToQueue(h, session!.config, [{ path: '/n/c.flac' }, { path: '/n/d.flac' }], 'next')
-  expect(sent('loadfile')).toHaveLength(2)
+  expect(sent('loadlist')).toEqual([['loadlist', ADD_FILE, 'insert-at', 1]])
+  expect(fs.readFileSync(ADD_FILE, 'utf8')).toBe('#EXTM3U\n/n/c.flac\n/n/d.flac\n')
+  expect(sent('playlist-move')).toEqual([])
+})
+
+test('play next on an mpv without insert-at appends, then moves the songs up', async () => {
+  const h = await loaded({ playlist: TWO, 'chapter-list': [] })
+  await until(async () => (await h.vars.read('queue')).kind === 'playlist')
+  fake!.refuse = c => c[0] === 'loadlist' && c[2] === 'insert-at'
+  await addToQueue(h, session!.config, [{ path: '/n/c.flac' }, { path: '/n/d.flac' }], 'next')
+  expect(sent('loadlist')).toEqual([
+    ['loadlist', ADD_FILE, 'insert-at', 1],
+    ['loadlist', ADD_FILE, 'append'],
+  ])
   expect(sent('playlist-move')).toEqual([
     ['playlist-move', 2, 1],
     ['playlist-move', 3, 2],
   ])
 })
 
-test('a folder adds its songs one by one', async () => {
+test('a folder adds all its songs in one command', async () => {
   const h = await loaded({ playlist: TWO, 'chapter-list': [] })
   await until(async () => (await h.vars.read('queue')).kind === 'playlist')
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-add-'))
   fs.writeFileSync(path.join(folder, 'x.flac'), '')
+  fs.writeFileSync(path.join(folder, 'w.flac'), '')
   fs.writeFileSync(path.join(folder, 'y.jpg'), '')
   await addToQueue(h, session!.config, [{ path: folder }], 'end')
-  expect(sent('loadfile')).toEqual([['loadfile', path.join(folder, 'x.flac'), 'append']])
+  expect(sent('loadfile')).toEqual([])
+  expect(sent('loadlist')).toEqual([['loadlist', ADD_FILE, 'append']])
+  expect(fs.readFileSync(ADD_FILE, 'utf8')).toBe(`#EXTM3U\n${path.join(folder, 'w.flac')}\n${path.join(folder, 'x.flac')}\n`)
   fs.rmSync(folder, { recursive: true, force: true })
 })
 

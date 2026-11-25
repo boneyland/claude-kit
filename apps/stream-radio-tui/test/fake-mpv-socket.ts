@@ -11,6 +11,8 @@ export type Fake = {
   push(...events: unknown[]): void
   // commands received, parsed
   received: unknown[]
+  // commands answered with an error, as an older mpv would; none by default
+  refuse?: (command: unknown[]) => boolean
   // ends every connection
   closeClients(): void
   close(): Promise<void>
@@ -43,7 +45,7 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
           ? { data: 4242, request_id: msg.request_id, error: 'success' }
           : isProp
             ? { data: props[msg.command[1] as string], request_id: msg.request_id, error: 'success' }
-          : msg.command[0] === 'bad'
+          : msg.command[0] === 'bad' || fake.refuse?.(msg.command)
             ? { request_id: msg.request_id, error: 'invalid parameter' }
             : { data: null, request_id: msg.request_id, error: 'success' }
         c.write(JSON.stringify(reply) + '\n')
@@ -51,7 +53,7 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
     })
   })
   await new Promise<void>(res => server.listen(sock, res))
-  return {
+  const fake: Fake = {
     path: sock,
     received,
     push: (...events) => {
@@ -65,4 +67,5 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
       else fs.rmSync(dir, { recursive: true, force: true })
     },
   }
+  return fake
 }
