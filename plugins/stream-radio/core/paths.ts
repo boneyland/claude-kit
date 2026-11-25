@@ -50,16 +50,24 @@ export function isPlayable(name: string): boolean {
 // Names in the order a person reads them: 2 before 10, any case.
 export const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
 
+// The most songs a folder expands to; here rather than in expand.ts, which
+// imports this file (expand.ts re-exports it).
+export const MAX_SONGS = 10_000
+
 // A folder's playable files, through its subfolders (dot-folders skipped), as
-// absolute paths in name order.
-export async function listSongs(h: Host, folder: string): Promise<string[]> {
-  const base = folder.replace(/\/+$/, '') || '/'
-  const entries = await h.fs.list(base)
+// absolute paths in name order, at most `limit` of them: it stops walking once
+// it has that many, so a folder of tens of thousands of files is not all listed.
+export async function listSongs(h: Host, folder: string, limit = MAX_SONGS): Promise<string[]> {
   const songs: string[] = []
-  for (const e of entries) {
-    const path = `${base === '/' ? '' : base}/${e.name}`
-    if (e.kind === 'dir' && !e.name.startsWith('.')) songs.push(...(await listSongs(h, path)))
-    else if (e.kind === 'file' && isPlayable(e.name)) songs.push(path)
+  const walk = async (dir: string): Promise<void> => {
+    const entries = (await h.fs.list(dir)).slice().sort((a, b) => byName(a.name, b.name))
+    for (const e of entries) {
+      if (songs.length >= limit) return
+      const path = `${dir === '/' ? '' : dir}/${e.name}`
+      if (e.kind === 'dir' && !e.name.startsWith('.')) await walk(path)
+      else if (e.kind === 'file' && isPlayable(e.name)) songs.push(path)
+    }
   }
-  return songs.sort(byName)
+  await walk(folder.replace(/\/+$/, '') || '/')
+  return songs
 }

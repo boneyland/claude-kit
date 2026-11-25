@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { Host } from '@core/host'
-import { listPlaylist } from '../src/media/youtube'
+import { listPlaylist } from '@core/expand'
 
 const hostRunning = (result: { exitCode: number; stdout: string; stderr: string }) => {
   const run = vi.fn(async () => result)
