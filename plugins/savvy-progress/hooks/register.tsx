@@ -1621,7 +1621,27 @@ export const register: Register = (on, options) => {
     const mirror = reported === null && taskMode !== 'off' ? await read($, taskList) : null
     const isTasks = mirror !== null && mirror.items.length > 0
     const shown = reported ?? (isTasks ? taskFlow(mirror, tr().tasks) : null)
-    if (shown === null) return next(e)
+    // No flow and no list (the terminal offers Claude no task tools): the activity alone, while a turn runs.
+    if (shown === null) {
+      const doing = taskMode === 'off' ? '' : await read($, activity)
+      if (!doing) return next(e)
+      const drawn = await Promise.resolve(next(e)).catch(() => null)
+      const below = drawn && typeof drawn === 'object' && (drawn as { type?: string }).type !== 'engine' ? drawn : null
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const crew = (await read($, agents)).length
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection={isRtl() ? 'row-reverse' : 'row'} gap={1}>
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-end">{doing}</Text>
+            </Box>
+            {crew > 0 && e.surface === 'terminal' ? <Text color={CLAY}>▣</Text> : null}
+            {crew > 0 ? <Button key="savvy-agents" label={`×${crew}`} plain onPress={() => void togglePane($)} /> : null}
+          </Box>
+          {below}
+        </Box>
+      )
+    }
     const workers = reported ? (await read($, agents)).filter(a => a.status === 'running' && isWorker(a.type)).length : 0
     const f = reported ? { ...shown, running: workers } : shown
     const doing = f.isFinished ? '' : await read($, activity)

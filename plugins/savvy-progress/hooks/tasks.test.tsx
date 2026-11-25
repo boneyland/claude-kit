@@ -38,6 +38,25 @@ test('no task list and no flow: no band row', async ($, on) => {
   expect((await texts($)).some(t => /Tasks/.test(t))).toBe(false)
 })
 
+test('no task list and no flow: the activity alone, until the turn ends', async ($, on) => {
+  on('turn.complete', () => ({ text: '' }) as never)
+  await session($, on)
+  await $.tool.call({ tool: 'Bash', command: 'bun test', description: 'Run the parser tests' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const all = await texts($, surface)
+    expect(all).toContain('Run the parser tests')
+    expect(all.some(t => /^Tasks/.test(t))).toBe(false)
+  }
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  expect(await texts($)).not.toContain('Run the parser tests')
+})
+
+test('taskList off: no activity row either', { options: { taskList: 'off' } }, async ($, on) => {
+  await session($, on)
+  await $.tool.call({ tool: 'Bash', command: 'bun test', description: 'Run the parser tests' } as never)
+  expect(await texts($)).not.toContain('Run the parser tests')
+})
+
 test('the band mirrors TaskCreate/TaskUpdate: current task, count and activity', async ($, on) => {
   await session($, on)
   await create($, 'Write the parser', 'Writing the parser')
