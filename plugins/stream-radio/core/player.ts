@@ -22,6 +22,7 @@ import { listSongs, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
 import type { QueueEntry } from './stored'
+import { releaseFileLock, takeFileLock } from './storedFile'
 
 export type PlayerConfig = { volume: number; player: string; androidClient: boolean }
 
@@ -541,16 +542,7 @@ export const LOCK_STALE_MS = 60_000
 // Takes reconnect.lock: created only if absent (O_EXCL, by the shell's
 // noclobber), or taken over when stale.
 export async function takeLock(h: Host): Promise<boolean> {
-  const p = await paths(h)
-  const now = await h.now().catch(() => 0)
-  const create = async () =>
-    (await h.run(['sh', '-c', 'set -C; printf %s "$1" > "$2"', 'sh', String(now), p.lock]).catch(() => undefined))?.exitCode === 0
-  if (!(await create())) {
-    const stat = await h.fs.stat(p.lock).catch(() => undefined)
-    if (!stat || now - stat.mtimeMs < LOCK_STALE_MS) return false
-    await h.run(['rm', '-f', p.lock]).catch(() => undefined)
-    if (!(await create())) return false
-  }
+  if (!(await takeFileLock(h, (await paths(h)).lock, LOCK_STALE_MS))) return false
   holdsLock = true
   return true
 }
@@ -558,7 +550,7 @@ export async function takeLock(h: Host): Promise<boolean> {
 export async function releaseLock(h: Host) {
   if (!holdsLock) return
   holdsLock = false
-  await h.run(['rm', '-f', (await paths(h)).lock]).catch(() => undefined)
+  await releaseFileLock(h, (await paths(h)).lock)
 }
 
 export async function reconnect(h: Host, config: PlayerConfig, intent: Intent, error: string) {
