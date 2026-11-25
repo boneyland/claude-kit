@@ -10,9 +10,9 @@ It shares the one player with the mod's sessions: start music in either and the 
 curl -fsSL https://raw.githubusercontent.com/boneyland/claude-kit/main/apps/stream-radio-tui/install.sh | sh
 ```
 
-This downloads the latest build to `~/.local/bin/stream-radio-tui` (set `PREFIX` to use another folder) and says whether that folder is on your `PATH`. Run it again to update.
+This downloads the latest build to `~/.local/bin/stream-radio-tui` (set `PREFIX` to use another folder), checks it against the SHA-256 the release publishes beside it, and says whether that folder is on your `PATH`. Run it again to update.
 
-Needs `node` 22 or newer, `mpv` and `curl`. YouTube also needs `yt-dlp` (and `python3` for it); the installer warns when they are missing.
+Needs `node` 22 or newer, `mpv`, `curl`, and `sha256sum` or `shasum`. YouTube also needs `yt-dlp` (and `python3` for it); the installer warns when they are missing.
 
 ## Use
 

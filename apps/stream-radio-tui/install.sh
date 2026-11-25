@@ -21,6 +21,14 @@ command -v mpv >/dev/null 2>&1 || missing="$missing
   mpv"
 command -v curl >/dev/null 2>&1 || missing="$missing
   curl"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+  missing="$missing
+  sha256sum or shasum"
+fi
 if [ -n "$missing" ]; then
   echo "stream-radio-tui needs, and did not find:$missing" >&2
   exit 1
@@ -33,6 +41,14 @@ mkdir -p "$DEST"
 tmp=$(mktemp "$DEST/.stream-radio-tui.XXXXXX")
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 curl -fsSL "$URL" -o "$tmp"
+# The release publishes the file's SHA-256 beside it: a download cut short
+# or garbled on the way is never installed.
+expected=$(curl -fsSL "$URL.sha256" | cut -d' ' -f1)
+actual=$(sha256 "$tmp")
+if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+  echo "stream-radio-tui: the download does not match its checksum; nothing was installed." >&2
+  exit 1
+fi
 chmod +x "$tmp"
 mv -f "$tmp" "$DEST/stream-radio-tui"
 trap - EXIT HUP INT TERM
