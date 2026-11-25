@@ -68,6 +68,18 @@ const PLAYING: Partial<PlayerKeys> = {
 }
 
 const tick = () => new Promise(r => setTimeout(r, 30))
+// Until the screen holds still for a tick, at most 2 s: a slow machine, or a
+// cold first test, takes longer than one tick to draw what a key did.
+async function settle(frame: () => string | undefined) {
+  const end = Date.now() + 2000
+  let last = frame()
+  for (;;) {
+    await tick()
+    const now = frame()
+    if (now === last || Date.now() > end) return
+    last = now
+  }
+}
 const UP = '\x1b[A'
 const ENTER = '\r'
 const ESC = '\x1b'
@@ -102,48 +114,51 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     if (rows) Object.defineProperty(ui.stdout, 'rows', { value: rows, configurable: true })
     ui.stdout.emit('resize')
   }
-  await tick()
+  // the player draws once its state is read: keys sent before then are lost
+  await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('stream-radio'), { timeout: 5000 })
+  const frame = () => ui.lastFrame()
+  await settle(frame)
   const lines = () => (ui.lastFrame() ?? '').split('\n')
   const press = async (...keys: string[]) => {
     for (const k of keys) {
       ui.stdin.write(k)
-      await tick()
+      await settle(frame)
     }
   }
   // The mouse: cells are 0-based from the top left, as the app is drawn.
   const click = async (x: number, y: number) => {
     onMouse({ kind: 'press', button: 'left', x, y })
     onMouse({ kind: 'release', button: 'left', x, y })
-    await tick()
+    await settle(frame)
   }
   const dblclick = async (x: number, y: number) => {
     onMouse({ kind: 'press', button: 'left', x, y })
     onMouse({ kind: 'press', button: 'left', x, y })
-    await tick()
+    await settle(frame)
   }
   const rightClick = async (x: number, y: number) => {
     onMouse({ kind: 'press', button: 'right', x, y })
     onMouse({ kind: 'release', button: 'right', x, y })
-    await tick()
+    await settle(frame)
   }
   const modClick = async (x: number, y: number, mod: 'shift' | 'alt' | 'ctrl') => {
     const mods = { shift: mod === 'shift', alt: mod === 'alt', ctrl: mod === 'ctrl' }
     onMouse({ kind: 'press', button: 'left', x, y, mods })
     onMouse({ kind: 'release', button: 'left', x, y, mods })
-    await tick()
+    await settle(frame)
   }
   const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
     onMouse({ kind: 'press', button: 'left', ...from })
-    await tick()
+    await settle(frame)
     onMouse({ kind: 'drag', button: 'left', x: to.x, y: Math.round((from.y + to.y) / 2) })
     onMouse({ kind: 'drag', button: 'left', ...to })
-    await tick()
+    await settle(frame)
     onMouse({ kind: 'release', button: 'left', ...to })
-    await tick()
+    await settle(frame)
   }
   const wheel = async (x: number, y: number, dir: 'up' | 'down') => {
     onMouse({ kind: 'wheel', button: 'none', dir, x, y })
-    await tick()
+    await settle(frame)
   }
   // Where `text` first shows: its line, and the column of its first character.
   const where = (text: string) => {
@@ -152,7 +167,8 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
     const line = stripAnsi(lines()[y])
     return { x: columnOf(line, line.indexOf(text)), y }
   }
-  return { ui, session, host, vars, lines, press, say, click, dblclick, rightClick, modClick, drag, wheel, where }
+  const settled = () => settle(frame)
+  return { ui, session, host, vars, lines, press, settled, say, click, dblclick, rightClick, modClick, drag, wheel, where }
 }
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -229,11 +245,11 @@ describe('drawing', () => {
     vi.mocked(player.mpv).mockImplementation(async (_h, command) =>
       command[1] === 'duration' ? (isLoaded ? { data: 245 } : undefined) : undefined,
     )
-    const { lines, vars } = await show(100)
+    const { settled, lines, vars } = await show(100)
     expect(lines().join('\n')).toContain('♪ live')
     isLoaded = true
     await vars.change('elapsed', () => 162)
-    await tick()
+    await settled()
     expect(lines().join('\n')).not.toContain('♪ live')
     expect(lines().join('\n')).toContain('4:05')
   })
@@ -285,14 +301,14 @@ describe('pane', () => {
 
   test("a song changed before its waveform came back never shows the old one, and the old decode is stopped", async () => {
     const { media, pending } = fakeMedia()
-    const { lines, vars } = await show(100, PLAYING, '', '', { media })
+    const { settled, lines, vars } = await show(100, PLAYING, '', '', { media })
     await vi.waitFor(() => expect(pending.has(SONG3)).toBe(true))
     await vars.change('queue', q => ({ ...q, current: 1 }))
     await vars.change('playing', () => 'Song two')
     await vi.waitFor(() => expect(pending.has(`${ALBUM}/Disc 1/02.mp3`)).toBe(true))
     expect(pending.get(SONG3)!.signal.aborted).toBe(true)
     pending.get(SONG3)!.resolve(flat(255))
-    await tick()
+    await settled()
     expect(lines().some(l => BRAILLE.test(l))).toBe(false)
   })
 
@@ -358,7 +374,7 @@ describe('pixels', () => {
       ...pictureMedia(),
       art: () => new Promise(resolve => later.push(resolve)),
     }
-    const { lines, vars } = await show(100, PLAYING, '', '', { media, graphics: screen.graphics, rows: 40 })
+    const { settled, lines, vars } = await show(100, PLAYING, '', '', { media, graphics: screen.graphics, rows: 40 })
     await vi.waitFor(() => expect(later).toHaveLength(1))
     later[0]({ width: 800, height: 450, rgba: new Uint8Array(800 * 450 * 4) })
     await vi.waitFor(() => expect(screen.sent()).toContain(placed(9)))
@@ -366,7 +382,7 @@ describe('pixels', () => {
     await vars.change('queue', q => ({ ...q, current: 1 }))
     await vars.change('playing', () => 'Song two')
     await vi.waitFor(() => expect(later).toHaveLength(2))
-    await tick()
+    await settled()
     // still drawn, nothing deleted, the title still under the art
     expect(lines().some(l => l.includes(sgr(9)))).toBe(true)
     expect(screen.sent()).not.toContain(deleted(1))
@@ -435,27 +451,27 @@ describe('pixels', () => {
 })
 
 test('the same status said again shows again, after a reply replaced it', async () => {
-  const { press, lines, say } = await show(100, PLAYING, 'mpv: not found')
+  const { settled, press, lines, say } = await show(100, PLAYING, 'mpv: not found')
   await press('+')
   expect(lines().join('\n')).not.toContain('mpv: not found')
   say('mpv: not found')
-  await tick()
+  await settled()
   const all = lines()
   expect(all[lineOf(all, /space pause/) - 1]).toContain('mpv: not found')
 })
 
 describe('keys', () => {
   test('keys written back to back, before a redraw, each see the mode the one before set', async () => {
-    const { ui, lines } = await show(100)
+    const { settled, ui, lines } = await show(100)
     for (const k of ['/', 'a', 'b', 'c']) ui.stdin.write(k)
-    await tick()
+    await settled()
     expect(lines().join('\n')).toContain('/ filter: abc_')
   })
 
   test('a fast Enter after typing in open mode submits all of it', async () => {
-    const { ui, lines } = await show(100)
+    const { settled, ui, lines } = await show(100)
     for (const k of ['o', '/', 'n', 'o', ENTER]) ui.stdin.write(k)
-    await tick()
+    await settled()
     // no files in this host: the whole path typed is the one that isn't there
     expect(lines().join('\n')).toContain('No such folder: /no')
   })
@@ -522,7 +538,7 @@ describe('keys', () => {
   })
 
   test('keys that arrive together each step from the volume the one before set', async () => {
-    const { ui, vars } = await show(100)
+    const { settled, ui, vars } = await show(100)
     const set = async (h: Host, _c: number, level: number) => {
       await h.vars.change('volume', () => level)
       return `Volume ${level}%.`
@@ -531,7 +547,7 @@ describe('keys', () => {
     ui.stdin.write('+')
     ui.stdin.write('+')
     ui.stdin.write('+')
-    await tick()
+    await settled()
     expect(await vars.read('volume')).toBe(84)
     expect(vi.mocked(player.setVolume).mock.calls.map(c => c[2])).toEqual([67, 75, 84])
   })
@@ -933,11 +949,11 @@ describe('files actions', () => {
   })
 
   test('a double-click on a folder adds it, and leaves it shut as it was', async () => {
-    const { lines, dblclick, where, host, session } = await sp()
+    const { settled, lines, dblclick, where, host, session } = await sp()
     await vi.waitFor(() => expect(lines().join('\n')).toContain('Album/'))
     await dblclick(where('Album/').x, where('Album/').y)
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/Album' }], 'end')
-    await tick()
+    await settled()
     expect(lines().join('\n')).toContain('▸ 📁 Album/')
     expect(lines().join('\n')).not.toContain('01 One.flac')
   })
@@ -1096,12 +1112,12 @@ describe('pr review fixes', () => {
       queue: { kind: 'playlist', items: [...Array(n).keys()].map(i => `T${i}`), paths: [...[...Array(n - 1).keys()].map(i => `/m/${i}.mp3`), '/m/dir'], root: '/m', current: 0 },
     }
     const tags = tagReader(async () => ({ title: '', artist: '', albumArtist: '', album: '' }))
-    const { press } = await show(100, big, '', '', { fs, tags })
+    const { settled, press } = await show(100, big, '', '', { fs, tags })
     await vi.waitFor(() => expect(new Set(stats).size).toBe(n), { timeout: 3000 })
     expect(most).toBeLessThanOrEqual(32)
     // more needs (a redraw that scrolls) don't stat the folder again
     await press('j', 'j', 'j')
-    await tick()
+    await settled()
     expect(stats.filter(p => p === '/m/dir')).toHaveLength(1)
   })
 })
@@ -1283,21 +1299,21 @@ describe('review fixes', () => {
   })
 
   test('d then Delete before a redraw removes the song the cursor is on after the move', async () => {
-    const { ui, host, session } = await show(100, LONG5)
+    const { settled, ui, host, session } = await show(100, LONG5)
     ui.stdin.write('d')
     ui.stdin.write('\x1b[3~')
-    await tick()
-    await tick()
+    await settled()
+    await settled()
     // Track 1 moved to place 1; the Delete is for it, not for Track 2
     expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [1])
   })
 
   test('a pick lapses when the queue changes under it (a shuffle, another session)', async () => {
-    const { press, vars, lines, host, session } = await show(100, LONG5)
+    const { settled, press, vars, lines, host, session } = await show(100, LONG5)
     await press('\x1b[1;2B', '\x1b[1;2B')
     expect(status(lines())).toContain('3 picked')
     await vars.change('queue', q => ({ ...q, items: [...q.items].reverse(), paths: [...q.paths].reverse() }))
-    await tick()
+    await settled()
     expect(status(lines())).not.toContain('picked')
     await press('\x1b[3~')
     expect(vi.mocked(player.removeFromQueue).mock.calls[0]![2]).toHaveLength(1)
