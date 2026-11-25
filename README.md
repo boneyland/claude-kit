@@ -85,6 +85,16 @@ or for every session (including the desktop app) through `env` in `~/.claude/set
 
 Mods are built on function hooks (`hooks/register.tsx`), an early-access Claude Code API: tested on Claude Code 2.1.330, and it may change between releases. If a mod installed from the marketplace does not show up, load it manually as above.
 
+### The stream-radio-tui app
+
+An app, not a plugin: neither the marketplace nor `--plugin-dir` installs it. From a shell:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/boneyland/claude-kit/main/apps/stream-radio-tui/install.sh | sh
+```
+
+It downloads the latest build to `~/.local/bin/stream-radio-tui` (set `PREFIX` for another folder), checks it against the release's SHA-256, and says whether that folder is on your `PATH`. It needs `node` 22 or newer, `mpv` and `curl`; YouTube also needs `yt-dlp`. It works with or without Claude Code, and with the stream-radio mod installed both drive the same mpv. See [its README](apps/stream-radio-tui/README.md) for the keys and options.
+
 ## Update
 
 **Installed from the marketplace, in a session**: type `/plugin`, open the **Installed** tab, pick the plugin and choose **Update now** (**Mark for update** leaves it for later). The tab shows each plugin's installed version.
@@ -103,6 +113,8 @@ claude plugin update pr-watch@claude-kit
 
 Restart the session to apply it. `claude plugin list` shows the installed versions, and the catalog (`.claude-plugin/marketplace.json`) the latest ones.
 
+**stream-radio-tui**: run the install command again. It names the version it removes and the one it installs; `stream-radio-tui --version` shows the installed one.
+
 **Loaded manually**: `git pull` in the clone, then `/reload-plugins` or a new session for a mod. A skill copied into `~/.claude/skills` and `~/.claude/agents` needs copying again after the pull (the `cp` commands above).
 
 ## Layout
@@ -116,6 +128,7 @@ plugins/<name>/
   hooks/hooks.json                a mod: points at the hooks module
   hooks/register.tsx              a mod: the module itself
   types/index.d.ts                a mod: its $.state contract
+apps/<name>/                      a standalone program, with its own README and installer
 ```
 
 Check a plugin before publishing: `claude plugin validate plugins/<name>`, and the catalog with `claude plugin validate .`.
