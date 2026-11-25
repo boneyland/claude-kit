@@ -90,17 +90,50 @@ jobs:
           name: stream-radio-tui
           path: dist
 
+      # The files go up under staged names first, then each old file is
+      # deleted and its new one renamed into place straight after, so an
+      # install finds either file missing for an API call at most (the
+      # installer tries again). The tag moves last: the releases page shows
+      # the new commit only once its files are in place.
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
+          TAG: stream-radio-tui-rolling
         run: |
+          set -euo pipefail
           version=$(node -p "require('./apps/stream-radio-tui/package.json').version")
           notes="version $version, commit $SHA"
-          gh release view stream-radio-tui-rolling >/dev/null 2>&1 \
-            || gh release create stream-radio-tui-rolling --prerelease \
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --prerelease --target "$SHA" \
               --title "stream-radio TUI (latest build)" --notes "$notes"
-          git tag -f stream-radio-tui-rolling "$SHA"
-          git push -f origin refs/tags/stream-radio-tui-rolling
-          gh release upload stream-radio-tui-rolling dist/stream-radio-tui.mjs dist/stream-radio-tui.mjs.sha256 --clobber
-          gh release edit stream-radio-tui-rolling --notes "$notes"
+          assets="repos/$GITHUB_REPOSITORY/releases/assets"
+          id_of() {
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq ".assets[] | select(.name == \"$1\") | .id"
+          }
+          names="stream-radio-tui.mjs stream-radio-tui.mjs.sha256"
+
+          # staged files a run that failed midway left behind
+          for name in $names; do
+            id=$(id_of "next-$name")
+            if [ -n "$id" ]; then gh api -X DELETE "$assets/$id"; fi
+          done
+          mkdir staged
+          for name in $names; do cp "dist/$name" "staged/next-$name"; done
+          gh release upload "$TAG" staged/next-stream-radio-tui.mjs staged/next-stream-radio-tui.mjs.sha256
+
+          # every id looked up before the first delete, so the swaps run back to back
+          declare -A old new
+          for name in $names; do
+            old[$name]=$(id_of "$name")
+            new[$name]=$(id_of "next-$name")
+            if [ -z "${new[$name]}" ]; then echo "next-$name did not upload" >&2; exit 1; fi
+          done
+          for name in $names; do
+            if [ -n "${old[$name]}" ]; then gh api -X DELETE "$assets/${old[$name]}"; fi
+            gh api -X PATCH "$assets/${new[$name]}" -f name="$name" >/dev/null
+          done
+
+          git tag -f "$TAG" "$SHA"
+          git push -f origin "refs/tags/$TAG"
+          gh release edit "$TAG" --notes "$notes"
