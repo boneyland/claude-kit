@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useReducer, useRef } from 'react'
 import type { Host } from '@core/host'
+import { STATS_AT_ONCE } from '../files/load'
 import { tagReader, TAGS_KEPT, type TagReader, type Tags } from '../media/tags'
 
-// How many files are stat'ed at once for their modification times.
-const STATS_AT_ONCE = 32
 
 export type TagBook = {
   // the tags of `path`, once read

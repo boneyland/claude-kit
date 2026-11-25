@@ -2,8 +2,8 @@ import type { Host } from '@core/host'
 import { isPlayable } from '@core/paths'
 import type { FileEntry } from './tree'
 
-// How many files are stat'ed at once for their modification times.
-const STATS_AT_ONCE = 32
+// How many files are stat'ed at once for their modification times (here and in the tag book).
+export const STATS_AT_ONCE = 32
 
 // A folder's subfolders and the files mpv would play from it, with their
 // modification times; dotfiles and dot-folders never.
