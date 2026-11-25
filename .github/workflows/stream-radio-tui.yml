@@ -49,7 +49,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx vitest run
 
-      # build.mjs shortens GITHUB_SHA to 7 characters for `--version`.
+      # build.mjs stamps `--version` with the commit's date and short hash.
       - run: npm run build
 
       - name: Smoke check
@@ -102,7 +102,8 @@ jobs:
           TAG: stream-radio-tui-rolling
         run: |
           set -euo pipefail
-          version=$(node -p "require('./apps/stream-radio-tui/package.json').version")
+          # the version build.mjs stamps: the commit's date (UTC), then its short hash
+          version=$(TZ=UTC git show -s --abbrev=7 --date=format-local:%Y.%m.%d --format=%cd+%h "$SHA")
           notes="version $version, commit $SHA"
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --prerelease --target "$SHA" \

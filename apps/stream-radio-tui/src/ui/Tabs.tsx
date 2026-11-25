@@ -8,8 +8,10 @@ export const TABS: readonly Tab[] = ['files', 'playlist']
 const NAMES: Record<Tab, string> = { files: 'Files', playlist: 'Playlist' }
 
 // The tab names, the current one inverted; with `sortLabel`, a clickable
-// `sort: <field> ▾` at the right.
-export function Tabs({ tab, width, sortLabel, onTab, onSort }: { tab: Tab; width: number; sortLabel?: string; onTab?(t: Tab): void; onSort?(): void }) {
+// `sort: <field> ▾` at the right, and with `isReversed` set, after it a
+// clickable ↓ (↑ the other way round) that turns the sort round.
+type Props = { tab: Tab; width: number; sortLabel?: string; isReversed?: boolean; onTab?(t: Tab): void; onSort?(): void; onReverse?(): void }
+export function Tabs({ tab, width, sortLabel, isReversed, onTab, onSort, onReverse }: Props) {
   return (
     <Box width={width} justifyContent="space-between">
       <Box>
@@ -20,9 +22,16 @@ export function Tabs({ tab, width, sortLabel, onTab, onSort }: { tab: Tab; width
         ))}
       </Box>
       {sortLabel ? (
-        <Clickable onClick={() => onSort?.()}>
-          <Text dimColor>{`sort: ${sortLabel} ▾`}</Text>
-        </Clickable>
+        <Box>
+          <Clickable onClick={() => onSort?.()}>
+            <Text dimColor>{`sort: ${sortLabel} ▾`}</Text>
+          </Clickable>
+          {isReversed !== undefined ? (
+            <Clickable onClick={() => onReverse?.()} marginLeft={1}>
+              <Text dimColor>{isReversed ? '↑' : '↓'}</Text>
+            </Clickable>
+          ) : null}
+        </Box>
       ) : null}
     </Box>
   )

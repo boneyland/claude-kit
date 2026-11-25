@@ -3,11 +3,11 @@ import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
 import { addToQueue, CONNECTING, LOADING, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
-import { keyAction, type Action, type Mode } from '../keys'
+import { keyAction, NO_KEY, type Action, type Keys, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
 import { Hints } from './Hints'
-import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSettling, useSize, useTags, Settling, type View } from './hooks'
+import { tilde, trackOf, useArt, useDuration, useHome, usePeaks, usePlayer, useRefState, useSettling, useSize, useTags, useHomeEnd, Settling, type View } from './hooks'
 import type { Media } from '../media'
 import type { MouseSource } from '../mouse/sgr'
 import { MouseProvider, type Hit } from '../mouse/Clickable'
@@ -174,6 +174,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           const to = inRange(at + (a.kind === 'up' ? -1 : 1))
           return setCurSel({ cursor: to, anchor: to, picked: curSel().picked })
         }
+      case 'jump': {
+        if (mode === 'help') return setHelpTop(helpTop(a.by === 'all' ? a.dir * Infinity : helpTopRef.current + a.dir * bodyHeight, bodyHeight, tabRef.current))
+        setCurTop(undefined)
+        // a page keeps a row of the last one in view
+        const to = inRange(a.by === 'all' ? a.dir * Infinity : at + a.dir * Math.max(1, listHeight - 1))
+        return setCurSel({ cursor: to, anchor: to, picked: curSel().picked })
+      }
       case 'extendPick':
         setCurTop(undefined)
         return setCurSel(extend(curSel(), inRange(at + a.by)))
@@ -309,10 +316,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return setMode('list')
     }
   }
-  useInput((input, key) => {
+  const onKey = (input: string, key: Keys) => {
     const a = keyAction(input, key, modeRef.current, { tab: tabRef.current, hasPick: curSel().picked.length > 0 })
     if (a) handle(a)
-  })
+  }
+  useInput(onKey)
+  useHomeEnd(k => onKey('', { ...NO_KEY, [k]: true }))
 
   const sideWidth = isWide ? Math.max(28, Math.floor(columns * 0.35)) : columns
   const listWidth = isWide ? columns - sideWidth : columns
@@ -442,11 +451,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
             ? FILES_SORT_LABEL[files.sort]
             : q.kind === 'playlist'
               ? playlist.sort.field
-                ? `${SORT_LABEL[playlist.sort.field]}${playlist.sort.isReversed ? ' ↑' : ''}`
+                ? SORT_LABEL[playlist.sort.field]
                 : 'as queued'
               : undefined
         }
+        isReversed={tab === 'playlist' && q.kind === 'playlist' && playlist.sort.field ? playlist.sort.isReversed : undefined}
         onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
+        onReverse={() => dismissMenu() || handle({ kind: 'sortReverse' })}
       />
       {tab === 'playlist' ? (
         <PlaylistView

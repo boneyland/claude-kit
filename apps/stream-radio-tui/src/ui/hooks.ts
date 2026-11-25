@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useReducer, useRef, useState, type MutableRefObject } from 'react'
-import { useStdout } from 'ink'
+import { useStdin, useStdout } from 'ink'
+import { homeEnd } from '../keys'
 import type { Host, PlayerKeys } from '@core/host'
 import { mpv } from '@core/player'
 import { metaValue } from '@core/nowplaying'
@@ -210,4 +211,20 @@ export function useArt(media: Media | undefined, track: { file?: string; url?: s
   if (!media || !isOn || !key) return { state: 'none' }
   if (known.key === key || known.state === 'shown') return { state: known.state, art: known.art }
   return { state: 'loading' }
+}
+
+// Calls `fn` at each Home or End key. Ink's useInput reads both as no key at
+// all, so this reads what the terminal sent from the same stream useInput does.
+export function useHomeEnd(fn: (k: 'home' | 'end') => void) {
+  const { internal_eventEmitter: events } = useStdin()
+  const latest = useRef(fn)
+  latest.current = fn
+  useEffect(() => {
+    const onInput = (data: string | Buffer) => {
+      const k = homeEnd(data)
+      if (k) latest.current(k)
+    }
+    events?.on('input', onInput)
+    return () => void events?.off('input', onInput)
+  }, [events])
 }

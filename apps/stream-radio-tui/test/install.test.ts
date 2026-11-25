@@ -8,7 +8,6 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const APP = path.resolve(__dirname, '..')
-const version: string = JSON.parse(fs.readFileSync(path.join(APP, 'package.json'), 'utf8')).version
 const INSTALL = path.join(APP, 'install.sh')
 
 let server: http.Server
@@ -96,7 +95,8 @@ describe('install.sh', () => {
     const v = await new Promise<string>((resolve, reject) =>
       execFile(target, ['--version'], (err, stdout) => (err ? reject(err) : resolve(stdout))),
     )
-    expect(v).toMatch(new RegExp(`^stream-radio-tui ${version.replaceAll('.', '\\.')} `))
+    // the commit's date, then its short hash
+    expect(v).toMatch(/^stream-radio-tui \d{4}\.\d{2}\.\d{2}\+[0-9a-f]{7,}\n$/)
     expect(r.out).toMatch(/not on your PATH/)
   })
 

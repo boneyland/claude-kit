@@ -10,7 +10,7 @@ const FIRST = {
   files: ['Enter open  a add  A play next  m menu  Shift-↑↓ pick  S sort  space pause', 'a add  A play next  m menu  S sort  space pause'],
   filter: ['type to narrow the list  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
   open: ['type a folder path or a YouTube playlist URL  Enter goes there  Esc leaves it', 'type a folder or URL  Enter goes there  Esc leaves it'],
-  help: ['↑/↓ or j/k scroll  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
+  help: ['↑/↓ or j/k scroll  PgUp/PgDn a page  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
   menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],
 }
 const SECOND = ['? all keys  Tab switch tabs  o go to  l resume  x stop  q quit (music keeps playing)', '? keys  Tab tabs  o go to  l resume  x stop  q quit']

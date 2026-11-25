@@ -7,7 +7,7 @@ const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
 
 // The keys in a help label: single characters, named keys and chords; not
 // the words around them ("twice", "click heading").
-const KEY = /^(?:[^\sA-Za-z]|[A-Za-z]|Tab|Esc|Enter|Delete|space|(?:Ctrl|Shift|Alt)-\S+)$/
+const KEY = /^(?:[^\sA-Za-z]|[A-Za-z]|Tab|Esc|Enter|Delete|space|PgUp|PgDn|Home|End|(?:Ctrl|Shift|Alt)-\S+)$/
 const keysOf = (label: string) => label.split(/[\s,]+/).filter(t => KEY.test(t))
 
 describe('the key lists', () => {

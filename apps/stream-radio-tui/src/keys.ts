@@ -11,6 +11,8 @@ export type Mode = 'list' | 'filter' | 'open' | 'help' | 'menu'
 export type Action =
   | { kind: 'up' }
   | { kind: 'down' }
+  // PgUp, PgDn (by: page), Home, End (by: all): the cursor that far up (-1) or down
+  | { kind: 'jump'; by: 'page' | 'all'; dir: 1 | -1 }
   // play the selected song, or open or shut the selected folder
   | { kind: 'enter' }
   | { kind: 'shutFolder' }
@@ -87,8 +89,42 @@ const LETTERS: Record<string, Action> = {
   '?': { kind: 'help' },
 }
 
-// A key that edits the Files location. Home and End are not here: Ink reads
-// them as no key at all.
+// No key held or named; a Keys to set one flag on.
+export const NO_KEY: Key = {
+  upArrow: false,
+  downArrow: false,
+  leftArrow: false,
+  rightArrow: false,
+  pageDown: false,
+  pageUp: false,
+  return: false,
+  escape: false,
+  ctrl: false,
+  shift: false,
+  tab: false,
+  backspace: false,
+  delete: false,
+  meta: false,
+}
+
+// Ink's Key, with the Home and End keys its useInput leaves out (homeEnd reads them).
+export type Keys = Key & { home?: boolean; end?: boolean }
+
+// What terminals send for Home and End, unmodified (xterm, VT220, rxvt).
+const HOME_END: Record<string, 'home' | 'end'> = {
+  '\x1b[H': 'home',
+  '\x1bOH': 'home',
+  '\x1b[1~': 'home',
+  '\x1b[7~': 'home',
+  '\x1b[F': 'end',
+  '\x1bOF': 'end',
+  '\x1b[4~': 'end',
+  '\x1b[8~': 'end',
+}
+// Whether a read from the terminal is the Home or End key; undefined for anything else.
+export const homeEnd = (data: string | Buffer): 'home' | 'end' | undefined => HOME_END[String(data)]
+
+// A key that edits the Files location.
 const CTRL_EDITS: Record<string, Edit> = {
   a: { kind: 'start' },
   e: { kind: 'end' },
@@ -97,7 +133,9 @@ const CTRL_EDITS: Record<string, Edit> = {
   w: { kind: 'eraseWord' },
   d: { kind: 'eraseAfter' },
 }
-function lineKey(input: string, key: Key): Edit | null {
+function lineKey(input: string, key: Keys): Edit | null {
+  if (key.home) return { kind: 'start' }
+  if (key.end) return { kind: 'end' }
   if (key.leftArrow) return { kind: 'left' }
   if (key.rightArrow) return { kind: 'right' }
   // Ink names the key most terminals send for Backspace (DEL) `delete`.
@@ -111,13 +149,13 @@ function lineKey(input: string, key: Key): Edit | null {
 export type KeyContext = { tab: Tab; hasPick: boolean }
 
 // What a key press means in `mode`; null for a key that means nothing there.
-export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext = { tab: 'playlist', hasPick: false }): Action | null {
+export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext = { tab: 'playlist', hasPick: false }): Action | null {
   if (key.ctrl && input === 'c') return { kind: 'interrupt' }
   if (mode === 'help') {
     if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
     if (key.upArrow || input === 'k') return { kind: 'up' }
     if (key.downArrow || input === 'j') return { kind: 'down' }
-    return null
+    return jumpOf(key)
   }
   if (mode === 'menu') {
     if (key.escape || input === 'm' || input === 'q') return { kind: 'cancel' }
@@ -160,9 +198,17 @@ export function keyAction(input: string, key: Key, mode: Mode, ctx: KeyContext =
   if (isPlain && isPlaylist && input === 'C') return { kind: 'clearPlaylist' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
+  const jump = jumpOf(key)
+  if (jump) return jump
   if (key.leftArrow) return { kind: 'shutFolder' }
   if (key.rightArrow) return { kind: 'openFolder' }
   if (key.return) return { kind: 'enter' }
   if (key.ctrl || key.meta) return null
   return LETTERS[input] ?? null
+}
+
+function jumpOf(key: Keys): Action | null {
+  if (key.pageUp || key.pageDown) return { kind: 'jump', by: 'page', dir: key.pageUp ? -1 : 1 }
+  if (key.home || key.end) return { kind: 'jump', by: 'all', dir: key.home ? -1 : 1 }
+  return null
 }

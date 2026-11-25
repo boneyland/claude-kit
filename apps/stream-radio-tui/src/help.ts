@@ -8,6 +8,8 @@ import { ICONS } from './ui/Controls'
 export const KEY_HELP: [string, string][] = [
   ['Tab  Shift-Tab', 'switch tabs: Files and the queue'],
   ['↑ ↓  k j', 'move'],
+  ['PgUp  PgDn', 'move a page'],
+  ['Home  End', 'the first or last row'],
   ['Shift-↑ ↓', 'pick rows from the cursor'],
   ['space', 'pause or resume; stopped, play the playlist from its song\'s start; while rows are picked, pick or unpick this one'],
   ['Esc', 'clear the pick'],
@@ -39,7 +41,7 @@ export const FILES_KEY_HELP: [string, string][] = [
   ['Enter', 'open or shut a folder; on ../ go up; on a file, add to queue'],
   ['← →', 'shut or open a folder'],
   ['U', 'the folder above (../)'],
-  ['o, click heading', 'edit the location: ← → Ctrl-A/E/W/U/K/D, Enter goes'],
+  ['o, click heading', 'edit the location: ← → Home End Ctrl-A/E/W/U/K/D, Enter goes'],
   ['a', 'add to queue: the picked rows, or this one'],
   ['A', 'play next: the same, after the song playing'],
 ]
@@ -53,6 +55,8 @@ export const MOUSE_HELP: [string, string][] = [
   ['right-click, ⋯', "the row's menu"],
   ['drag', 'Playlist: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
+  ['sort: …', 'sort by the next field'],
+  ['↓  ↑ after it', 'Playlist: sort the other way round'],
   ['Files heading', 'edit the location there; Esc leaves it'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
   ['volume bar', 'set the volume there'],
