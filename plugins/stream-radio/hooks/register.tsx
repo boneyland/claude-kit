@@ -245,9 +245,13 @@ export const register: Register = (on, options) => {
     await update($, notice, () => '')
     // Before state.json, saved state was in the store: brought over once.
     await migrateFromStore(hostFor($, config), { get: key => $.store.get(key) })
-    // An earlier version's last URL becomes the queue, shown before anything plays.
-    await migrateLast(hostFor($, config))
-    await refreshFromStored(hostFor($, config))
+    // An earlier version's last URL becomes the queue, shown before anything
+    // plays. In the background: it can list a big folder, and a slow hook holds
+    // up the session.
+    const h = hostFor($, config)
+    void migrateLast(h)
+      .then(() => refreshFromStored(h))
+      .catch(error => h.log(`stream-radio: could not read the queue: ${error instanceof Error ? error.message : String(error)}`, 'debug'))
     await loadVolume(hostFor($, config), config.volume)
     await loadRepeat(hostFor($, config))
     await checkDefault(hostFor($, config), defaultUrl)

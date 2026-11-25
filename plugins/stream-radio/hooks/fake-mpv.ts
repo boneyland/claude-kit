@@ -3,7 +3,7 @@
 // through mpv-ipc.py; a session follows the player with `mpv-ipc.py --watch`,
 // a stream of JSON lines; the data folder holds the socket, player.json,
 // reconnect.lock, state.json and the queue's files. A start hands mpv
-// queue.m3u, which it expands, starting at --playlist-start.
+// --playlist=queue.m3u, whose songs it plays from --playlist-start.
 import type { On } from 'claude-code'
 
 export const DATA = '/tmp/stream-radio-test/stream-radio'
@@ -118,7 +118,7 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
   function launch(argv: string[], extra: { title?: string; props?: Record<string, unknown> } = {}) {
     world.launches.push(argv)
     const flag = (name: string) => argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3)
-    const file = argv.at(-1) ?? ''
+    const file = flag('playlist') ?? argv.at(-1) ?? ''
     const lines = file.endsWith('.m3u') && file in world.files ? m3uEntries(world.files[file]!) : undefined
     listed = lines && lines.length > 1 ? lines : undefined
     const start = Number(flag('playlist-start') ?? 0)

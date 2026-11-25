@@ -84,7 +84,7 @@ describe('openSession', () => {
     expect(starts[0]).toContain(`--input-ipc-server=${sock}`)
     expect(starts[0]).toContain('mpv')
     // the folder's songs became the queue, handed to mpv as a playlist file
-    expect(starts[0].slice(-3)).toEqual(['--playlist-start=0', '--', path.join(dir, 'queue.m3u')])
+    expect(starts[0].slice(-2)).toEqual(['--playlist-start=0', `--playlist=${path.join(dir, 'queue.m3u')}`])
   })
 
   test('close sends no quit and no stop to mpv', async () => {
@@ -105,6 +105,18 @@ describe('openSession', () => {
     session = await openSession([music], { env, run: recorder(true) })
     await until(() => session!.status() !== '')
     expect(session.status()).toContain(`Can't start "mpv"`)
+  })
+
+  test('a play whose queue cannot be saved shows in status and does not throw', async () => {
+    const music = fs.mkdtempSync(path.join(state, 'music-'))
+    fs.writeFileSync(path.join(music, 'a.flac'), '')
+    const rec = recorder()
+    // the state folder refuses the move that saves the queue
+    const run = async (argv: readonly string[]) => (argv[0] === 'mv' ? { exitCode: 1, stdout: '', stderr: 'read-only' } : rec(argv))
+    session = await openSession([music], { env, run })
+    await until(() => session!.status() !== '')
+    expect(session.status()).toContain(`Could not play ${music}`)
+    expect(ran.some(a => a.join(' ').includes('setsid'))).toBe(false)
   })
 
   test('a path that does not exist shows in status', async () => {

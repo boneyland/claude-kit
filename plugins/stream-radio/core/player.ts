@@ -19,7 +19,7 @@ import {
   WATCHED,
 } from './nowplaying'
 import { expandSource } from './expand'
-import { listSongs, paths, type Paths } from './paths'
+import { isPlayable, listSongs, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
 import { nameOf, NO_PLACE, played, replaceWith, type Place, type QueueEntry, type StoredQueue } from './stored'
@@ -111,18 +111,33 @@ export async function savePlace(h: Host, isNow = false) {
 // What an earlier version saved: no queue.json yet, but state.json has the last
 // URL played. A local one (a folder, a playlist file, an edited queue.m3u) is
 // expanded; a URL stays one entry, as mpv expands it while it plays. The place
-// is its song by path, else by index, at the seconds it got to.
-export async function migrateLast(h: Host) {
+// is its song by path, else by index, at the seconds it got to. Done once:
+// nothing coming of it still writes the (empty) queue.
+export function migrateLast(h: Host): Promise<void> {
+  migrating = migrate(h)
+  return migrating
+}
+
+// A resume waits for a migration still running (programs run it in the
+// background), so it plays the queue made from what was saved.
+let migrating: Promise<void> | undefined
+
+async function migrate(h: Host) {
   if (await h.fs.exists((await paths(h)).queueJson).catch(() => true)) return
   const last = (await readSaved(h)).last
   if (!last) return
   const { url, resumeAt: at } = last
   // A URL without a playlist (index -1) was resumed as itself: its title names it.
   const one = at.url === url && at.index < 0 && at.title ? { path: url, title: at.title } : { path: url }
-  const { entries, root } = /^https?:/.test(url) ? { entries: [one], root: '' } : await expandSource(h, url)
-  if (!entries.length) return
-  const q = await updateStored(h, q => (q.entries.length ? q : replaceWith(q, entries, url, root)))
-  if (q === 'busy' || q.source !== url || at.url !== url) return
+  const { entries, root } = /^https?:/.test(url)
+    ? { entries: [one], root: '' }
+    : await expandSource(h, url).catch(() => ({ entries: [] as QueueEntry[], root: '' }))
+  // Nothing came of it (a folder gone, say): the empty queue is written, so a
+  // later start does not try again.
+  const q = await updateStored(h, q =>
+    q.entries.length || q.rev > 0 ? q : entries.length ? replaceWith(q, entries, url, root) : { ...q, rev: q.rev + 1 },
+  )
+  if (q === 'busy' || !entries.length || q.source !== url || at.url !== url) return
   const shown = played(q)
   const byPath = at.path ? shown.find(e => e.path === at.path) : undefined
   const e = byPath ?? shown[Math.max(0, at.index)]
@@ -151,13 +166,34 @@ export async function refreshFromStored(h: Host) {
   const next: Queue = shown.length
     ? {
         kind: 'playlist',
-        items: await Promise.all(shown.map(x => entryName(h, { filename: x.path, title: x.title }, q.root))),
+        items: await namesOf(h, shown, q.root),
         current: index,
         paths: shown.map(x => x.path),
         root: q.root,
       }
     : NO_QUEUE
   await showQueue(h, before, next)
+}
+
+// Folder looks (a stat each) one refresh makes at most, a few at a time: past
+// that, an entry shows its file name.
+const FOLDER_LOOKS = 200
+const LOOKS_AT_ONCE = 8
+
+// What the stored entries are listed as (entryName), with the folder looks bounded.
+async function namesOf(h: Host, shown: readonly { path: string; title?: string }[], root: string): Promise<string[]> {
+  const names: string[] = []
+  let looks = 0
+  for (let i = 0; i < shown.length; i += LOOKS_AT_ONCE) {
+    const part = shown.slice(i, i + LOOKS_AT_ONCE).map(x => {
+      const e = { filename: x.path, title: x.title }
+      if (looks >= FOLDER_LOOKS || !needsLook(e, root)) return Promise.resolve(entryName(h, e, root, false))
+      looks += 1
+      return entryName(h, e, root)
+    })
+    names.push(...(await Promise.all(part)))
+  }
+  return names
 }
 
 // A default stream changed since this program last started is only recorded:
@@ -734,6 +770,7 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         h.events.watching(false)
         await h.vars.change('playing', () => '')
         h.toast(`Can't start "${player}". Install mpv (and yt-dlp for YouTube).`)
+        await refreshFromStored(h)
         // detach() above let go of any player still playing; find it again.
         startPoller(h, config)
         return
@@ -772,10 +809,9 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         ...(client ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`] : []),
         `--volume=${await h.vars.read('volume')}`,
         '--msg-level=all=error',
-        // mpv expands the playlist file, then starts at this entry of it
+        // the songs of the playlist file are the playlist; it starts at this one
         `--playlist-start=${index}`,
-        '--',
-        p.queue,
+        `--playlist=${p.queue}`,
       ]
       // Detached: in its own session, no terminal, its errors to mpv.log, so it
       // outlives this session and every other. mpv prints its messages to
@@ -794,6 +830,7 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
       if (!pid) {
         isStarting = false
         await goIdle(h)
+        await refreshFromStored(h)
         startPoller(h, config)
         await failed(h, config, what, '')
         return
@@ -834,8 +871,10 @@ async function playNew(h: Host, config: PlayerConfig, entries: QueueEntry[], sou
   if (q === 'busy') return 'The queue is busy; try again.'
   if (mine !== asked) return ''
   await writePlace(h, { rev: q.rev, current: played(q)[0]!.id, seconds: 0 }).catch(() => undefined)
-  await refreshFromStored(h)
+  // launched first: it lets go of the player followed, whose list then gives
+  // way to the new one
   launch(h, config, q, { index: 0, seconds: 0 })
+  await refreshFromStored(h)
   return ''
 }
 
@@ -855,8 +894,8 @@ export async function playAt(h: Host, config: PlayerConfig, shownIndex: number):
   const e = played(q)[shownIndex]
   if (!e) return 'Nothing to pick from.'
   await writePlace(h, { rev: q.rev, current: e.id, seconds: 0 }).catch(() => undefined)
-  await refreshFromStored(h)
   launch(h, config, q, { index: shownIndex, seconds: 0 })
+  await refreshFromStored(h)
   return ''
 }
 
@@ -867,14 +906,14 @@ export const pick = playAt
 // An empty queue brings back the one last cleared, else plays `fallback` (the
 // default stream). '' when started, else what to show.
 export async function resumeQueue(h: Host, config: PlayerConfig, fallback: string): Promise<string> {
+  await migrating?.catch(() => undefined)
   let q = await readStored(h)
   if (!q.entries.length) {
     if (!(await restorePrev(h))) return fallback ? playSource(h, config, fallback) : 'Nothing has played yet, and there is no default stream.'
     q = await readStored(h)
   }
-  const at = placeIn(q, await readPlace(h))
+  launch(h, config, q, placeIn(q, await readPlace(h)))
   await refreshFromStored(h)
-  launch(h, config, q, at)
   return ''
 }
 
@@ -921,13 +960,21 @@ export const isFolder = new Map<string, boolean>()
 // A playlist entry as the panel lists it: its title, else its file name; a
 // local folder (one mpv opens only when it gets there, as from a playlist
 // file) as `📁 Name/`. Under `root`, the folder played whole, mpv has read every
-// subfolder already, so an entry there is a file and needs no look.
-export async function entryName(h: Host, e: { filename?: string; title?: string }, root: string): Promise<string> {
+// subfolder already, so an entry there is a file and needs no look; nor does a
+// name with a playable file's extension. mayLook false: a path not looked at
+// yet shows its name.
+// Whether an entry's path might be a folder, to be looked at: a local path
+// outside `root` whose name is not a playable file's.
+const needsLook = (e: { filename?: string }, root: string): boolean =>
+  !!e.filename && e.filename.startsWith('/') && !(root && e.filename.startsWith(`${root}/`)) && !isPlayable(baseName(e.filename))
+
+export async function entryName(h: Host, e: { filename?: string; title?: string }, root: string, mayLook = true): Promise<string> {
   if (e.title) return plain(e.title)
   if (!e.filename) return '?'
   const name = plain(baseName(e.filename))
-  if (!e.filename.startsWith('/') || (root && e.filename.startsWith(`${root}/`))) return name
+  if (!needsLook(e, root)) return name
   let folder = isFolder.get(e.filename)
+  if (folder === undefined && !mayLook) return name
   if (folder === undefined) {
     folder = await h.fs
       .stat(e.filename)

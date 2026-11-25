@@ -61,8 +61,11 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
   try {
     config = await loadConfig(env)
     await checkDefault(host, config.defaultUrl)
-    await migrateLast(host)
-    await refreshFromStored(host)
+    // In the background: making the queue from what an earlier version saved
+    // can list a big folder, and the screen need not wait for it.
+    void migrateLast(host)
+      .then(() => refreshFromStored(host))
+      .catch(error => host.log(`stream-radio: could not read the queue: ${error instanceof Error ? error.message : String(error)}`, 'debug'))
     await loadVolume(host, config.volume)
     await loadRepeat(host)
     await connect(host, config)
@@ -70,7 +73,12 @@ export async function openSession(argv: string[], opts: SessionOptions = {}): Pr
     if (argv[0]) {
       const target = await locate(host, argv[0], config.defaultUrl)
       // in the background, as a start always was; what it says shows when it does
-      if (target.kind === 'play') void playSource(host, config, target.url).then(note => note && say(note))
+      if (target.kind === 'play') {
+        void playSource(host, config, target.url).then(
+          note => note && say(note),
+          error => say(`Could not play ${target.url}: ${error instanceof Error ? error.message : String(error)}`),
+        )
+      }
       else if (target.kind === 'error') say(target.text)
     }
   } catch (error) {

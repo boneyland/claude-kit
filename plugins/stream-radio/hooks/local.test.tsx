@@ -32,7 +32,7 @@ test('/stream plays a local folder, skipping its pictures', async ($, on) => {
   await clock.advance(10)
   // The app lists the folder's songs; mpv is handed them as a playlist file.
   const argv = world.launches[0]!
-  expect(argv.slice(-2)).toEqual(['--', QUEUE_M3U])
+  expect(argv.at(-1)).toBe(`--playlist=${QUEUE_M3U}`)
   expect(world.files[QUEUE_M3U]).toBe('#EXTM3U\n/home/me/Music/Album/01 a.flac\n/home/me/Music/Album/02 b.flac\n')
   expect(argv).toContain('--directory-filter-types=audio,video,playlist')
 
@@ -185,4 +185,23 @@ test('a song change asks mpv nothing, and files under the folder are not looked 
 
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
+})
+
+test('a big stored queue is listed with a bounded number of folder looks, none for song files', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('ui.status', () => ({ value: undefined }) as never)
+  on('command.register', () => ({ value: { command: 'stream' } }) as never)
+  const looked: string[] = []
+  const world = engine(on, { stat: path => (looked.push(path), { kind: 'file' }) })
+  const paths = [...[...Array(300).keys()].map(i => `/x/part ${i}`), ...[...Array(5).keys()].map(i => `/x/song ${i}.flac`)]
+  const entries = paths.map((path, i) => ({ id: `1.${i}`, path }))
+  world.files[QUEUE_JSON] = JSON.stringify({ version: 1, rev: 1, entries, arrangement: { kind: 'none' }, root: '', source: '/x/mix.m3u' })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await clock.advance(10)
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ type: 'Button', key: 'item-304' }))?.props.label).toBe('  305. song 4.flac')
+  await pane.unmount()
+  expect(looked.length).toBeLessThanOrEqual(200)
+  expect(looked.some(p => p.endsWith('.flac'))).toBe(false)
 })

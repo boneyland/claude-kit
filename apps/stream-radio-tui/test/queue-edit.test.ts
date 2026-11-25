@@ -142,7 +142,7 @@ test('adding while nothing plays writes the queue file and starts it', async () 
   session = await openSession([], { env, run: recording })
   const h = session.host
   expect(await addToQueue(h, session.config, [{ path: '/n/c.flac', title: 'C' }], 'end')).toBe('')
-  await until(() => ran.some(argv => argv.at(-1) === QUEUE_FILE))
+  await until(() => ran.some(argv => argv.at(-1) === `--playlist=${QUEUE_FILE}`))
   expect(fs.readFileSync(QUEUE_FILE, 'utf8')).toBe('#EXTM3U\n#EXTINF:-1,C\n/n/c.flac\n')
   // no player comes up: the start waiting for one gives up
   await stopPlaying(h, session.config)

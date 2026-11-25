@@ -69,8 +69,10 @@ beforeAll(() => {
   fs.mkdirSync(dir, { recursive: true })
   fs.mkdirSync(path.join(music, 'X'), { recursive: true })
   for (const s of SONGS) fs.writeFileSync(s, '')
-  fs.mkdirSync(path.join(music, 'A'), { recursive: true })
-  for (const n of ['a', 'b']) fs.writeFileSync(path.join(music, 'A', `${n}.flac`), '')
+  for (const folder of ['A', 'Y']) {
+    fs.mkdirSync(path.join(music, folder), { recursive: true })
+    for (const n of ['a', 'b']) fs.writeFileSync(path.join(music, folder, `${n}.flac`), '')
+  }
 })
 beforeEach(() => {
   launches = []
@@ -176,6 +178,8 @@ test('a changed default leaves the queue', async () => {
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ version: 1, knownDefault: { tui: 'https://example.com/old' } }))
   session = await openSession([], { env, run })
   const h = session.host
+  // the queue is read in the background
+  await until(async () => (await h.vars.read('lastUrl')) !== '')
   const [queue, place] = [fs.readFileSync(QUEUE_JSON, 'utf8'), fs.readFileSync(PLACE, 'utf8')]
   await checkDefault(h, 'https://example.com/new')
   expect([fs.readFileSync(QUEUE_JSON, 'utf8'), fs.readFileSync(PLACE, 'utf8')]).toEqual([queue, place])
@@ -191,6 +195,8 @@ test("migration from state.json's last", async () => {
     JSON.stringify({ version: 1, last: { url: A, resumeAt: { url: A, index: 1, seconds: 30, title: 'b', path: b } } }),
   )
   session = await openSession([], { env, run })
+  // in the background: the session is up before it is done
+  await until(async () => (await session!.host.vars.read('queue')).items.length === 2)
   const q = readJson(QUEUE_JSON)
   expect(q.entries.map((e: { path: string }) => e.path)).toEqual([path.join(A, 'a.flac'), b])
   expect(q.source).toBe(A)
@@ -200,4 +206,28 @@ test("migration from state.json's last", async () => {
   const queue = await session.host.vars.read('queue')
   expect([queue.kind, queue.items.length, queue.current]).toEqual(['playlist', 2, 1])
   expect(launches).toEqual([])
+})
+
+test('a migration that comes to nothing writes the empty queue, so it is not tried again', async () => {
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ version: 1, last: { url: '/nowhere/list.m3u', resumeAt: { url: '/nowhere/list.m3u', index: 0, seconds: 0, title: '' } } }))
+  session = await openSession([], { env, run })
+  await until(() => fs.existsSync(QUEUE_JSON))
+  expect(readJson(QUEUE_JSON)).toMatchObject({ rev: 1, entries: [] })
+  expect((await session.host.vars.read('queue')).kind).toBe('none')
+})
+
+test('a new play while a player is followed shows its list at once, and keeps it if the start fails', { timeout: 30_000 }, async () => {
+  session = await openSession([], { env, run })
+  const h = session.host
+  await playSource(h, session.config, path.join(music, 'X'))
+  await playerUp(SONGS, 0)
+  await until(async () => (await h.vars.read('queue')).paths.length === 3)
+  const Y = ['a', 'b'].map(n => path.join(music, 'Y', `${n}.flac`))
+  expect(await playSource(h, session.config, path.join(music, 'Y'))).toBe('')
+  expect((await h.vars.read('queue')).paths).toEqual(Y)
+  // no player comes up for it (the old one is gone, and nothing answers)
+  for (let i = 0; i < 200 && !session.status(); i++) await new Promise(r => setTimeout(r, 100))
+  expect(session.status()).not.toBe('')
+  const q = await h.vars.read('queue')
+  expect([q.kind, q.paths]).toEqual(['playlist', Y])
 })
