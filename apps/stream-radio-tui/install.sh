@@ -40,15 +40,36 @@ command -v python3 >/dev/null 2>&1 || echo "warning: python3 not found; yt-dlp n
 mkdir -p "$DEST"
 tmp=$(mktemp "$DEST/.stream-radio-tui.XXXXXX")
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
-curl -fsSL "$URL" -o "$tmp"
 # The release publishes the file's SHA-256 beside it: a download cut short
-# or garbled on the way is never installed.
-expected=$(curl -fsSL "$URL.sha256" | cut -d' ' -f1)
-actual=$(sha256 "$tmp")
-if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-  echo "stream-radio-tui: the download does not match its checksum; nothing was installed." >&2
-  exit 1
-fi
+# or garbled on the way is never installed. While a new build is being
+# published the two files are swapped one after the other, so for a moment
+# one may be missing or not match the other: each failure is tried again.
+tries=${STREAM_RADIO_TUI_TRIES:-3}
+pause=${STREAM_RADIO_TUI_WAIT:-10}
+try=1
+while :; do
+  why=""
+  if ! curl -fsSL "$URL" -o "$tmp"; then
+    why="could not download $URL"
+  elif ! sum=$(curl -fsSL "$URL.sha256"); then
+    why="could not download its checksum, $URL.sha256"
+  else
+    expected=$(printf '%s\n' "$sum" | cut -d' ' -f1)
+    actual=$(sha256 "$tmp")
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+      why="the download does not match its checksum"
+    fi
+  fi
+  [ -z "$why" ] && break
+  if [ "$try" -ge "$tries" ]; then
+    echo "stream-radio-tui: $why; nothing was installed." >&2
+    echo "If a new build was just published, try again in a minute." >&2
+    exit 1
+  fi
+  echo "stream-radio-tui: $why; a new build may be being published. Trying again in $pause s ($((try + 1)) of $tries)." >&2
+  sleep "$pause"
+  try=$((try + 1))
+done
 chmod +x "$tmp"
 mv -f "$tmp" "$DEST/stream-radio-tui"
 trap - EXIT HUP INT TERM

@@ -17,6 +17,10 @@ let tmp = ''
 let bundle = ''
 // what the server gives as the bundle's checksum; a test may spoil it
 let checksum = ''
+// requests the checksum fails before it is served (a build being published)
+let sumMisses = 0
+// how many times the checksum was asked for
+let sumAsks = 0
 
 function run(env: Record<string, string>): Promise<{ code: number; out: string }> {
   return new Promise(resolve => {
@@ -41,7 +45,9 @@ function pathWith(name: string, tools: string[], fakes: string[] = []): string {
   return dir
 }
 
-const NEEDED = ['sh', 'node', 'curl', 'mkdir', 'mktemp', 'mv', 'chmod', 'rm', 'cut', 'sha256sum']
+const NEEDED = ['sh', 'node', 'curl', 'mkdir', 'mktemp', 'mv', 'chmod', 'rm', 'cut', 'sha256sum', 'sleep']
+// a failure is tried again at once in tests
+const NOW = { STREAM_RADIO_TUI_WAIT: '0' }
 
 beforeAll(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'install-test-'))
@@ -53,6 +59,12 @@ beforeAll(async () => {
   checksum = createHash('sha256').update(fs.readFileSync(bundle)).digest('hex')
   server = http.createServer((req, res) => {
     if (req.url === '/stream-radio-tui.mjs.sha256') {
+      sumAsks += 1
+      if (sumMisses > 0) {
+        sumMisses -= 1
+        res.writeHead(404).end()
+        return
+      }
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end(`${checksum}  stream-radio-tui.mjs\n`)
     } else if (req.url === '/stream-radio-tui.mjs') {
@@ -103,9 +115,10 @@ describe('install.sh', () => {
     const good = checksum
     checksum = '0'.repeat(64)
     try {
-      const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url })
+      const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
       expect(r.code).not.toBe(0)
-      expect(r.out).toContain('checksum')
+      expect(r.out).toContain('the download does not match its checksum; nothing was installed.')
+      expect(r.out).toContain('(3 of 3)')
       expect(fs.existsSync(prefix) ? fs.readdirSync(prefix) : []).toEqual([])
     } finally {
       checksum = good
@@ -115,8 +128,36 @@ describe('install.sh', () => {
   it('leaves nothing behind when the download fails', async () => {
     const prefix = path.join(tmp, 'fail-bin')
     const bin = pathWith('fail-path', NEEDED, ['mpv'])
-    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url + '.missing' })
+    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url + '.missing', ...NOW })
     expect(r.code).not.toBe(0)
+    expect(r.out).toContain(`could not download ${url}.missing; nothing was installed.`)
     expect(fs.existsSync(prefix) ? fs.readdirSync(prefix) : []).toEqual([])
+  })
+
+  it('says the checksum could not be downloaded, not that it does not match', async () => {
+    const prefix = path.join(tmp, 'nosum-bin')
+    const bin = pathWith('nosum-path', NEEDED, ['mpv'])
+    sumMisses = 99
+    try {
+      const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
+      expect(r.code).not.toBe(0)
+      expect(r.out).toContain(`could not download its checksum, ${url}.sha256; nothing was installed.`)
+      expect(r.out).not.toContain('does not match')
+      expect(fs.existsSync(prefix) ? fs.readdirSync(prefix) : []).toEqual([])
+    } finally {
+      sumMisses = 0
+    }
+  })
+
+  it('tries again when the checksum is missing for a moment, as while a build is published', async () => {
+    const prefix = path.join(tmp, 'retry-bin')
+    const bin = pathWith('retry-path', NEEDED, ['mpv'])
+    sumMisses = 1
+    sumAsks = 0
+    const r = await run({ PATH: bin, HOME: tmp, PREFIX: prefix, STREAM_RADIO_TUI_URL: url, ...NOW })
+    expect(r.code).toBe(0)
+    expect(sumAsks).toBe(2)
+    expect(r.out).toContain('Trying again in 0 s (2 of 3)')
+    expect(fs.readdirSync(prefix)).toEqual(['stream-radio-tui'])
   })
 })
