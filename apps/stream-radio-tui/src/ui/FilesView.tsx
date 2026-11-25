@@ -1,6 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { Clickable, type Hit } from '../mouse/Clickable'
+import { RowFill } from './RowFill'
 import type { FileRow } from '../files/tree'
 import type { Tags } from '../media/tags'
 import { shown, type Line } from './lineEdit'
@@ -78,10 +79,11 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
                 {` ${isPicked ? '+' : ' '}${label(row)}`}
                 {artist ? <Text dimColor>{` · ${artist}`}</Text> : null}
               </Text>
+              <RowFill on={at === selected} width={width} />
             </Box>
             {at === selected && (row.kind === 'file' || row.kind === 'dir') ? (
               <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>
-                <Text>{' ⋯'}</Text>
+                <Text inverse>{' ⋯'}</Text>
               </Clickable>
             ) : null}
           </Clickable>

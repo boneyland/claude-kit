@@ -1,6 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { Clickable, type Hit } from '../mouse/Clickable'
+import { RowFill } from './RowFill'
 import type { FlatRow } from '../playlist/rows'
 
 type Props = {
@@ -43,10 +44,11 @@ export function PlaylistView({ heading, rows, selected, picked, dropAt, current,
               {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${row.title}`}
               {extra ? <Text dimColor>{` · ${extra}`}</Text> : null}
             </Text>
+            <RowFill on={at === selected} width={width} />
             </Box>
             {at === selected ? (
               <Clickable onClick={() => onMenu?.(at)} flexShrink={0}>
-                <Text>{' ⋯'}</Text>
+                <Text inverse>{' ⋯'}</Text>
               </Clickable>
             ) : null}
           </Clickable>
