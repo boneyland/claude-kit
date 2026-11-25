@@ -120,12 +120,36 @@ function stored(songs: readonly string[], current = 0, arrangement: unknown = { 
   fs.writeFileSync(PLACE, JSON.stringify({ rev: 1, current: `1.${current}`, seconds: 20 }))
 }
 // A session following a fake mpv whose list is the stored queue `songs`, playing `pos`.
+// mpv's list after the edits, by path, as the live fake has it.
+let mpvProps: Record<string, unknown> = {}
+const mpvPaths = () => (mpvProps.playlist as { filename: string }[]).map(e => e.filename)
 async function playing(songs: readonly string[], pos = 0, arrangement?: unknown) {
   stored(songs, pos, arrangement)
   const playlist = songs.map((filename, i) => ({ filename, ...(i === pos ? { current: true } : {}) }))
-  const h = await loaded({ playlist, 'chapter-list': [] }, pos)
+  // handed the stored queue at its rev
+  mpvProps = { playlist, 'chapter-list': [], 'user-data/stream-radio/rev': 1 }
+  const h = await loaded(mpvProps, pos)
+  live(mpvProps)
   await until(async () => (await h.vars.read('queue')).current === pos)
   return h
+}
+// The fake acts as mpv on what an edit sends: properties set, lists loaded,
+// entries moved and removed (the playing one keeps its mark).
+function live(props: Record<string, unknown>) {
+  fake!.onCommand = c => {
+    const list = props.playlist as { filename: string; current?: boolean }[]
+    if (c[0] === 'set_property') props[c[1] as string] = c[2]
+    if (c[0] === 'loadlist') {
+      const songs = fs.readFileSync(c[1] as string, 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(filename => ({ filename }))
+      list.splice(c[2] === 'insert-at' ? (c[3] as number) : list.length, 0, ...songs)
+    }
+    if (c[0] === 'playlist-remove') list.splice(c[1] as number, 1)
+    if (c[0] === 'playlist-move') {
+      const [j, i] = [c[1] as number, c[2] as number]
+      const [moved] = list.splice(j, 1)
+      list.splice(j < i ? i - 1 : i, 0, moved!)
+    }
+  }
 }
 
 test('add to the end appends to the file, then to mpv', async () => {
@@ -162,6 +186,7 @@ test('play next on an mpv without insert-at appends, then moves the songs up', a
     ['playlist-move', 2, 1],
     ['playlist-move', 3, 2],
   ])
+  expect(mpvPaths()).toEqual(storedPaths())
 })
 
 test('a folder adds all its songs in one command', async () => {
@@ -249,7 +274,34 @@ test('sort keeps the playing copy by id', async () => {
   expect(readJson(QUEUE_JSON).arrangement).toEqual({ kind: 'sort', field: 'title', isReversed: false, order: [0, 2, 1] })
   expect(readJson(PLACE).current).toBe('1.2')
   expect(sent('playlist-move')).toEqual([['playlist-move', 2, 1]])
+  expect(mpvPaths()).toEqual(['/m/a.flac', '/m/a.flac', '/m/b.flac'])
+  // mpv tells where the song playing went: the place stays on that copy
+  fake!.push({ event: 'property-change', name: 'playlist-pos', data: 1 })
+  await until(async () => (await h.vars.read('queue')).current === 1)
+  await new Promise(r => setTimeout(r, 200))
+  expect(readJson(PLACE).current).toBe('1.2')
   expect(sent('playlist-play-index')).toEqual([])
+})
+
+test('edits not waited for land in order, in the file and in mpv', async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac', '/m/c.flac', '/m/d.flac'])
+  // two hand moves in a row, as a held key sends them
+  const first = reorderQueue(h, [1, 0, 2, 3])
+  const second = reorderQueue(h, [0, 1, 3, 2])
+  expect(await Promise.all([first, second])).toEqual(['', ''])
+  expect(storedPaths()).toEqual(['/m/b.flac', '/m/a.flac', '/m/d.flac', '/m/c.flac'])
+  expect(mpvPaths()).toEqual(storedPaths())
+  expect(mpvProps['user-data/stream-radio/rev']).toBe(readJson(QUEUE_JSON).rev)
+})
+
+test("mpv at another rev than the queue edited is left for the rebuild", async () => {
+  const h = await playing(['/m/a.flac', '/m/b.flac', '/m/c.flac'])
+  // another program edited the queue and has not brought mpv along yet
+  mpvProps['user-data/stream-radio/rev'] = 7
+  expect(await reorderQueue(h, [2, 0, 1])).toBe('')
+  expect(storedPaths()).toEqual(['/m/c.flac', '/m/a.flac', '/m/b.flac'])
+  expect(sent('playlist-move')).toEqual([])
+  expect(revSet()).toEqual([])
 })
 
 test('sort then unsort returns the queued order', async () => {
@@ -288,7 +340,7 @@ test('a hand move while shuffled moves entries in mpv and turns the shuffle off'
 test('a sort of many songs rebuilds the list around the playing one, not a move per song', async () => {
   const many = [...Array(20).keys()].map(i => ({ filename: `/m/${String(i).padStart(2, '0')}.flac`, title: i === 3 ? 'Three' : undefined, current: i === 5 }))
   stored(many.map(e => e.filename), 5)
-  const h = await loaded({ playlist: many, 'chapter-list': [] }, 5)
+  const h = await loaded({ playlist: many, 'chapter-list': [], 'user-data/stream-radio/rev': 1 }, 5)
   await until(async () => (await h.vars.read('queue')).current === 5)
   const order = [...Array(20).keys()].reverse()
   expect(await reorderQueue(h, order)).toBe('')

@@ -295,7 +295,8 @@ let pending: Pending | undefined
 // mode or SETTING_REPEAT_MS pass.
 let settingRepeat: { mode: Repeat; until: number } | undefined
 const SETTING_REPEAT_MS = 2000
-// Whether this session is reordering the playlist: its moves are not read one by one.
+// Whether this session is reordering the playlist: its moves are not read one
+// by one. Edits run one at a time (edit), so one flag is enough.
 let isReordering = false
 // Whether this session holds reconnect.lock.
 let holdsLock = false
@@ -1182,8 +1183,17 @@ async function currentId(h: Host): Promise<string | null> {
 
 // `fn` over the stored queue under the lock, then the place, mpv and every
 // session follow. '' when done, `unchanged` when `fn` changed nothing, else
-// what to show.
-async function edit(h: Host, fn: (q: StoredQueue) => StoredQueue, unchanged = ''): Promise<string> {
+// what to show. One edit at a time in this program: the next one's write and
+// mpv's moves wait for this one's, so mpv is never moved against a list it
+// has not reached yet.
+function edit(h: Host, fn: (q: StoredQueue) => StoredQueue, unchanged = ''): Promise<string> {
+  const step = editing.then(() => editNow(h, fn, unchanged))
+  editing = step.catch(() => undefined)
+  return step
+}
+let editing: Promise<unknown> = Promise.resolve()
+
+async function editNow(h: Host, fn: (q: StoredQueue) => StoredQueue, unchanged: string): Promise<string> {
   let was: StoredQueue = EMPTY_QUEUE
   const q = await updateStored(h, x => ((was = x), fn(x))).catch(() => undefined)
   if (q === 'busy') return BUSY
@@ -1191,15 +1201,21 @@ async function edit(h: Host, fn: (q: StoredQueue) => StoredQueue, unchanged = ''
   if (q.rev === was.rev) return unchanged
   await movePlace(h, was, q)
   if (control) {
-    // mpv's list not brought along (it was not the stored one) keeps its old
-    // rev, to be rebuilt from the file
-    if (await syncPlayer(h, played(was), played(q))) await mpv(h, ['set_property', 'user-data/stream-radio/rev', q.rev])
+    // Brought along only from the list of the queue as it was (mpv's rev says
+    // which); else, or when another program set its rev meanwhile, mpv keeps
+    // a rev that is not the file's, and is rebuilt from the file.
+    if ((await syncPlayer(h, was.rev, played(was), played(q))) && (await mpvRev(h)) === was.rev) {
+      await mpv(h, ['set_property', 'user-data/stream-radio/rev', q.rev])
+    }
     await markEdited(h)
     await refreshQueue(h, { isReordered: true })
   }
   await refreshFromStored(h)
   return ''
 }
+
+// The queue's rev mpv's list was last brought to.
+const mpvRev = async (h: Host): Promise<unknown> => (await mpv(h, ['get_property', 'user-data/stream-radio/rev']))?.data
 
 // The place after an edit: on the same entry, else (it went) on the next one
 // still there, from its start; mpv plays that one next too.
@@ -1226,10 +1242,11 @@ async function movePlace(h: Host, was: StoredQueue, q: StoredQueue) {
 // removed (the song playing among them: mpv plays the next), the new ones
 // loaded in one list where they go, then the moves, a few one by one, else a
 // rebuild around the song playing. Never a jump: the song playing plays on.
-// false, and mpv left as it is, when its list is not `from` (it expanded an
-// entry, or the edit came between) or it stopped answering.
-async function syncPlayer(h: Host, from: readonly StoredEntry[], to: readonly StoredEntry[]): Promise<boolean> {
-  if (seen.count !== from.length) return false
+// false, and mpv left as it is, when its list is not `from` (its rev is not
+// `fromRev`: another program's edit came between; or it expanded an entry) or
+// it stopped answering.
+async function syncPlayer(h: Host, fromRev: number, from: readonly StoredEntry[], to: readonly StoredEntry[]): Promise<boolean> {
+  if (seen.count !== from.length || (await mpvRev(h)) !== fromRev) return false
   isReordering = true
   try {
     const keep = new Set(to.map(e => e.id))

@@ -13,6 +13,8 @@ export type Fake = {
   received: unknown[]
   // commands answered with an error, as an older mpv would; none by default
   refuse?: (command: unknown[]) => boolean
+  // sees each command answered with success first, to act on it (change `props`)
+  onCommand?: (command: unknown[]) => void
   // ends every connection
   closeClients(): void
   close(): Promise<void>
@@ -38,6 +40,8 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
         received.push(msg)
         // an unrelated event first, to show the reply is matched by request_id
         c.write(JSON.stringify({ event: 'idle' }) + '\n')
+        const isRefused = msg.command[0] === 'bad' || !!fake.refuse?.(msg.command)
+        if (!isRefused) fake.onCommand?.(msg.command)
         const isGet = msg.command[0] === 'get_property'
         const isPid = isGet && msg.command[1] === 'pid'
         const isProp = isGet && typeof msg.command[1] === 'string' && msg.command[1] in props
@@ -45,7 +49,7 @@ export async function fakeMpv(inDir?: string, props: Record<string, unknown> = {
           ? { data: 4242, request_id: msg.request_id, error: 'success' }
           : isProp
             ? { data: props[msg.command[1] as string], request_id: msg.request_id, error: 'success' }
-          : msg.command[0] === 'bad' || fake.refuse?.(msg.command)
+          : isRefused
             ? { request_id: msg.request_id, error: 'invalid parameter' }
             : { data: null, request_id: msg.request_id, error: 'success' }
         c.write(JSON.stringify(reply) + '\n')
