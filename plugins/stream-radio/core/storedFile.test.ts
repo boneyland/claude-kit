@@ -2,7 +2,18 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Host } from './host'
 import { addEntries, EMPTY_QUEUE, parseStored } from './stored'
-import { backUpAndEmpty, QUEUE_LOCK_STALE_MS, readPlace, readStored, restorePrev, updateStored, withFileLock, writePlace } from './storedFile'
+import {
+  backUpAndEmpty,
+  QUEUE_LOCK_STALE_MS,
+  QUEUE_LOCK_WAIT_MS,
+  readPlace,
+  readStored,
+  restorePrev,
+  updateStored,
+  updateStoredWith,
+  withFileLock,
+  writePlace,
+} from './storedFile'
 
 const D = '/data'
 const LOCK = `${D}/queue.lock`
@@ -72,9 +83,21 @@ test('a stale lock is taken over; a fresh one gives busy', async () => {
   const fresh = hostOf({ [LOCK]: 'x' })
   const start = fresh.clock.now
   expect(await updateStored(fresh.h, add('/a.mp3'))).toBe('busy')
-  expect(fresh.clock.now - start).toBeGreaterThanOrEqual(2000)
+  expect(fresh.clock.now - start).toBeGreaterThanOrEqual(QUEUE_LOCK_WAIT_MS)
   expect(`${D}/queue.json` in fresh.files).toBe(false)
   expect(LOCK in fresh.files).toBe(true)
+})
+
+test('what follows a write runs holding the lock, after the file is written, and not for no change', async () => {
+  const { h, files } = hostOf()
+  const seen: [boolean, number, number][] = []
+  const after = async (q: { rev: number }, was: { rev: number }) => {
+    seen.push([LOCK in files, parseStored(files[`${D}/queue.json`]!).rev, q.rev - was.rev])
+  }
+  await updateStoredWith(h, async q => add('/a.mp3')(q), after)
+  await updateStoredWith(h, async q => q, after)
+  expect(seen).toEqual([[true, 1, 1]])
+  expect(LOCK in files).toBe(false)
 })
 
 test('the lock is released when the work throws', async () => {

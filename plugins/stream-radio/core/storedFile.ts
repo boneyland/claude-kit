@@ -7,10 +7,13 @@ import type { Host } from './host'
 import { paths } from './paths'
 import { EMPTY_QUEUE, NO_PLACE, parsePlace, parseStored, type Place, type StoredQueue } from './stored'
 
-// A queue lock older than this was left by a program that died mid-edit.
-export const QUEUE_LOCK_STALE_MS = 10_000
+// A queue lock older than this was left by a program that died mid-edit. An
+// edit holds it while mpv is brought along (bounded: a few commands, else a
+// rebuild), each command a process in the mod, so it is generous.
+export const QUEUE_LOCK_STALE_MS = 60_000
 const LOCK_TRY_MS = 50
-const LOCK_GIVE_UP_MS = 2000
+// How long an update waits for the lock before it says the queue is busy.
+export const QUEUE_LOCK_WAIT_MS = 10_000
 
 // Creates `lockPath` only if absent (O_EXCL, by the shell's noclobber), or
 // takes it over when older than `staleMs`.
@@ -29,12 +32,12 @@ export async function releaseFileLock(h: Host, lockPath: string): Promise<void> 
   await h.run(['rm', '-f', lockPath]).catch(() => undefined)
 }
 
-// Runs `fn` holding the lock file, trying every 50 ms for 2 s; 'busy' when it
+// Runs `fn` holding the lock file, trying every 50 ms for 10 s; 'busy' when it
 // could not be had. The lock is released however `fn` ends.
 export async function withFileLock<T>(h: Host, lockPath: string, staleMs: number, fn: () => Promise<T>): Promise<T | 'busy'> {
   let waited = 0
   while (!(await takeFileLock(h, lockPath, staleMs))) {
-    if (waited >= LOCK_GIVE_UP_MS) return 'busy'
+    if (waited >= QUEUE_LOCK_WAIT_MS) return 'busy'
     await h.sleep(LOCK_TRY_MS)
     waited += LOCK_TRY_MS
   }
@@ -79,8 +82,15 @@ export function updateStored(h: Host, fn: (q: StoredQueue) => StoredQueue): Prom
   return updateStoredWith(h, async q => fn(q))
 }
 
-// The same, with an `fn` that may wait (on the player, say) while it holds the lock.
-export function updateStoredWith(h: Host, fn: (q: StoredQueue) => Promise<StoredQueue>): Promise<StoredQueue | 'busy'> {
+// The same, with an `fn` that may wait (on the player, say) while it holds the
+// lock, and `after`, run still holding it once what `fn` made is written (not
+// when `fn` left the rev alone): what must follow the file before anyone else
+// reads or changes it.
+export function updateStoredWith(
+  h: Host,
+  fn: (q: StoredQueue) => Promise<StoredQueue>,
+  after?: (q: StoredQueue, was: StoredQueue) => Promise<void>,
+): Promise<StoredQueue | 'busy'> {
   const step = chain.then(async () => {
     const p = await paths(h)
     return withFileLock(h, p.queueLock, QUEUE_LOCK_STALE_MS, async () => {
@@ -88,6 +98,7 @@ export function updateStoredWith(h: Host, fn: (q: StoredQueue) => Promise<Stored
       const next = await fn(was)
       if (next.rev === was.rev) return was
       await writeWhole(h, p.queueJson, `${JSON.stringify(next)}\n`)
+      await after?.(next, was)
       return next
     })
   })

@@ -188,6 +188,7 @@ export function refreshFromStored(h: Host): Promise<void> {
       return { url: q.source, index, seconds: at.seconds, title, path: e.path }
     })
     await h.vars.change('isShuffled', () => q.arrangement.kind === 'shuffle')
+    if (mine !== refreshes) return lastRefresh
     listed = { rev: q.rev, ids: shown.map(x => x.id), paths: shown.map(x => x.path), items, root: q.root }
     if (control) {
       await refreshQueue(h, { isNewFile: true })
@@ -195,6 +196,7 @@ export function refreshFromStored(h: Host): Promise<void> {
       return
     }
     const before = await h.vars.read('queue')
+    if (mine !== refreshes) return lastRefresh
     await showQueue(h, before, shown.length ? { kind: 'playlist', items, current: index, paths: listed.paths, root: q.root } : NO_QUEUE)
   })()
   lastRefresh = done
@@ -339,6 +341,10 @@ export type Seen = {
   url: string
   endReason: string
   error: string
+  // the queue's rev mpv's list was last brought to (user-data/stream-radio/rev)
+  rev: unknown
+  // the file mpv has at `pos`, as last asked; undefined when it did not say
+  posPath: unknown
 }
 export const fresh = (): Seen => ({
   media: undefined,
@@ -353,6 +359,8 @@ export const fresh = (): Seen => ({
   url: '',
   endReason: '',
   error: '',
+  rev: undefined,
+  posPath: undefined,
 })
 let seen = fresh()
 
@@ -523,10 +531,12 @@ export async function onEvent(h: Host, event: PlayerEvent) {
       else seen.count = typeof data === 'number' ? data : 0
       // this session's reorder reads the list once it is done
       if (seen.isLoaded && !isReordering) {
+        await notePosPath(h)
         await refreshQueue(h)
         await notePlace(h)
-        // a count the file does not have: mpv expanded an entry, or is behind
-        if (name === 'playlist-count') checkSoon(h)
+        // a count the file does not have (mpv expanded an entry, or is
+        // behind), or a song left first by a mend that has now played
+        checkSoon(h)
       }
       return
     case 'volume':
@@ -554,6 +564,10 @@ export async function onEvent(h: Host, event: PlayerEvent) {
     case 'user-data/stream-radio/edited':
       // the queue's file changed (a shuffle, say), or mpv was brought to it:
       // the file is read again, and mpv checked against it
+      if (name === 'user-data/stream-radio/rev') {
+        seen.rev = data
+        if (seen.isLoaded) await notePosPath(h)
+      }
       await refreshFromStored(h)
       return
   }
@@ -569,6 +583,9 @@ export async function markLoaded(h: Host) {
 // A file loaded: the list (or the file's chapters) read again; for what this
 // session started, the first load means it really plays.
 export async function onLoaded(h: Host) {
+  // a player that told no rev yet (its watcher's first values) is asked
+  if (seen.rev === undefined) seen.rev = await mpvRev(h)
+  await notePosPath(h)
   await refreshFromStored(h).catch(() => undefined)
   const intent = await readIntent(h)
   if (started && intent?.id === started.id && !intent.playedAt) {
@@ -585,7 +602,8 @@ export async function onLoaded(h: Host) {
     // may have started elsewhere or expanded an entry before it.
     const { index, path } = pending
     const target = q.paths[index] === path ? index : q.paths.indexOf(path)
-    if (q.kind === 'playlist' && target >= 0 && q.current !== target) {
+    // mpv's own position: the list shown may not be in step with it yet
+    if (q.kind === 'playlist' && target >= 0 && seen.pos !== target) {
       // The jump loads another file; its file-loaded comes back through here.
       if (!(await mpv(h, ['playlist-play-index', target]))) pending = undefined
       return
@@ -602,11 +620,14 @@ export async function onLoaded(h: Host) {
 // reached, and not for a song the queue does not have.
 async function notePlace(h: Host) {
   const q = await h.vars.read('queue')
-  if (pending || q.kind !== 'playlist') return
+  // out of step, mpv's position may be of another list (another session's
+  // sort, its moves seen before its rev): nothing is taken from it
+  if (pending || q.kind !== 'playlist' || !inStep()) return
   const path = q.paths[q.current]
   if (!path || (placedAt?.pos === q.current && placedAt.path === path)) return
-  placedAt = { pos: q.current, path }
   const stored = await readStored(h)
+  if (stored.rev !== listed.rev) return
+  placedAt = { pos: q.current, path }
   const shown = played(stored)
   const e = shown[q.current]?.path === path ? shown[q.current] : shown.find(x => x.path === path)
   if (!e || (e.id === place.current && stored.rev === place.rev)) return
@@ -1069,11 +1090,24 @@ export async function readQueue(h: Host, before: Queue, how: Refresh): Promise<Q
   return { kind: 'playlist', items: listed.items, current: shownCurrent(), paths: listed.paths, root: listed.root }
 }
 
-// The shown index playing: mpv's position while its list is the file's
-// length (in step; a check brings it there), else where the place is.
+// The shown index playing: mpv's position while its list is the one listed,
+// else where the place is.
 function shownCurrent(): number {
-  if (seen.count === listed.paths.length) return seen.pos
+  if (inStep()) return seen.pos
   return place.current === null ? -1 : listed.ids.indexOf(place.current)
+}
+
+// Whether mpv's list is the one listed: brought to the rev it was read at, as
+// long, and (when mpv said) with the same file at its position. Another
+// session's sort shows in mpv's positions before its rev comes.
+function inStep(): boolean {
+  if (seen.rev !== listed.rev || seen.count !== listed.paths.length) return false
+  return typeof seen.posPath !== 'string' || seen.posPath === listed.paths[seen.pos]
+}
+
+// Asks mpv which file it has at its position.
+async function notePosPath(h: Host) {
+  seen.posPath = seen.pos >= 0 ? (await mpv(h, ['get_property', `playlist/${seen.pos}/filename`]))?.data : undefined
 }
 
 // The next or previous playlist entry, else chapter.
@@ -1208,26 +1242,32 @@ let editing: Promise<unknown> = Promise.resolve()
 async function editNow(h: Host, fn: (q: StoredQueue, current: string | null) => StoredQueue, unchanged: string): Promise<string> {
   const current = await currentId(h)
   let was: StoredQueue = EMPTY_QUEUE
-  const q = await updateStored(h, x => ((was = x), fn(x, current))).catch(() => undefined)
+  const q = await updateStoredWith(
+    h,
+    async x => ((was = x), fn(x, current)),
+    // Still holding the lock: no other program's edit or mend moves mpv while
+    // it is brought along, and none reads the file ahead of mpv meanwhile.
+    // Brought along only from the list of the queue as it was (mpv's rev says
+    // which); else mpv keeps a rev that is not the file's, and is mended from
+    // the file (checkSoon).
+    async (next, from) => {
+      if (control && (await syncPlayer(h, from.rev, played(from), played(next)))) await setMpvRev(h, next.rev)
+    },
+  ).catch(() => undefined)
   if (q === 'busy') return BUSY
   if (!q) return 'Could not save the queue.'
   if (q.rev === was.rev) return unchanged
   await movePlace(h, was, q)
-  if (control) {
-    // Brought along only from the list of the queue as it was (mpv's rev says
-    // which); else, or when another program set its rev meanwhile, mpv keeps
-    // a rev that is not the file's, and is mended from the file (checkSoon).
-    if ((await syncPlayer(h, was.rev, played(was), played(q))) && (await mpvRev(h)) === was.rev) {
-      await mpv(h, ['set_property', 'user-data/stream-radio/rev', q.rev])
-    }
-    await markEdited(h)
-  }
+  if (control) await markEdited(h)
   await refreshFromStored(h)
   return ''
 }
 
 // The queue's rev mpv's list was last brought to.
 const mpvRev = async (h: Host): Promise<unknown> => (await mpv(h, ['get_property', 'user-data/stream-radio/rev']))?.data
+const setMpvRev = async (h: Host, rev: number) => {
+  if (await mpv(h, ['set_property', 'user-data/stream-radio/rev', rev])) seen.rev = rev
+}
 
 // The place after an edit: on the same entry, else (it went) on the next one
 // still there, from its start; mpv plays that one next too.
@@ -1252,39 +1292,62 @@ async function movePlace(h: Host, was: StoredQueue, q: StoredQueue) {
 
 // Brings mpv's list from the played order `from` to `to`: the entries gone
 // removed (the song playing among them: mpv plays the next), the new ones
-// loaded in one list where they go, then the moves, a few one by one, else a
-// rebuild around the song playing. Never a jump: the song playing plays on.
-// false, and mpv left as it is, when its list is not `from` (its rev is not
-// `fromRev`: another program's edit came between; or it expanded an entry) or
-// it stopped answering.
+// loaded in one list where they go, then the moves. More than FEW_MOVES
+// commands in all (removes and moves) rebuild the list around the song
+// playing instead, so an edit holds the queue lock for a few commands at most.
+// Never a jump: the song playing plays on. false, and mpv left as it is, when
+// its list is not `from` (its rev is not `fromRev`: another program's edit
+// came between; or it expanded an entry) or it stopped answering.
 async function syncPlayer(h: Host, fromRev: number, from: readonly StoredEntry[], to: readonly StoredEntry[]): Promise<boolean> {
   if (seen.count !== from.length || (await mpvRev(h)) !== fromRev) return false
   isReordering = true
   try {
     const keep = new Set(to.map(e => e.id))
-    const list = from.map(e => e.id)
-    // the highest first, so the indexes below stay put
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (keep.has(list[i]!)) continue
-      if (!(await mpv(h, ['playlist-remove', i]))) return false
-      list.splice(i, 1)
-    }
+    const gone = from.flatMap((e, i) => (keep.has(e.id) ? [] : [i]))
+    // mpv's list once the gone are out and the new are in
+    const list = from.map(e => e.id).filter(id => keep.has(id))
     const had = new Set(list)
     const added = to.filter(e => !had.has(e.id))
-    if (added.length) {
-      const first = to.indexOf(added[0]!)
-      const at = first > 0 ? list.indexOf(to[first - 1]!.id) + 1 : 0
-      if (!(await loadAt(h, added, at, list.length))) return false
-      list.splice(at, 0, ...added.map(e => e.id))
+    const first = added.length ? to.indexOf(added[0]!) : -1
+    const at = first > 0 ? list.indexOf(to[first - 1]!.id) + 1 : 0
+    const count = list.length
+    if (added.length) list.splice(at, 0, ...added.map(e => e.id))
+    const steps = moveSteps(to.map(e => list.indexOf(e.id)))
+    if (gone.length + steps.length > FEW_MOVES) {
+      if (!(await rebuildTo(h, from, to))) return false
+    } else {
+      // the highest first, so the indexes below stay put
+      for (const i of gone.reverse()) if (!(await mpv(h, ['playlist-remove', i]))) return false
+      if (added.length && !(await loadAt(h, added, at, count))) return false
+      if (await moveEach(h, steps)) return false
     }
-    const order = to.map(e => list.indexOf(e.id))
-    const steps = moveSteps(order)
-    if (steps.length && (steps.length <= FEW_MOVES ? await moveEach(h, steps) : await rebuild(h, order))) return false
     seen.count = to.length
+    // where mpv is now comes in its next position
+    seen.posPath = undefined
     return true
   } finally {
     isReordering = false
   }
+}
+
+// mpv's list (now `from`) rebuilt as `to` around the song playing. A song
+// playing that `to` lacks goes where the next one kept is, and is removed
+// there: mpv plays that one, as it would after a remove.
+async function rebuildTo(h: Host, from: readonly StoredEntry[], to: readonly StoredEntry[]): Promise<boolean> {
+  const list = await playlistOf(h)
+  if (!list || list.length !== from.length) return false
+  const playing = list.findIndex(e => e.current)
+  if (playing < 0) return false
+  const id = from[playing]!.id
+  let at = to.findIndex(e => e.id === id)
+  const stays = at >= 0
+  if (!stays) {
+    const kept = new Set(to.map(e => e.id))
+    const next = from.slice(playing + 1).find(e => kept.has(e.id))
+    at = next ? to.findIndex(e => e.id === next.id) : to.length
+  }
+  if (await rebuildAround(h, to.slice(0, at), to.slice(stays ? at + 1 : at))) return false
+  return stays || !!(await mpv(h, ['playlist-remove', at]))
 }
 
 // `songs` into mpv's list of `count` at `at`, in one list: a loadfile per song
@@ -1315,7 +1378,7 @@ export async function addToQueue(h: Host, config: PlayerConfig, entries: readonl
   return playNew(h, config, songs, (await paths(h)).queue, '')
 }
 
-// Up to this many moves go one by one; more (a sort) rebuild the list.
+// Up to this many removes and moves go one by one; more (a sort) rebuild the list.
 const FEW_MOVES = 8
 
 async function moveEach(h: Host, steps: readonly [number, number][]): Promise<string> {
@@ -1323,25 +1386,12 @@ async function moveEach(h: Host, steps: readonly [number, number][]): Promise<st
   return ''
 }
 
-// The playlist rebuilt in `order` in a few commands, not a move per entry: a
-// sort of hundreds of songs moved the playing one at each step, and every
-// session following the player showed (and fetched art and a waveform for) a
-// different song each time. Everything but the playing song is cleared, the
-// songs before it loaded and it moved after them, then the songs after it.
-async function rebuild(h: Host, order: readonly number[]): Promise<string> {
-  const list = await playlistOf(h)
-  if (!list) return 'The player is not ready yet.'
-  if (list.length !== order.length) return STALE
-  const playing = list.findIndex(e => e.current)
-  // nothing playing: playlist-clear would empty it, so move one by one
-  if (playing < 0) return moveEach(h, moveSteps(order))
-  const at = order.indexOf(playing)
-  return rebuildAround(h, entriesOf(order.slice(0, at).map(i => list[i]!)), entriesOf(order.slice(at + 1).map(i => list[i]!)))
-}
-
-// mpv's list made `before`, the song playing, `after`: everything but the
-// playing song cleared, the songs before it loaded and it moved after them,
-// then the songs after it. The song plays on throughout.
+// mpv's list made `before`, the song playing, `after`, in a few commands, not
+// a move per entry: a sort of hundreds of songs moved the playing one at each
+// step, and every session following the player showed (and fetched art and a
+// waveform for) a different song each time. Everything but the playing song
+// is cleared, the songs before it loaded and it moved after them, then the
+// songs after it. The song plays on throughout.
 async function rebuildAround(h: Host, before: readonly QueueEntry[], after: readonly QueueEntry[]): Promise<string> {
   const file = `${(await paths(h)).queue}.part`
   const load = async (entries: readonly QueueEntry[]) => {
@@ -1413,15 +1463,21 @@ export async function clearQueue(h: Host, config: PlayerConfig): Promise<string>
 }
 
 // --- Mending mpv: while a player is followed, its list is checked against the
-// file (a few calls, when the list was read again or mpv's length changed).
-// mpv carries the file's rev its list was brought to. Its rev the file's but
-// its list not (mpv expanded an entry: a .cue, a URL's playlist): that one
-// entry is replaced in the file by mpv's songs. Else (a rev behind, or none: a
-// crash mid-edit, a player older than the file) mpv is rebuilt from the file
-// around the song playing; a song playing that the file lacks keeps playing,
-// and mpv's list is taken into the file, the file's other songs after it. Done
-// under the queue lock, so two sessions never mend at once, and the first
-// one's rev settles the second's check: no ping-pong.
+// file (a few calls, when the list was read again or mpv's position or length
+// changed). The file is the truth; mpv carries the file's rev its list was
+// brought to.
+// - mpv's rev the file's but its list not: mpv expanded an entry (a .cue, a
+//   URL's playlist), and that one entry is replaced in the file by mpv's songs.
+//   The one place mpv writes back.
+// - The file empty (a player older than the file): mpv's list becomes the queue.
+// - Else (a rev behind, or none: a crash mid-edit, an older player) mpv is
+//   rebuilt from the file around the song playing. A song playing that the
+//   file lacks plays on first, and goes once it has played; the file is not
+//   changed for it.
+// All of it holds the queue lock, rev set included, as an edit holds it while
+// it brings mpv along: a mend never runs between an edit's write and its
+// moves, and two sessions never mend at once. Each mend ends with mpv at the
+// file's rev, which settles every other session's check: no ping-pong.
 
 // How long a list that is not the file's is left before it is mended: an
 // edit's own moves (here or in another program) land well within it.
@@ -1443,69 +1499,90 @@ function checkSoon(h: Host) {
     .then(
       () => {
         done()
-        if (mine === watchRun && control) return inTurn(() => mendPlayer(h))
+        if (mine === watchRun && control) return inTurn(() => mendPlayer(h, mine))
       },
       done,
     )
     .catch(error => h.log(`stream-radio: could not mend the player's list: ${error instanceof Error ? error.message : String(error)}`, 'debug'))
 }
 
-async function mendPlayer(h: Host) {
-  if (!control || !seen.isLoaded || isReordering || pending) return
+// `mine`: the follow (watchRun) it was due for; a newer one (or none) ends it.
+async function mendPlayer(h: Host, mine: number) {
+  const isMine = () => mine === watchRun && !!control
+  if (!isMine() || !seen.isLoaded || isReordering || pending) return
   // a new start is under way: its own list comes
   if (((await readIntent(h))?.id ?? '') !== followedId) return
   const file = await readStored(h)
-  const rev = await mpvRev(h)
-  if (rev === file.rev && seen.count === played(file).length) return
-  const key = `${file.rev}/${String(rev)}/${seen.count}`
+  if (seen.rev === file.rev && seen.count === played(file).length) return
+  const key = `${file.rev}/${String(seen.rev)}/${seen.count}/${seen.pos}`
   if (key === triedOn) return
   triedOn = key
   const was = control && place.current !== null ? place : await readPlace(h)
   // what mpv was brought to: the file's rev, and where the song playing is
   let done = undefined as { rev: number; at: number } | undefined
   isReordering = true
-  const q = await updateStoredWith(h, async q => {
-    const list = await playlistOf(h)
-    if (!list || !control) return q
-    const shown = played(q)
-    const listPaths = list.map(e => e.filename ?? '')
-    const playing = list.findIndex(e => e.current)
-    // the same songs: only the rev was missing
-    if (listPaths.join('\n') === shown.map(e => e.path).join('\n')) {
-      done = { rev: q.rev, at: playing }
-      return q
-    }
-    if ((await mpvRev(h)) === q.rev) {
-      const one = expandedEntry(shown, listPaths)
-      if (one) {
-        const next = replaceEntry(q, one.id, entriesOf(list.slice(one.from, one.to)))
+  const q = await updateStoredWith(
+    h,
+    async q => {
+      if (!isMine()) return q
+      const list = await playlistOf(h)
+      if (!list) return q
+      const rev = await mpvRev(h)
+      const shown = played(q)
+      const listPaths = list.map(e => e.filename ?? '')
+      const filePaths = shown.map(e => e.path)
+      const same = (a: readonly string[]) => a.join('\n') === filePaths.join('\n')
+      const playing = list.findIndex(e => e.current)
+      // the same songs: only the rev was missing
+      if (same(listPaths)) {
+        if (rev !== q.rev) await setMpvRev(h, q.rev)
+        done = { rev: q.rev, at: playing }
+        return q
+      }
+      if (rev === q.rev) {
+        const one = expandedEntry(shown, listPaths)
+        if (one) {
+          const next = replaceEntry(q, one.id, entriesOf(list.slice(one.from, one.to)))
+          done = { rev: next.rev, at: playing }
+          return next
+        }
+      }
+      if (!shown.length) {
+        const next = replaceWith(q, entriesOf(list), q.source || seen.url, q.root)
         done = { rev: next.rev, at: playing }
         return next
       }
-    }
-    if (playing < 0) return q
-    const byPlace = shown.findIndex(e => e.id === was.current)
-    const at = shown[byPlace]?.path === listPaths[playing] ? byPlace : shown.findIndex(e => e.path === listPaths[playing])
-    if (at < 0) {
-      const has = new Set(listPaths)
-      const more = shown.filter(e => !has.has(e.path))
-      if (more.length && !(await loadAt(h, more, list.length, list.length))) return q
-      const next = replaceWith(q, [...entriesOf(list), ...more], q.source || seen.url, q.root)
-      done = { rev: next.rev, at: playing }
-      return next
-    }
-    if (await rebuildAround(h, shown.slice(0, at), shown.slice(at + 1))) return q
-    done = { rev: q.rev, at }
-    return q
-  })
+      if (playing < 0) return q
+      // a song left playing first by an earlier mend: once it has played, it
+      // goes; until then there is nothing to do
+      if (same(listPaths.slice(1))) {
+        if (playing === 0 || !(await mpv(h, ['playlist-remove', 0]))) return q
+        await setMpvRev(h, q.rev)
+        done = { rev: q.rev, at: playing - 1 }
+        return q
+      }
+      const byPlace = shown.findIndex(e => e.id === was.current)
+      const at = shown[byPlace]?.path === listPaths[playing] ? byPlace : filePaths.indexOf(listPaths[playing]!)
+      if (await rebuildAround(h, shown.slice(0, Math.max(0, at)), shown.slice(at + 1))) return q
+      // the song playing is not the file's: mpv's rev waits until it is gone
+      if (at < 0) return q
+      await setMpvRev(h, q.rev)
+      done = { rev: q.rev, at }
+      return q
+    },
+    // the file took mpv's list (or its expansion): mpv is at its rev
+    async next => {
+      if (isMine()) await setMpvRev(h, next.rev)
+    },
+  )
     .catch(() => undefined)
     .finally(() => (isReordering = false))
-  if (!done || !q || q === 'busy' || q.rev !== done.rev || !control) return
+  if (!done || !q || q === 'busy' || q.rev !== done.rev || !isMine()) return
   triedOn = ''
   const shown = played(q)
   seen.count = shown.length
   if (done.at >= 0) seen.pos = done.at
-  await mpv(h, ['set_property', 'user-data/stream-radio/rev', q.rev])
+  seen.posPath = shown[seen.pos]?.path
   const e = shown[done.at]
   if (e) {
     place = { rev: q.rev, current: e.id, seconds: e.id === was.current ? was.seconds : 0 }
