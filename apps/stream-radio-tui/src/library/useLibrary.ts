@@ -41,8 +41,9 @@ export type Library = {
 export const songTitle = (s: Song) => s.title || baseName(s.path)
 
 // The rows: the top level, or the open list's songs after ../ (with `filter`,
-// those with every word of it in their title or where they are).
-export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, filter: string): LibraryRow[] {
+// those with every word of it in their title or where they are). order: the
+// songs' places in the list in the order to show them (a sort); none: as in the file.
+export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, filter: string, order?: readonly number[]): LibraryRow[] {
   const { open } = lib
   if (!open) {
     if (!lib.isLoaded) return []
@@ -50,7 +51,10 @@ export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, f
     return [...(fav ? [{ kind: 'list' as const, info: fav }] : []), { kind: 'history' }, ...rest.map(info => ({ kind: 'list' as const, info })), { kind: 'new' }]
   }
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean)
-  const songs: LibraryRow[] = open.songs.flatMap((song, index) => {
+  const places = order ?? open.songs.map((_, i) => i)
+  const songs: LibraryRow[] = places.flatMap(index => {
+    const song = open.songs[index]
+    if (!song) return []
     const hay = `${songTitle(song)} ${whereOf(song.path, '')}`.toLowerCase()
     if (!words.every(w => hay.includes(w))) return []
     const at = open.plays?.[index]?.at

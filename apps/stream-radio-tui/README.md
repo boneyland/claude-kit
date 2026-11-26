@@ -110,16 +110,21 @@ A sort reorders what plays: it plays in that order afterwards, and songs added l
 | `a` | add to the queue: the picked songs, or on a list the whole list |
 | `A` | play next: the same, after the song playing |
 | `Delete` (or Backspace) | take the picked songs out of the list; the files stay. Recently played can't be edited. On a playlist at the top level, delete it, after asking |
+| `Alt-↑` `Alt-↓`, or `u` `d` | move the picked songs one place in the list's file; refused while the list is sorted, and in Recently played |
+| `S` | sort the open list by title, artist, album artist, album, or folder, then `custom order`, the order of the file |
+| `R` | the same sort the other way round (also the `↓` / `↑` after `sort:` on the tab row) |
 | `/` | filter the open list; `Enter` plays the list from the first match, `Esc` clears |
 | `Enter`, `Esc` | in the name prompt (New playlist, Rename): save the name, or leave it as it was |
+
+A sort is only a view: the file keeps the custom order you made, the sort is remembered for each playlist (in `tui-playlists.json` beside the TUI's other state; a rename carries it, a delete drops it), and a sorted playlist plays in the order shown. To move songs, go back to `custom order` with `S`; moving while sorted says so and changes nothing. Recently played is always newest first and has no sort or move.
 
 ## Mouse
 
 Everything the keys do, the mouse can do too:
 
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
-- **Drag:** in the Queue, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
-- **Tabs:** a click on `Files` or `Queue` switches; a click on `sort: …` sorts by the next field. In the Queue, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
+- **Drag:** in the Queue, or in a playlist's custom order, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
+- **Tabs:** a click on `Files` or `Queue` switches; a click on `sort: …` sorts by the next field. In the Queue or an open playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.

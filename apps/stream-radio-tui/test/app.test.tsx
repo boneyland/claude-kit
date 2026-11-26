@@ -1718,7 +1718,11 @@ describe('the Playlists tab', () => {
   const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
   const DEL = '\x1b[3~'
   const HISTORY = nodePath.join(STATE, 'history.jsonl')
-  afterEach(() => nodeFs.rmSync(HISTORY, { force: true }))
+  const REMEMBER = nodePath.join(STATE, 'tui-playlists.json')
+  afterEach(() => {
+    nodeFs.rmSync(HISTORY, { force: true })
+    nodeFs.rmSync(REMEMBER, { force: true })
+  })
   const m3u = (...songs: [string, string][]) => `#EXTM3U\n${songs.map(([p, t]) => `#EXTINF:-1,${t}\n${p}`).join('\n')}\n`
   const FAV = '★ Favourites'
 
@@ -1815,6 +1819,188 @@ describe('the Playlists tab', () => {
     await vi.waitFor(() => expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).not.toContain('r2.mp3'))
     expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toContain('r1.mp3')
     await vi.waitFor(() => expect(rowsText(lines())).not.toContain('Road two'))
+  })
+
+  describe('sort and move inside a playlist', () => {
+    const ALT_UP = '\x1b[1;3A'
+    const ALT_DOWN = '\x1b[1;3B'
+    const order = (file: string) => [...nodeFs.readFileSync(file, 'utf8').matchAll(/^\/m\/(\w+)\.mp3$/gm)].map(m => m[1])
+    const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+    // opens Road trip (r1, r2, r3), the cursor on its first song
+    async function road(files: Record<string, string> = FILES) {
+      const ui = await open(files)
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      return ui
+    }
+    const shown = (all: string[]) => ['Road one', 'Road two', 'Road three'].map(t => [t, lineOf(all, new RegExp(t))] as const).sort((a, b) => a[1] - b[1]).map(([t]) => t)
+
+    test('u, d and Alt-arrows rewrite the file order; the cursor and pick follow', async () => {
+      const { press, lines, lib } = await road()
+      await press('j', 'u')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r2', 'r1', 'r3']))
+      expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toContain('#EXTINF:-1,Road two\n/m/r2.mp3')
+      await vi.waitFor(() => expect(shown(lines())).toEqual(['Road two', 'Road one', 'Road three']))
+      await press('d', 'd')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r3', 'r2']))
+      await press(ALT_UP)
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3']))
+      await press(ALT_DOWN)
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r3', 'r2']))
+    })
+
+    test('the picked songs move together; a block at the end stays', async () => {
+      const { press, lines, lib } = await road()
+      await press('j', ' ')
+      await press('\x1b[1;2B')
+      await press('d')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3']))
+      await press('u')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r2', 'r3', 'r1']))
+      expect(status(lines())).toContain('2 picked')
+    })
+
+    test('Favourites moves too', async () => {
+      const { press, lines, lib } = await open()
+      await press(ENTER)
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('Fav B'))
+      await press('j', 'u')
+      await vi.waitFor(() => expect(order(lib.file(FAV))).toEqual(['b', 'a']))
+    })
+
+    test('a move applies by song, to the file as it is under the lock, not to stale places', async () => {
+      const { press, lines, lib } = await road()
+      // another program put a song first after the list was read
+      nodeFs.writeFileSync(lib.file('Road trip'), m3u(['/m/x.mp3', 'Extra'], ['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two'], ['/m/r3.mp3', 'Road three']))
+      await press('j', 'u')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['x', 'r2', 'r1', 'r3']))
+      expect(rowsText(lines())).toContain('Road two')
+    })
+
+    test('S cycles the fields then custom order without touching the file; R reverses', async () => {
+      const { press, lines, lib } = await road()
+      const was = nodeFs.readFileSync(lib.file('Road trip'), 'utf8')
+      expect(rowsText(lines())).toContain('sort: custom order')
+      await press('S')
+      expect(rowsText(lines())).toContain('sort: title')
+      expect(shown(lines())).toEqual(['Road one', 'Road three', 'Road two'])
+      await press('R')
+      expect(shown(lines())).toEqual(['Road two', 'Road three', 'Road one'])
+      expect(rowsText(lines())).toMatch(/sort: title ▾ ↑/)
+      for (const label of ['artist', 'album artist', 'album', 'folder']) {
+        await press('S')
+        expect(rowsText(lines())).toContain(`sort: ${label}`)
+      }
+      await press('S')
+      expect(rowsText(lines())).toContain('sort: custom order')
+      expect(shown(lines())).toEqual(['Road one', 'Road two', 'Road three'])
+      expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toBe(was)
+    })
+
+    test('a sort by a tag puts songs without it last', async () => {
+      const dir = nodeFs.mkdtempSync(nodePath.join(TMP, 'songs-'))
+      const song = (n: string) => nodePath.join(dir, `${n}.mp3`)
+      for (const n of ['a', 'b', 'c']) nodeFs.writeFileSync(song(n), '')
+      const artists: Record<string, string> = { [song('a')]: 'Zed', [song('b')]: '', [song('c')]: 'Amy' }
+      const tags = tagReader(async p => ({ title: '', artist: artists[p] ?? '', albumArtist: '', album: '' }))
+      const lib = library({ Mix: m3u([song('a'), 'Song A'], [song('b'), 'Song B'], [song('c'), 'Song C']) })
+      const ui = await show(100, PLAYING, '', '', { library: lib, tags })
+      await ui.press('\t')
+      await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+      await ui.press('j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Song C'))
+      await ui.press('S', 'S')
+      await vi.waitFor(() => {
+        const all = ui.lines()
+        expect(rowsText(all)).toContain('sort: artist')
+        expect(lineOf(all, /Song C/)).toBeLessThan(lineOf(all, /Song A/))
+        expect(lineOf(all, /Song A/)).toBeLessThan(lineOf(all, /Song B/))
+      })
+    })
+
+    test('moving while sorted is refused, says so, and changes nothing', async () => {
+      const { press, lines, lib } = await road()
+      const was = nodeFs.readFileSync(lib.file('Road trip'), 'utf8')
+      await press('S', 'S')
+      await press('u', 'd', ALT_UP)
+      expect(status(lines())).toContain('sorted by artist — S to custom order to move')
+      expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toBe(was)
+    })
+
+    const saved = () => JSON.parse(nodeFs.readFileSync(REMEMBER, 'utf8')).sorts
+    test('the sort is remembered per playlist and survives a restart', async () => {
+      const first = await road()
+      await first.press('S', 'R')
+      await vi.waitFor(() => expect(saved()).toEqual({ 'Road trip': { field: 'title', isReversed: true } }))
+      cleanup()
+      // a new run, on the same state folder and lists
+      const ui = await show(100, PLAYING, '', '', { library: { data: first.lib.data, every: first.lib.every } })
+      await ui.press('\t')
+      await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      expect(rowsText(ui.lines())).toContain('sort: title')
+      expect(shown(ui.lines())).toEqual(['Road two', 'Road three', 'Road one'])
+    })
+
+    test('a rename carries the sort over', async () => {
+      const { press, lines, lib } = await road()
+      await press('S', 'R')
+      await vi.waitFor(() => expect(saved()).toEqual({ 'Road trip': { field: 'title', isReversed: true } }))
+      await press('\x1b[D', 'm', 'j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/to: Road trip/))
+      await press('\x7f', '\x7f', '\x7f', '\x7f', 'X', ENTER)
+      await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Road X'))).toBe(true))
+      await vi.waitFor(() => expect(saved()).toEqual({ 'Road X': { field: 'title', isReversed: true } }))
+    })
+
+    test('a delete drops the sort', async () => {
+      const { press, lib } = await road()
+      await press('S')
+      await vi.waitFor(() => expect(saved()).toEqual({ 'Road trip': { field: 'title', isReversed: false } }))
+      await press('\x1b[D', 'm', 'j', 'j', 'j', 'j', ENTER, ENTER)
+      await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Road trip'))).toBe(false))
+      await vi.waitFor(() => expect(saved()).toEqual({}))
+    })
+
+    test('Enter on a song of a sorted list plays in the shown order from that song', async () => {
+      const { press, host, session, lib } = await road()
+      await press('S', 'R')
+      // shown: two, three, one; the cursor is on the first row
+      await press('j', ENTER)
+      const entries = [{ path: '/m/r2.mp3', title: 'Road two' }, { path: '/m/r3.mp3', title: 'Road three' }, { path: '/m/r1.mp3', title: 'Road one' }]
+      await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, entries, lib.file('Road trip'), 1))
+    })
+
+    test('a drag moves the song to where it is let go, in the file', async () => {
+      const { drag, where, lines, lib } = await road()
+      await drag(where('Road one'), where('Road three'))
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r2', 'r1', 'r3']))
+      await vi.waitFor(() => expect(shown(lines())).toEqual(['Road two', 'Road one', 'Road three']))
+    })
+
+    test('a drag while sorted changes nothing and says why', async () => {
+      const { press, drag, where, lines, lib } = await road()
+      const was = nodeFs.readFileSync(lib.file('Road trip'), 'utf8')
+      await press('S')
+      await drag(where('Road one'), where('Road two'))
+      expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toBe(was)
+      expect(status(lines())).toContain('sorted by title — S to custom order to move')
+    })
+
+    test('Recently played ignores S, R, u and d', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const text = [{ at: now - 3600, path: '/m/old.mp3', title: 'Old song' }, { at: now - 180, path: '/m/new.mp3', title: 'New song' }].map(j => JSON.stringify(j)).join('\n') + '\n'
+      nodeFs.writeFileSync(HISTORY, text)
+      const { press, lines } = await open()
+      await press('j', ENTER)
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('New song'))
+      await press('S', 'R', 'j', 'u', 'd', ALT_UP)
+      expect(rowsText(lines())).not.toContain('sort:')
+      expect(nodeFs.readFileSync(HISTORY, 'utf8')).toBe(text)
+      const all = lines()
+      expect(lineOf(all, /New song/)).toBeLessThan(lineOf(all, /Old song/))
+    })
   })
 
   test("Recently played: when each played, dimmed after the title; Delete doesn't edit it", async () => {

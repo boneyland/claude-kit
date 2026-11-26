@@ -164,6 +164,12 @@ describe('pick and move keys', () => {
     expect(keyAction('', key({ escape: true, meta: true }), 'list', PICKED)).toEqual({ kind: 'clearPick' })
     expect(keyAction('', key({ escape: true, meta: true }), 'list', PL)).toBeNull()
   })
+  test('u/d and Alt-↑/↓ move in the Playlists tab too, not in Files', () => {
+    const PLS = { tab: 'playlists' as const, hasPick: false }
+    expect(keyAction('u', key(), 'list', PLS)).toEqual({ kind: 'move', by: -1 })
+    expect(keyAction('d', key(), 'list', PLS)).toEqual({ kind: 'move', by: 1 })
+    expect(keyAction('', key({ downArrow: true, meta: true }), 'list', PLS)).toEqual({ kind: 'move', by: 1 })
+  })
   test('S and R sort', () => {
     expect(keyAction('S', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortNext' })
     expect(keyAction('R', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortReverse' })
@@ -177,14 +183,13 @@ describe('tabs and the Playlists tab', () => {
     expect(keyAction('', key({ tab: true, shift: true }), 'list', PLS)).toEqual({ kind: 'tab', dir: -1 })
     expect(keyAction('\t', key({ tab: true }), 'list')).toEqual({ kind: 'tab', dir: 1 })
   })
-  test('a, A, U and Delete act in Playlists; C, u and d do not', () => {
+  test('a, A, U and Delete act in Playlists; and C do not move or clear', () => {
     expect(keyAction('a', key(), 'list', PLS)).toEqual({ kind: 'add', where: 'end' })
     expect(keyAction('A', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'add', where: 'next' })
     expect(keyAction('U', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'folderUp' })
     expect(keyAction('', key({ delete: true }), 'list', PLS)).toEqual({ kind: 'remove' })
     expect(keyAction('', key({ backspace: true }), 'list', PLS)).toEqual({ kind: 'remove' })
     expect(keyAction('C', key({ shift: true }), 'list', PLS)).toBeNull()
-    expect(keyAction('d', key(), 'list', PLS)).toBeNull()
   })
   test('the name prompt edits a line, as the Files location does', () => {
     expect(keyAction('x', key(), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'insert', text: 'x' } })

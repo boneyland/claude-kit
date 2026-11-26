@@ -203,14 +203,16 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   if (key.tab) return { kind: 'tab', dir: key.shift ? -1 : 1 }
   const isQueue = ctx.tab === 'queue'
   const canRemove = isQueue || ctx.tab === 'playlists'
+  // the Queue and a playlist's songs move
+  const canMove = canRemove
   // Ink calls Esc meta too, so it is read first
   if (key.escape) return ctx.hasPick ? { kind: 'clearPick' } : null
   if ((key.upArrow || key.downArrow) && key.shift) return { kind: 'extendPick', by: key.upArrow ? -1 : 1 }
-  if ((key.upArrow || key.downArrow) && key.meta) return isQueue ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
+  if ((key.upArrow || key.downArrow) && key.meta) return canMove ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
   // Ink names the key most terminals send for Backspace `delete` too
   if (key.delete || key.backspace) return canRemove ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
-  if (isQueue && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
+  if (canMove && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
   // plain letters only: Ctrl-A or Alt-S are someone else's chords
   const isPlain = !key.ctrl && !key.meta
   if (isPlain && !isQueue && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }

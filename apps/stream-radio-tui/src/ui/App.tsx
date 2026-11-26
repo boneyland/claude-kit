@@ -28,6 +28,7 @@ import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { stepTab, Tabs, type Tab } from './Tabs'
 import { NamePrompt, PlaylistsView } from './PlaylistsView'
 import { usePlaylistsTab } from '../library/libraryKeys'
+import { songTitle } from '../library/useLibrary'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
 import { filterFlat, flatRows } from '../queue/rows'
@@ -150,7 +151,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMenu({ items, at, choice: 0 })
     setMode('menu')
   }
-  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice, allFavourite })
+  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice, allFavourite }, book)
   // The tab showing: its selection, rows and scroll.
   const isQueueTab = () => tabRef.current === 'queue'
   const isPlaylistsTab = () => tabRef.current === 'playlists'
@@ -743,9 +744,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
               ? queueTab.sort.field
                 ? SORT_LABEL[queueTab.sort.field]
                 : 'as queued'
-              : undefined
+              : tab === 'playlists'
+                ? pl.sortLabel
+                : undefined
         }
-        isReversed={tab === 'queue' && q.kind === 'playlist' && queueTab.sort.field ? queueTab.sort.isReversed : undefined}
+        isReversed={tab === 'queue' && q.kind === 'playlist' ? (queueTab.sort.field ? queueTab.sort.isReversed : undefined) : tab === 'playlists' ? pl.isReversed : undefined}
         onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
         onReverse={() => dismissMenu() || handle({ kind: 'sortReverse' })}
       />
@@ -773,12 +776,15 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           rows={pl.rows}
           selected={plSel.cursor}
           picked={new Set(plSel.picked)}
+          dropAt={pl.drag?.to}
           height={listHeight}
           width={listWidth}
           first={plFirst}
           now={pl.lib.now}
           isFavourite={song => favs.has(song.path)}
           onRow={onPlRow}
+          onRowDrag={pl.onRowDrag}
+          onRowRelease={pl.onRowRelease}
           onMenu={openMenu}
           onWheel={onPlWheel}
         />
@@ -810,7 +816,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const statusLine =
     tab === 'queue' && drag && drag.to !== drag.from
       ? `Let go to move ${Math.max(1, picked.length)} song${picked.length > 1 ? 's' : ''} ${drag.to < rows.length ? `above ${rows[drag.to].number}. ${rows[drag.to].title}` : 'to the end'}.`
-      : (tab === 'queue' ? picked : tab === 'playlists' ? plSel.picked : fSel.picked).length
+      : tab === 'playlists' && pl.drag && pl.drag.to !== pl.drag.from
+        ? `Let go to move ${Math.max(1, plSel.picked.length)} song${plSel.picked.length > 1 ? 's' : ''} ${(r => (r?.kind === 'song' ? `above ${songTitle(r.song)}` : 'to the end'))(pl.rows[pl.drag.to])}.`
+        : (tab === 'queue' ? picked : tab === 'playlists' ? plSel.picked : fSel.picked).length
         ? `${(tab === 'queue' ? picked : tab === 'playlists' ? plSel.picked : fSel.picked).length} picked · Space picks/unpicks · Esc clears`
         : notice
   return (

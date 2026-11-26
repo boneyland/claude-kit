@@ -1,24 +1,30 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { Host } from '@core/host'
-import { FAVOURITES, removeSongs, type Song } from '@core/library'
+import { FAVOURITES, moveSongs, removeSongs, songKey, songsOf, type Song } from '@core/library'
 import { planList, playList } from '@core/library-actions'
 import { clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
+import { baseName } from '@core/nowplaying'
 import { addToQueue, playEntries } from '@core/player'
+import { moveBy, moveTo, type Moved } from '@core/queue'
 import type { QueueEntry } from '@core/stored'
 import type { TuiConfig } from '../config'
 import type { Action, Mode } from '../keys'
 import type { Hit } from '../mouse/Clickable'
 import { useRefState } from '../ui/hooks'
+import { nextSortField, SORT_LABEL, sortOrder } from '../queue/sort'
 import { edit, type Line } from '../ui/lineEdit'
 import { confirmMenu, favouritesMenu, historyMenu, listMenu, songMenu, type MenuItem } from '../ui/Menu'
 import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, type Held, type Selection } from '../ui/selection'
+import type { TagBook } from '../ui/tagbook'
 import type { Turns } from '../ui/turns'
-import { HISTORY, libraryRows, useLibrary, type Library, type LibraryRow } from './useLibrary'
+import { loadSorts, saveSorts, type PlaylistSort, type PlaylistSorts } from './remember'
+import { HISTORY, libraryRows, songTitle, useLibrary, type Library, type LibraryRow } from './useLibrary'
 
 const BUSY = 'The playlists are busy; try again.'
 const HISTORY_READ_ONLY = "Recently played can't be edited; Clear it from its menu."
 const GONE = 'That playlist is gone.'
 const PICK_INSIDE = 'Pick songs inside a playlist.'
+const whenSorted = (sort: PlaylistSort) => `sorted by ${SORT_LABEL[sort.field]} — S to custom order to move`
 
 // What the tab needs of the App around it.
 export type PlaylistsUi = {
@@ -54,6 +60,14 @@ export type PlaylistsTab = {
   // the songs * and P act on inside an open list: the picked, else the
   // cursor's (none on ../); undefined at the top level, where they act on nothing
   chosen(): Song[] | undefined
+  // the open playlist's sort on the tab row: its field (custom order for none)
+  // and which way round (none for custom order); undefined with no editable list open
+  sortLabel: string | undefined
+  isReversed: boolean | undefined
+  // during a drag of songs: the row, and the row they would land above (rows.length: the end)
+  drag: { from: number; to: number } | undefined
+  onRowDrag(at: number, dy: number): void
+  onRowRelease(): void
   // does what `a` means in this tab; false for an action it leaves to the App
   handle(a: Action): boolean
 }
@@ -66,7 +80,7 @@ const listName = (r: LibraryRow | undefined) => (r?.kind === 'list' ? r.info.nam
 // The Playlists tab: the library, its rows, cursor, pick, scroll and filter,
 // and what its keys do.
 // playing: what plays; a list showing is checked again when it changes.
-export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, playing: string, { act, inTurn }: Turns, ui: PlaylistsUi): PlaylistsTab {
+export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, playing: string, { act, inTurn }: Turns, ui: PlaylistsUi, book: TagBook): PlaylistsTab {
   const lib = useLibrary(h, isShown, () => {
     setFilterState('')
     if (ui.mode() === 'filter') ui.setMode('list')
@@ -79,8 +93,38 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
   const [filterRef, setFilterState] = useRefState('')
   const [promptRef, setPrompt] = useRefState<{ for: Prompt; line: Line } | undefined>(undefined)
+  // a drag of songs: the row pressed and where they would land
+  const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
+  // a press on a picked row selects it only when let go without a drag
+  const pendingSelect = useRef<number | undefined>(undefined)
+  // each playlist's sort, a view: the file keeps its own order
+  const [sortsRef, setSorts] = useRefState<PlaylistSorts>({})
+  const saving = useRef<Promise<void>>(Promise.resolve())
+  useEffect(() => {
+    void loadSorts(h).then(was => setSorts({ ...was, ...sortsRef.current }))
+  }, [h])
   const filter = filterRef.current.trim()
-  const rows = useMemo(() => libraryRows(lib, filter), [lib.lists, lib.isLoaded, lib.open, filter])
+  const o = lib.open
+  const sort = o && o.kind !== 'history' ? sortsRef.current[o.name] : undefined
+  const tagsSeen = book.version()
+  const order = useMemo(
+    () =>
+      o && sort
+        ? sortOrder(
+            o.songs.map(song => {
+              const tags = book.get(song.path)
+              return { path: song.path, title: tags?.title || songTitle(song), tags }
+            }),
+            sort.field,
+            sort.isReversed,
+          )
+        : undefined,
+    [o, sort, book, tagsSeen],
+  )
+  // tags are read for a sort by them
+  const needKey = o && sort && sort.field !== 'folder' ? o.songs.map(song => song.path).join('\n') : ''
+  useEffect(() => book.need(needKey ? needKey.split('\n') : []), [book, needKey])
+  const rows = useMemo(() => libraryRows(lib, filter, order), [lib.lists, lib.isLoaded, lib.open, filter, order])
   const key = useMemo(() => rows.map(rowKey).join('\n'), [rows])
 
   const sel = (): Selection => clamp(current(selRef.current, key) ?? NO_SELECTION, rows.length)
@@ -118,11 +162,81 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   // The songs the action takes: the picked rows, else the cursor's.
   const chosenSongs = () => targets(sel()).flatMap(i => (rows[i]?.kind === 'song' ? [rows[i]] : [])) as Extract<LibraryRow, { kind: 'song' }>[]
 
+  // the open list's songs as shown, and a song's place among them (index: in the file)
+  const shownSongs = () => (o ? (order ? order.map(i => o.songs[i]!) : o.songs) : [])
+  const shownIndex = (index: number) => (order ? order.indexOf(index) : index)
   const playFrom = (index: number) => {
     const o = lib.open
     if (!o) return
-    act(() => playEntries(h, config, o.songs.map(entryOf), o.file ?? '', index))
+    act(() => playEntries(h, config, shownSongs().map(entryOf), o.file ?? '', shownIndex(index)))
   }
+  const setSortsSaved = (next: PlaylistSorts) => {
+    setSorts(next)
+    saving.current = saving.current.then(() => saveSorts(h, next))
+  }
+  // `name` was renamed: its sort goes with it; or deleted: its sort goes
+  const carrySort = (name: string, to?: string) => {
+    const { [name]: was, ...rest } = sortsRef.current
+    if (!was) return
+    setSortsSaved(to ? { ...rest, [to]: was } : rest)
+  }
+  // No sort: the file's own order (custom order).
+  const sortBy = (next: PlaylistSort | undefined) => {
+    if (!o || o.kind === 'history') return
+    const { [o.name]: _was, ...rest } = sortsRef.current
+    setSortsSaved(next ? { ...rest, [o.name]: next } : rest)
+    setTop(undefined)
+    // the rows change places: the cursor on the first song
+    putCursor(1)
+  }
+  const sortNext = () => {
+    const field = nextSortField(sort?.field)
+    sortBy(field ? { field, isReversed: false } : undefined)
+  }
+  const sortReverse = () => sortBy({ field: sort?.field ?? 'title', isReversed: !sort?.isReversed })
+
+  // The picked songs (or the cursor's) moved as `make` says, in the file as it
+  // is under the lock: by which songs they are, not the places they had when
+  // keys were pressed, so a change by another program is neither lost nor undone.
+  const moveChosen = (make: (keys: string[], from: number[], keyOf: (s: Song) => string) => Moved) => {
+    const o = lib.open
+    if (!o || o.kind === 'history') return
+    if (sort) return ui.say(whenSorted(sort))
+    const was = sel()
+    const moving = chosenSongs().map(r => r.song)
+    if (!moving.length) return
+    const cursorRow = rows[was.cursor]
+    const cursorSong = cursorRow?.kind === 'song' ? cursorRow.song : undefined
+    act(() =>
+      inTurn(async () => {
+        const home = await h.home().catch(() => '')
+        const keyOf = (s: Song) => songKey(s.path, home)
+        const wanted = new Set(moving.map(keyOf))
+        const done = await editPlaylist(h, o.name, f => {
+          const keys = songsOf(f).map(s => keyOf(s))
+          const from = keys.flatMap((k, i) => (wanted.has(k) ? [i] : []))
+          return from.length ? moveSongs(f, make(keys, from, keyOf).order) : f
+        })
+        if (done === 'busy') return BUSY
+        // the rows as they will be once the list is read again, the pick and cursor on the songs moved
+        const after = libraryRows({ lists: lib.lists, isLoaded: lib.isLoaded, open: { ...o, songs: songsOf(done) } }, filterRef.current.trim())
+        const placeOf = (key: string) => after.findIndex(r => r.kind === 'song' && keyOf(r.song) === key)
+        const picked = after.flatMap((r, i) => (r.kind === 'song' && wanted.has(keyOf(r.song)) ? [i] : []))
+        const at = cursorSong ? placeOf(keyOf(cursorSong)) : -1
+        const cursor = at >= 0 ? at : was.cursor
+        setSelState({ cursor, anchor: cursor, picked: was.picked.length ? picked : [], forKey: after.map(rowKey).join('\n') })
+        setTop(undefined)
+        lib.refresh()
+      }),
+    )
+  }
+  const moveBySteps = (by: 1 | -1) => moveChosen((keys, from) => moveBy(keys.length, from, by))
+  // the songs above `target` (none: at the end)
+  const moveAbove = (target: Song | undefined) =>
+    moveChosen((keys, from, keyOf) => {
+      const to = target ? keys.indexOf(keyOf(target)) : keys.length
+      return to < 0 ? { order: keys.map((_, i) => i), picked: from } : moveTo(keys.length, from, to)
+    })
   // list: the one a menu named; else the cursor's at the top level, or the songs inside one
   // songs: the ones a song's menu was opened on
   const add = (where: 'end' | 'next', list?: string, given?: readonly Song[]) => {
@@ -180,9 +294,28 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const handleList = (a: Action): boolean => {
     const at = sel().cursor
     switch (a.kind) {
-      case 'playList':
-        act(() => playList(h, config, a.name, 0))
+      case 'playList': {
+        const { name } = a
+        const by = sortsRef.current[name]
+        if (!by) act(() => playList(h, config, name, 0))
+        else
+          // a sorted list plays in the order it shows
+          act(async () => {
+            const plan = await planList(h, name)
+            if (typeof plan === 'string') return plan
+            const entries = plan.entries
+            const shown = sortOrder(
+              entries.map(e => {
+                const tags = book.get(e.path)
+                return { path: e.path, title: tags?.title || e.title || baseName(e.path), tags }
+              }),
+              by.field,
+              by.isReversed,
+            )
+            return playEntries(h, config, shown.map(i => entries[i]!), plan.source, 0)
+          })
         return true
+      }
       case 'rename':
         if (a.name !== FAVOURITES && a.name !== HISTORY) ask({ kind: 'rename', from: a.name })
         return true
@@ -194,6 +327,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
           act(() =>
             inTurn(async () => {
               const said = await deletePlaylist(h, name)
+              if (!said) carrySort(name)
               lib.refresh()
               return said || `Deleted "${name}".`
             }),
@@ -225,6 +359,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         if (p.for.kind === 'rename' && name === p.for.from) return ''
         const said = p.for.kind === 'new' ? await createPlaylist(h, name, []) : await renamePlaylist(h, p.for.from, name)
         if (said) return said
+        if (p.for.kind === 'rename') carrySort(p.for.from, name)
         lib.refresh()
         return p.for.kind === 'new' ? `Made the playlist "${name}".` : `Renamed "${p.for.from}" to "${name}".`
       }),
@@ -269,7 +404,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         case 'submit': {
           ui.setMode('list')
           // the filter as typed: keys in one go may not have redrawn the rows yet
-          const first = libraryRows(lib, filterRef.current.trim()).find(r => r.kind === 'song')
+          const first = libraryRows(lib, filterRef.current.trim(), order).find(r => r.kind === 'song')
           if (first?.kind === 'song') playFrom(first.index)
           else ui.say('Nothing matches.')
           return true
@@ -317,17 +452,21 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         if (lib.open || a.songs || a.isPlaying) return false
         ui.say(PICK_INSIDE)
         return true
-      // sorting and moving inside a playlist come later; nothing to clear here
+      // sorting and moving are of a playlist's songs (not Recently played's, nor the lists)
       case 'sortNext':
       case 'sortReverse':
+        if (o && o.kind !== 'history') (a.kind === 'sortNext' ? sortNext : sortReverse)()
+        return true
       case 'move':
+        moveBySteps(a.by)
+        return true
+      // nothing to clear here
       case 'clearQueue':
         return true
     }
     return false
   }
 
-  const o = lib.open
   const heading = !o
     ? 'Playlists'
     : filter
@@ -350,7 +489,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         const s = sel()
         const chosen = s.picked.includes(at) ? s.picked : [at]
         const songs = chosen.flatMap(i => (rows[i]?.kind === 'song' ? [(rows[i] as Extract<LibraryRow, { kind: 'song' }>).song] : []))
-        return songMenu({ all: o.songs, source: o.file ?? '', index: row.index, songs, isFavourite: ui.allFavourite(songs), ...(o.kind === 'history' ? {} : { list: o.name }) })
+        return songMenu({ all: shownSongs(), source: o.file ?? '', index: shownIndex(row.index), songs, isFavourite: ui.allFavourite(songs), ...(o.kind === 'history' ? {} : { list: o.name }) })
       }
       if (row?.kind === 'history') return historyMenu(HISTORY)
       if (row?.kind === 'list') return row.info.name === FAVOURITES ? favouritesMenu(FAVOURITES) : listMenu(row.info.name)
@@ -364,10 +503,38 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       if (hit.mods.ctrl) return setSel(toggle(sel(), at))
       if (hit.mods.shift || hit.mods.alt) return setSel(extend(sel(), at))
       const row = rows[at]
+      pendingSelect.current = undefined
+      // a picked row may be about to be dragged with the rest
+      if (row?.kind === 'song' && !hit.isDouble && o && o.kind !== 'history' && sel().picked.includes(at)) {
+        pendingSelect.current = at
+        return setSel({ ...sel(), cursor: at })
+      }
       setSel(select(sel(), at))
       if (row?.kind === 'song') return hit.isDouble ? enter(at) : undefined
       hasOpened.current = row?.kind === 'up' || row?.kind === 'list' || row?.kind === 'history'
       enter(at)
+    },
+    sortLabel: o && o.kind !== 'history' ? (sort ? SORT_LABEL[sort.field] : 'custom order') : undefined,
+    isReversed: sort?.isReversed,
+    drag: dragRef.current,
+    // dy: rows from the row pressed
+    onRowDrag: (at, dy) => {
+      pendingSelect.current = undefined
+      if (!o || o.kind === 'history' || rows[at]?.kind !== 'song') return
+      if (sort) return ui.say(whenSorted(sort))
+      // not above ../
+      setDrag({ from: at, to: Math.max(1, Math.min(at + dy, rows.length)) })
+    },
+    onRowRelease: () => {
+      const drag = dragRef.current
+      setDrag(undefined)
+      if (pendingSelect.current !== undefined) {
+        setSel(select(sel(), pendingSelect.current))
+        pendingSelect.current = undefined
+      }
+      if (!drag || drag.to === drag.from) return
+      const target = rows[drag.to]
+      moveAbove(target?.kind === 'song' ? target.song : undefined)
     },
     chosen: () => (o ? chosenSongs().map(r => r.song) : undefined),
     handle,
