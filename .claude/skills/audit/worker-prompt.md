@@ -17,7 +17,8 @@ This is an audit of the whole component as it stands, not of a diff.
   anything that installs or downloads. Other audits run in parallel with you
   on a laptop that freezes under memory pressure; reading is all this needs.
   You may use Read, Grep, Glob, `ls`, `wc`, `git ls-files`, `git log` and
-  `git show`.
+  `git show`, and a one-line `node -e` to try a regex or a small pure helper
+  on a sample input — nothing that imports the project or starts a process.
 - **Concrete or nothing.** Report a finding only when you can name the input or
   state that goes wrong and what the wrong result is. An idea you can't make
   concrete, or aren't fairly sure of, is left out — not listed as "possible".
@@ -32,6 +33,11 @@ This is an audit of the whole component as it stands, not of a diff.
 3. Work through each checklist in order — correctness, security, efficiency,
    cleanups, docs-drift, repo-rules — check by check. For each check, look for
    it across the whole component before moving on.
+   For what the Claude Code engine's API does (`$.session.messages`, `$.ui.*`,
+   hook events and their limits), grep the generated types in
+   `plugins/*/.claude-plugin/types/claude-code/index.d.ts` — git-ignored, so
+   `git ls-files` won't list them, and ~15k lines, so grep for the call and
+   read around it rather than reading the file. Don't guess an API's limits.
 4. Before reporting a finding, open the lines again and follow the path you
    claim fails. When the finding depends on code outside the component (a
    `core/` helper, a caller), read that code too.
