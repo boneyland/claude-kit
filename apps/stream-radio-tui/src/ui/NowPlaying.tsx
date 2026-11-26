@@ -118,8 +118,8 @@ function Column({ view, duration, width, full, second, time, isFavourite, onActi
   )
 }
 
-// What plays, ▶ or ⏸ before it, then ★ when it is a favourite (a dim ☆ when
-// not): a click on either toggles it.
+// What plays, with ▶ or ⏸ and then ★ before it: ★ when it is a favourite, a
+// dim ☆ when not; a click on the star toggles it.
 export function Title({ playing, isPaused, isFavourite, onAction }: { playing: string; isPaused: boolean; isFavourite?: boolean; onAction?(a: Action): void }) {
   // the star is the third cell, after the ▶ and a space
   const onClick = (hit: Hit) => void (playing && hit.x === 2 && onAction?.({ kind: 'favourite', isPlaying: true }))
