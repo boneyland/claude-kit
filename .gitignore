@@ -11,7 +11,8 @@ notifier/*.app/
 
 # local only
 CLAUDE.md
-.claude/
+**/.claude/*
+!.claude/skills/
 superpowers/
 .superpowers/
 
