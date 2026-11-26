@@ -188,11 +188,14 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (lists) {
     const arg = (lists[2] ?? '').trim()
     if (arg === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
+    // one pair of quotes around a name goes
+    const name = arg.replace(/^(['"])(.*)\1$/, '$2').trim()
+    if (name === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
     if (lists[1] === 'play') {
       // a URL or a path plays as it would without `play`; a bare name is a playlist
-      return /^(['"]|\.{1,2}\/|\/|~|[a-z][a-z0-9+.-]*:\/\/)/i.test(arg) ? resolveTarget(arg, where) : { kind: 'playList', list: arg }
+      return /[/~]|^\.|^[a-z][a-z0-9+.-]*:\/\//i.test(name) ? resolveTarget(arg, where) : { kind: 'playList', list: name }
     }
-    return { kind: lists[1] === 'add' ? 'listAdd' : 'listRemove', list: arg }
+    return { kind: lists[1] === 'add' ? 'listAdd' : 'listRemove', list: name }
   }
   const rep = /^repeat(?:\s+(.*))?$/.exec(word)
   if (rep) {

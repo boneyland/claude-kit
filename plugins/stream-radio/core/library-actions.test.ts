@@ -81,6 +81,9 @@ test('add and remove say what happened', async () => {
   expect(await addTo(h, 'Nope', [song])).toBe('No playlist called Nope.')
   expect(await removeFrom(h, 'Nope', [song])).toBe('No playlist called Nope.')
   expect(await addTo(h, 'fav', [song])).toBe(`Added to ${FAVOURITES}.`)
+  expect(await removeFrom(h, 'fav', [song])).toBe(`Removed from ${FAVOURITES}.`)
+  expect(await addTo(h, 'history', [song])).toBe('No playlist called history.')
+  expect(await removeFrom(h, 'history', [song])).toBe('No playlist called history.')
 })
 
 test('playList: unknown name, empty history', async () => {
@@ -99,4 +102,11 @@ test('historyText: newest first, title or file name', () => {
   expect(historyText(plays, now)).toBe('just now  b.mp3\n10 min ago  Song A')
   expect(historyText(plays, now, 1)).toBe('just now  b.mp3')
   expect(historyText([], now)).toBe('Nothing played yet.')
+})
+
+test('playList finds a saved name in any case, and fav by alias', async () => {
+  const { h } = hostOf({ [`${LIB}/Road trip.m3u`]: '#EXTM3U\n' })
+  const config = { volume: 50, player: 'mpv', androidClient: false }
+  expect(await playList(h, config, 'ROAD trip')).toBe('Road trip is empty.')
+  expect(await playList(h, config, 'fav')).toBe(`${FAVOURITES} is empty.`)
 })

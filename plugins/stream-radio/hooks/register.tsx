@@ -308,7 +308,8 @@ export const register: Register = (on, options) => {
       }
       if (parsed.kind === 'playList') {
         const h = hostFor($, config)
-        return { text: (await playList(h, config, parsed.list)) || `Playing ${parsed.list}.` }
+        void playList(h, config, parsed.list).then(note => note && h.toast(note), error => h.toast(failedText(error)))
+        return { text: `Playing ${parsed.list}.` }
       }
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.

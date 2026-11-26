@@ -64,7 +64,9 @@ test('/stream play <list> plays a saved list; history plays newest first', async
   const clock = mock.clock(on)
   const world = engine(on)
   world.files[`${LIB}/Road trip.m3u`] = '#EXTM3U\n/home/me/Music/a.mp3\n/home/me/Music/b.mp3\n'
-  expect(text(await $.command.run({ command: 'stream', args: 'play nope' } as never))).toContain('No playlist called nope.')
+  await $.command.run({ command: 'stream', args: 'play nope' } as never)
+  await clock.advance(10)
+  expect(world.toasts).toContain('No playlist called nope.')
   await $.command.run({ command: 'stream', args: 'play road trip' } as never)
   await clock.advance(10)
   let q = JSON.parse(world.files[QUEUE_JSON]!) as { entries: { path: string }[]; source: string }
@@ -77,6 +79,17 @@ test('/stream play <list> plays a saved list; history plays newest first', async
   q = JSON.parse(world.files[QUEUE_JSON]!) as typeof q
   expect(q.entries.map(e => e.path)).toEqual(['/m/new.mp3', '/m/old.mp3'])
   expect(q.source).toBe('')
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('/stream play fav goes through the alias', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on)
+  world.files[FAV] = '#EXTM3U\n/home/me/Music/a.mp3\n'
+  await $.command.run({ command: 'stream', args: 'play fav' } as never)
+  await clock.advance(10)
+  expect((JSON.parse(world.files[QUEUE_JSON]!) as { entries: { path: string }[] }).entries.map(e => e.path)).toEqual(['/home/me/Music/a.mp3'])
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

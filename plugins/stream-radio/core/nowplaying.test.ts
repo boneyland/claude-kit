@@ -207,3 +207,16 @@ test('library commands', () => {
   expect(parseArgs('song.mp3', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/song.mp3', isLocal: true })
   for (const bad of ['add', 'remove ', 'play']) expect(parseArgs(bad, '').kind).toBe('error')
 })
+
+test('play: paths and quoted names', () => {
+  const where = { home: '/home/me', cwd: '/home/me/Music' }
+  expect(parseArgs('play Music/a.mp3', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/Music/a.mp3', isLocal: true })
+  expect(parseArgs('play .hidden.mp3', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/.hidden.mp3', isLocal: true })
+  expect(parseArgs('play Road trip', '', where)).toEqual({ kind: 'playList', list: 'Road trip' })
+  expect(parseArgs('play "Road trip"', '', where)).toEqual({ kind: 'playList', list: 'Road trip' })
+  expect(parseArgs('play "./x.mp3"', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/x.mp3', isLocal: true })
+  expect(parseArgs("add 'Road trip'", '')).toEqual({ kind: 'listAdd', list: 'Road trip' })
+  expect(parseArgs('remove "Road trip"', '')).toEqual({ kind: 'listRemove', list: 'Road trip' })
+  expect(parseArgs('play fav', '')).toEqual({ kind: 'playList', list: 'fav' })
+  expect(parseArgs('play history', '')).toEqual({ kind: 'playList', list: 'history' })
+})
