@@ -8,7 +8,7 @@ import type { Elements, EngineInterface, RenderElement, Timer } from 'claude-cod
 import type { ChecklistSong, ShownList } from '../types'
 import { FAVOURITES, songKey, songsOf, whenPlayed } from '../core/library'
 import { GONE, MARK_GLYPH, checklistRows, playingSong, toggleFavourite, toggleIn } from '../core/library-actions'
-import { createPlaylist, listMtime, listPlaylists, readHistory, readPlaylist } from '../core/libraryFile'
+import { createPlaylist, listMtime, playlistNames, readHistory, readPlaylist } from '../core/libraryFile'
 import { baseName, fit, textWidth } from '../core/nowplaying'
 import { paths } from '../core/paths'
 import { readPlace } from '../core/storedFile'
@@ -81,7 +81,8 @@ async function look($: EngineInterface, h: Host) {
   const dirMtime = await h.fs.stat(await h.libraryDir()).then(s => s.mtimeMs, () => 0)
   const isDirChanged = dirMtime !== seen.dir
   if (isDirChanged) {
-    const names = (await listPlaylists(h)).map(l => l.name).filter(n => n !== FAVOURITES)
+    // names only: every write changes the folder's mtime, and the picker needs no counts
+    const names = (await playlistNames(h)).filter(n => n !== FAVOURITES)
     seen.dir = dirMtime
     if (!same(names, await read($, listNames))) await update($, listNames, () => names)
   }

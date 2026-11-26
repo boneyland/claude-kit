@@ -118,6 +118,8 @@ test('whenPlayed boundaries', () => {
   expect(whenPlayed(s(new Date(2026, 10, 25, 21, 4)), now)).toBe('yesterday 21:04')
   expect(whenPlayed(s(new Date(2026, 10, 23, 9, 5)), now)).toBe('Mon 09:05')
   expect(whenPlayed(s(new Date(2026, 10, 16, 9, 5)), now)).toBe('2026-11-16')
+  // under 7×24 h ago but 7 calendar days back: dated, not a weekday that reads as today
+  expect(whenPlayed(s(new Date(2026, 10, 19, 23, 0)), s(new Date(2026, 10, 26, 8, 0)))).toBe('2026-11-19')
 })
 
 test('only youtube hosts key by video id', () => {

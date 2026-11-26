@@ -2026,6 +2026,13 @@ describe('the Playlists tab', () => {
       await vi.waitFor(() => expect(shown(lines())).toEqual(['Road two', 'Road one', 'Road three']))
     })
 
+    test('a drag onto the second copy of a song listed twice drops above that copy', async () => {
+      const twice = m3u(['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two'], ['/m/r1.mp3', 'Road one again'], ['/m/r3.mp3', 'Road three'])
+      const { drag, where, lib } = await road({ ...FILES, 'Road trip': twice })
+      await drag(where('Road three'), where('Road one again'))
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3', 'r1']))
+    })
+
     test('a drag while sorted changes nothing and says why', async () => {
       const { press, drag, where, lines, lib } = await road()
       const was = nodeFs.readFileSync(lib.file('Road trip'), 'utf8')

@@ -1315,6 +1315,8 @@ export async function locate(h: Host, args: string, fallback: string) {
       if (whole) return whole
       // `play <name>` plays <name> as a path when it is a song file or is there
       if (parsed.kind === 'playList' && (isPlayable(baseName(parsed.list)) || (await there(parsed.list)))) parsed = resolveTarget(parsed.list, where)
+      // `play ./a.mp3` or `play ~/x.mp3` failed only for want of the folders
+      else if (parsed.kind === 'error') parsed = parseArgs(args, fallback, where)
     } else parsed = parseArgs(args, fallback, where)
   }
   if (parsed.kind === 'play' && parsed.isLocal && !(await h.fs.exists(parsed.url).catch(() => false))) {

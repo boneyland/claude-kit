@@ -262,6 +262,6 @@ export function whenPlayed(at: number, now: number): string {
   const clock = `${two(t.getHours())}:${two(t.getMinutes())}`
   if (days === 0) return `${Math.floor(diff / 3600)} h ago`
   if (days === 1) return `yesterday ${clock}`
-  if (diff < 7 * 86_400) return `${DAYS[t.getDay()]} ${clock}`
+  if (days < 7) return `${DAYS[t.getDay()]} ${clock}`
   return `${t.getFullYear()}-${two(t.getMonth() + 1)}-${two(t.getDate())}`
 }

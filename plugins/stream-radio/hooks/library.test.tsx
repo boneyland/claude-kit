@@ -7,14 +7,14 @@ const LIB = '/home/me/.local/share/stream-radio/playlists'
 const FAV = `${LIB}/★ Favourites.m3u`
 const HISTORY = `${DATA}/history.jsonl`
 
-function engine(on: On) {
+function engine(on: On, more: string[] = []) {
   on('command.register', () => ({ value: { command: 'stream' } }) as never)
   on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   return fakeMpv(on, {
     title: 'Song',
     props: { 'time-pos': 3, duration: true },
-    list: path => (path === LIB ? [{ name: 'Road trip.m3u', kind: 'file' }, { name: 'Empty.m3u', kind: 'file' }] : undefined) as never,
+    list: path => (path === LIB ? [{ name: 'Road trip.m3u', kind: 'file' }, { name: 'Empty.m3u', kind: 'file' }, ...more.map(n => ({ name: `${n}.m3u`, kind: 'file' }))] : undefined) as never,
   })
 }
 
@@ -81,6 +81,24 @@ test('/stream play <list> plays a saved list; history plays newest first', async
   q = JSON.parse(world.files[QUEUE_JSON]!) as typeof q
   expect(q.entries.map(e => e.path)).toEqual(['/m/new.mp3', '/m/old.mp3'])
   expect(q.source).toBe('')
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
+
+test('/stream play ./file and ~/file play; a playlist with ~ in its name plays as a list', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.cwd', () => ({ value: '/repo' }) as never)
+  const world = engine(on, ['Lo~fi'])
+  world.files['/repo/song.mp3'] = 'x'
+  world.files['/home/me/Music/x.mp3'] = 'x'
+  expect(text(await $.command.run({ command: 'stream', args: 'play ./song.mp3' } as never))).not.toContain('full path')
+  await clock.advance(10)
+  expect(world.urls.at(-1)).toBe('/repo/song.mp3')
+  expect(text(await $.command.run({ command: 'stream', args: 'play ~/Music/x.mp3' } as never))).not.toContain('home folder')
+  await clock.advance(10)
+  expect(world.urls.at(-1)).toBe('/home/me/Music/x.mp3')
+  world.files[`${LIB}/Lo~fi.m3u`] = '#EXTM3U\n/home/me/Music/a.mp3\n'
+  expect(text(await $.command.run({ command: 'stream', args: 'play Lo~fi' } as never))).toContain('Playing Lo~fi.')
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })

@@ -590,9 +590,10 @@ export const register: Register = (on, options) => {
               const h = hostFor($, config)
               const parsed = await locate(h, value.trim(), '')
               if (parsed.kind === 'play') return (later(playSource(h, config, parsed.url)), '')
-              // `play <playlist>` and `history` play that list as the queue
-              if (parsed.kind === 'playList' || parsed.kind === 'history') {
-                const plan = await planList(h, parsed.kind === 'history' ? 'history' : parsed.list)
+              // `history` lists the plays, as /stream history does; `play history` plays them
+              if (parsed.kind === 'history') return historyText(await readHistory(h), Math.floor((await h.now()) / 1000))
+              if (parsed.kind === 'playList') {
+                const plan = await planList(h, parsed.list)
                 if (typeof plan === 'string') return plan
                 later(playEntries(h, config, plan.entries, plan.source, 0))
                 return `Playing ${plan.name}.`

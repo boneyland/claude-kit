@@ -167,6 +167,21 @@ test('the picker shows a playlist, Favourites or Recently played; a click plays 
   await clock.advance(10)
 })
 
+test('history in the URL field lists the plays and leaves the queue alone', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on)
+  await stopped($, world, clock)
+  const at = Math.floor(Date.now() / 1000)
+  world.files[HISTORY] = `${JSON.stringify({ at: at - 120, path: '/m/new.mp3', title: 'New' })}\n`
+  const was = world.files[QUEUE_JSON]
+  const pane = await $.ui.mount(PANE)
+  await pane.input({ key: 'url', text: 'history' })
+  await clock.advance(10)
+  expect(await pane.find({ type: 'Text', text: /New/ })).toBeTruthy()
+  expect(world.files[QUEUE_JSON]).toBe(was)
+  await pane.unmount()
+})
+
 test('the panel polls its lists every 2 s while open, and starts at the queue each time', async ($, on) => {
   const clock = mock.clock(on)
   const lists = ['Road trip']

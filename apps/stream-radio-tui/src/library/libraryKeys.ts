@@ -18,6 +18,9 @@ import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, t
 import type { TagBook } from '../ui/tagbook'
 import type { Turns } from '../ui/turns'
 import { loadSorts, saveSorts, sortOf, withSort, type PlaylistSort, type PlaylistSorts } from './remember'
+
+// a row of an open list: the song and its index in the list
+type Pick = { index: number; song: Song }
 import { HISTORY, libraryRows, songTitle, useLibrary, type Library, type LibraryRow } from './useLibrary'
 
 const HISTORY_READ_ONLY = "Recently played can't be edited; Clear it from its menu."
@@ -201,7 +204,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   // is under the lock: by which rows they are, found again by song when the
   // file changed (placesOf), so a change by another program is neither lost nor
   // undone, and moving one copy of a song listed twice moves only that copy.
-  const moveChosen = (make: (keys: string[], from: number[], keyOf: (s: Song) => string) => Moved) => {
+  const moveChosen = (make: (keys: string[], from: number[], placeOf: (pick: Pick) => number | undefined) => Moved) => {
     const o = lib.open
     if (!o || o.kind === 'history') return
     if (sort) return ui.say(whenSorted(sort))
@@ -213,15 +216,14 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     act(() =>
       inTurn(async () => {
         const home = await h.home().catch(() => '')
-        const keyOf = (s: Song) => songKey(s.path, home)
         // the moved songs' and the cursor's song indexes once moved
         let moved: number[] = []
         let cursorAt = -1
         const done = await editPlaylist(h, o.name, f => {
-          const keys = songsOf(f).map(s => keyOf(s))
+          const keys = songsOf(f).map(s => songKey(s.path, home))
           const from = placesOf(f, picks, home).sort((a, b) => a - b)
           if (!from.length) return f
-          const { order } = make(keys, from, keyOf)
+          const { order } = make(keys, from, pick => placesOf(f, [pick], home)[0])
           moved = from.map(i => order.indexOf(i))
           const c = cursorPick ? placesOf(f, [cursorPick], home)[0] : undefined
           cursorAt = c === undefined ? -1 : order.indexOf(c)
@@ -241,11 +243,12 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     )
   }
   const moveBySteps = (by: 1 | -1) => moveChosen((keys, from) => moveBy(keys.length, from, by))
-  // the songs above `target` (none: at the end)
-  const moveAbove = (target: Song | undefined) =>
-    moveChosen((keys, from, keyOf) => {
-      const to = target ? keys.indexOf(keyOf(target)) : keys.length
-      return to < 0 ? { order: keys.map((_, i) => i), picked: from } : moveTo(keys.length, from, to)
+  // the songs above the row `target` (none: at the end): that copy of a song
+  // listed twice, not the first
+  const moveAbove = (target: Pick | undefined) =>
+    moveChosen((keys, from, placeOf) => {
+      const to = target ? placeOf(target) : keys.length
+      return to === undefined ? { order: keys.map((_, i) => i), picked: from } : moveTo(keys.length, from, to)
     })
   // list: the one a menu named; else the cursor's at the top level, or the songs inside one
   // songs: the ones a song's menu was opened on
@@ -555,7 +558,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       }
       if (!drag || drag.to === drag.from) return
       const target = rows[drag.to]
-      moveAbove(target?.kind === 'song' ? target.song : undefined)
+      moveAbove(target?.kind === 'song' ? { index: target.index, song: target.song } : undefined)
     },
     chosen: () => (o ? chosenSongs().map(r => r.song) : undefined),
     handle,
