@@ -112,7 +112,7 @@ export function useHome(h: Host): string {
 }
 
 // The playing file's length in seconds, asked of mpv (the core keeps only
-// whether there is one); 0 when unknown or live. A playlist's next title
+// whether there is one); 0 when unknown or live. The queue's next title
 // arrives while mpv is still opening the file and has no length yet, so it is
 // asked again at each position tick until mpv knows it. A live stream has no
 // position (elapsed -1), so it is never asked.
@@ -134,7 +134,7 @@ export function useDuration(h: Host, playing: string, elapsed: number): number {
   return duration
 }
 
-// What is playing, as the files and art see it: a playlist's current entry,
+// What is playing, as the files and art see it: the queue's current entry,
 // else the last URL or path played. A path is a file, anything else a URL.
 export function trackOf(view: Pick<View, 'queue' | 'lastUrl'>): { file?: string; url?: string } {
   const q = view.queue

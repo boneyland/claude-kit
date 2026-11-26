@@ -1,20 +1,23 @@
 import type { Key } from 'ink'
+import type { Song } from '@core/library'
 import type { Tab } from './ui/Tabs'
 import type { Edit } from './ui/lineEdit'
 
-// list: keys are commands; filter and open: keys edit a line of text (open's
-// with a cursor, in the Files heading); help:
-// the key list shows, and keys scroll or close it; menu: a row's menu is
-// open, and keys choose from it.
-export type Mode = 'list' | 'filter' | 'open' | 'help' | 'menu'
+// list: keys are commands; filter, open and name: keys edit a line of text
+// (open's with a cursor, in the Files heading; name's a playlist's name, new or
+// renamed, with a cursor); help: the key list shows, and keys scroll or close
+// it; menu: a row's menu is open, and keys choose from it; checklist: Add to
+// playlist's checklist is open, and keys choose and toggle its rows.
+export type Mode = 'list' | 'filter' | 'open' | 'name' | 'help' | 'menu' | 'checklist'
 
 export type Action =
   | { kind: 'up' }
   | { kind: 'down' }
   // PgUp, PgDn (by: page), Home, End (by: all): the cursor that far up (-1) or down
   | { kind: 'jump'; by: 'page' | 'all'; dir: 1 | -1 }
-  // play the selected song, or open or shut the selected folder
-  | { kind: 'enter' }
+  // play the selected song, or open or shut the selected folder; play: from a
+  // Playlists song's menu, the list as it was when the menu opened, and the song
+  | { kind: 'enter'; play?: { songs: readonly Song[]; source: string; index: number } }
   | { kind: 'shutFolder' }
   | { kind: 'openFolder' }
   | { kind: 'pause' }
@@ -42,13 +45,14 @@ export type Action =
   | { kind: 'lineEdit'; edit: Edit }
   | { kind: 'submit' }
   | { kind: 'cancel' }
-  // to the other tab
-  | { kind: 'tab' }
+  // to the next tab (1) or the one before (-1)
+  | { kind: 'tab'; dir: 1 | -1 }
   // the picked songs (or the cursor's) one place up (-1) or down
   | { kind: 'move'; by: 1 | -1 }
-  | { kind: 'remove' }
+  // from: a Playlists song's menu, the songs it was opened on and their list
+  | { kind: 'remove'; from?: { list: string; picks: readonly { index: number; song: Song }[] } }
   // the whole queue, stopping the player; from a key, only when pressed twice
-  | { kind: 'clearPlaylist'; isSure?: boolean }
+  | { kind: 'clearQueue'; isSure?: boolean }
   // the cursor a row up or down, picking the rows from the anchor
   | { kind: 'extendPick'; by: 1 | -1 }
   | { kind: 'togglePick' }
@@ -56,14 +60,33 @@ export type Action =
   // sort by the next field; by this one, the other way round
   | { kind: 'sortNext' }
   | { kind: 'sortReverse' }
-  // Files: the picked rows (or the cursor's) to the queue's end, or to play next
-  | { kind: 'add'; where: 'end' | 'next' }
+  // Files: the picked rows (or the cursor's) to the queue's end, or to play
+  // next; Playlists, from a list's menu: `list`, the list it was opened on
+  | { kind: 'add'; where: 'end' | 'next'; list?: string; songs?: readonly Song[] }
   // Files: the folder above
   | { kind: 'folderUp' }
   // Files, at the folder of the song playing
   | { kind: 'goPlaying' }
   // the cursor's row's menu
   | { kind: 'menu' }
+  // Playlists, from a list's menu (`name`: the list it was opened on, so a
+  // poll that moves the rows meanwhile can't change which): play it from its
+  // first song; rename it; delete it, or clear Recently played (each asks
+  // first, then isSure)
+  | { kind: 'playList'; name: string }
+  | { kind: 'rename'; name: string }
+  | { kind: 'deleteList'; name: string; isSure?: boolean }
+  | { kind: 'clearHistory'; isSure?: boolean }
+  // * and P: the picked rows' songs (or the cursor's; with no row, the song
+  // playing) in or out of Favourites, or the checklist of playlists for them.
+  // From a menu, `songs`: what it was opened on (toExpand: Files rows, a
+  // folder still to be expanded into its songs); `isPlaying`: the song
+  // playing, whatever the rows
+  | ({ kind: 'favourite' } & LibraryOn)
+  | ({ kind: 'addToList' } & LibraryOn)
+
+// What favourite and addToList act on; neither field: the rows, as the keys do.
+export type LibraryOn = { songs?: readonly Song[]; toExpand?: boolean; isPlaying?: boolean }
 
 // How far b and f jump, as the mod's panel does.
 export const SEEK_SECONDS = 10
@@ -149,7 +172,7 @@ function lineKey(input: string, key: Keys): Edit | null {
 export type KeyContext = { tab: Tab; hasPick: boolean }
 
 // What a key press means in `mode`; null for a key that means nothing there.
-export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext = { tab: 'playlist', hasPick: false }): Action | null {
+export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext = { tab: 'queue', hasPick: false }): Action | null {
   if (key.ctrl && input === 'c') return { kind: 'interrupt' }
   if (mode === 'help') {
     if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
@@ -157,8 +180,8 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
     if (key.downArrow || input === 'j') return { kind: 'down' }
     return jumpOf(key)
   }
-  if (mode === 'menu') {
-    if (key.escape || input === 'm' || input === 'q') return { kind: 'cancel' }
+  if (mode === 'menu' || mode === 'checklist') {
+    if (key.escape || input === 'q' || (mode === 'menu' ? input === 'm' : input === 'P')) return { kind: 'cancel' }
     if (key.upArrow || input === 'k') return { kind: 'up' }
     if (key.downArrow || input === 'j') return { kind: 'down' }
     if (key.return) return { kind: 'submit' }
@@ -167,7 +190,7 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
-    if (mode === 'open') {
+    if (mode === 'open' || mode === 'name') {
       const e = lineKey(input, key)
       if (e) return { kind: 'lineEdit', edit: e }
     }
@@ -176,26 +199,31 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
     if (key.ctrl || key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null
     return { kind: 'type', text: input }
   }
-  // Tab and Shift-Tab: with two tabs, either goes to the other
-  if (key.tab) return { kind: 'tab' }
-  const isPlaylist = ctx.tab === 'playlist'
+  // Tab and Shift-Tab (Ink reports it as Tab with shift)
+  if (key.tab) return { kind: 'tab', dir: key.shift ? -1 : 1 }
+  const isQueue = ctx.tab === 'queue'
+  const canRemove = isQueue || ctx.tab === 'playlists'
+  // the Queue and a playlist's songs move
+  const canMove = canRemove
   // Ink calls Esc meta too, so it is read first
   if (key.escape) return ctx.hasPick ? { kind: 'clearPick' } : null
   if ((key.upArrow || key.downArrow) && key.shift) return { kind: 'extendPick', by: key.upArrow ? -1 : 1 }
-  if ((key.upArrow || key.downArrow) && key.meta) return isPlaylist ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
+  if ((key.upArrow || key.downArrow) && key.meta) return canMove ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
   // Ink names the key most terminals send for Backspace `delete` too
-  if (key.delete || key.backspace) return isPlaylist ? { kind: 'remove' } : null
+  if (key.delete || key.backspace) return canRemove ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
-  if (isPlaylist && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
+  if (canMove && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
   // plain letters only: Ctrl-A or Alt-S are someone else's chords
   const isPlain = !key.ctrl && !key.meta
-  if (isPlain && !isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
+  if (isPlain && !isQueue && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
   if (isPlain && input === 'm') return { kind: 'menu' }
-  if (isPlain && !isPlaylist && input === 'U') return { kind: 'folderUp' }
+  if (isPlain && input === '*') return { kind: 'favourite' }
+  if (isPlain && input === 'P') return { kind: 'addToList' }
+  if (isPlain && !isQueue && input === 'U') return { kind: 'folderUp' }
   if (isPlain && input === 'G') return { kind: 'goPlaying' }
   if (isPlain && input === 'S') return { kind: 'sortNext' }
   if (isPlain && input === 'R') return { kind: 'sortReverse' }
-  if (isPlain && isPlaylist && input === 'C') return { kind: 'clearPlaylist' }
+  if (isPlain && isQueue && input === 'C') return { kind: 'clearQueue' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
   const jump = jumpOf(key)

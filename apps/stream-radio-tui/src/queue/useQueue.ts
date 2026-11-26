@@ -10,13 +10,13 @@ import type { Turns } from '../ui/turns'
 import { filterFlat, flatRows, type FlatRow } from './rows'
 import { nextSortField, sortOrder, type SortField } from './sort'
 
-// The Playlist's rows as a key (see Held): each one's file or URL (a chapter's name), in order.
+// The Queue's rows as a key (see Held): each one's file or URL (a chapter's name), in order.
 const keyOf = (queue: Queue, rows: readonly FlatRow[]) => rows.map(r => queue.paths[r.index] || queue.items[r.index]).join('\n')
 
-// The Playlist's last sort, for R and the tab row; no field: as queued.
-export type PlaylistSort = { field?: SortField; isReversed: boolean }
+// The Queue's last sort, for R and the tab row; no field: as queued.
+export type QueueSort = { field?: SortField; isReversed: boolean }
 
-export type Playlist = {
+export type QueueTab = {
   // the rows showing: all of the queue, or what the filter matches
   rows: FlatRow[]
   // the playing song's place in rows; -1 when it isn't showing
@@ -29,7 +29,7 @@ export type Playlist = {
   // the view centred on the cursor, as the keys move it
   top: number | undefined
   setTop(top: number | undefined): void
-  sort: PlaylistSort
+  sort: QueueSort
   // whether the rows are queue entries (not a video's chapters) to edit
   isEditable(): boolean
   // The edits, each in its turn, from the queue as the store has it then:
@@ -46,10 +46,10 @@ export type Playlist = {
   refilter(): void
 }
 
-// The Playlist tab's rows, selection, scroll and sort, and its edits.
-export function usePlaylist(h: Host, config: TuiConfig, view: View, book: TagBook, home: string, { act, inTurn }: Turns): Playlist {
+// The Queue tab's rows, selection, scroll and sort, and its edits.
+export function useQueue(h: Host, config: TuiConfig, view: View, book: TagBook, home: string, { act, inTurn }: Turns): QueueTab {
   const [selRef, setSelState] = useRefState<Held | undefined>(undefined)
-  const [sortRef, setSort] = useRefState<PlaylistSort>({ isReversed: false })
+  const [sortRef, setSort] = useRefState<QueueSort>({ isReversed: false })
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
 
   // Worked out again only when the queue, the filter or the tags change, not

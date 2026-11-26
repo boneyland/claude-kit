@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import type { Host, PlayerKeys, StateStore, WatchStream } from '@core/host'
 import { NO_QUEUE, NO_RESUME } from '@core/player'
-import { stateDir } from '@core/paths'
+import { libraryDir, stateDir } from '@core/paths'
 
 const CONNECT_MS = 2000
 const OVERALL_MS = 3000
@@ -217,6 +217,7 @@ export function nodeHost(events: Host['events'], state: StateStore, opts: HostOp
     home: async () => env.HOME ?? '',
     cwd: async () => process.cwd(),
     dataDir: () => stateDir(name => Promise.resolve(env[name])),
+    libraryDir: () => libraryDir(name => Promise.resolve(env[name])),
     vars: state,
     log: (text, to) => opts.onLog?.(text, to),
     toast: text => opts.onToast?.(text),

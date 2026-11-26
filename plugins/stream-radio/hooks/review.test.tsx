@@ -70,7 +70,7 @@ test('a reconnect while a playlist is listed does not drop the play asked for', 
   await clock.advance(10)
 })
 
-test('a playlist file that cannot be written leaves nothing connecting, and says so', async ($, on) => {
+test('a queue file that cannot be written leaves nothing connecting, and says so', async ($, on) => {
   const clock = mock.clock(on)
   const world = engine(on, {
     run: argv => (argv[0] === 'mv' && argv[3] === QUEUE_M3U ? Promise.resolve({ exitCode: 1, stdout: '' }) : undefined),
@@ -79,7 +79,7 @@ test('a playlist file that cannot be written leaves nothing connecting, and says
   await $.command.run({ command: 'stream', args: LIVE } as never)
   await clock.advance(10)
   expect(world.launches).toHaveLength(0)
-  expect(world.toasts.some(t => t.includes('could not write the playlist file'))).toBe(true)
+  expect(world.toasts.some(t => t.includes('could not write the queue file'))).toBe(true)
   // idle again: Play, not connecting…
   expect(await footer($)).toBe('▶ Play radio')
   // no session reconnects to it

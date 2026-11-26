@@ -44,11 +44,12 @@ const MIN_ART_ROWS = 4
 
 // onAction: a control clicked, as its key; onVolume: the volume bar clicked.
 // onSeek: the waveform or the bar clicked, at this share of the song.
-type Props = { view: View; duration: number; width: number; full?: Full; onAction?(a: Action): void; onVolume?(level: number): void; onSeek?(share: number): void }
+// isFavourite: the song playing is in Favourites (★ by its title, else ☆).
+type Props = { view: View; duration: number; width: number; full?: Full; isFavourite?: boolean; onAction?(a: Action): void; onVolume?(level: number): void; onSeek?(share: number): void }
 
 // What plays, how far it is, and the volume, repeat and shuffle. Narrow, in
 // five lines; with `full`, down the whole column.
-export function NowPlaying({ view, duration, width, full, onAction, onVolume, onSeek }: Props) {
+export function NowPlaying({ view, duration, width, full, isFavourite, onAction, onVolume, onSeek }: Props) {
   const { playing, isPaused, chapter, elapsed, lastUrl, resumeAt } = view
   const place = lastUrl ? resumable(resumeAt, lastUrl) : ''
   const second = playing
@@ -63,12 +64,10 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
   const isLive = elapsed < 0 || duration <= 0
   const time = !playing ? <Text> </Text> : isLive ? <Text>♪ live</Text> : <Progress elapsed={elapsed} duration={duration} width={width} onSeek={onSeek} />
   if (full)
-    return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} onAction={onAction} onVolume={onVolume} onSeek={onSeek} />
+    return <Column view={view} duration={duration} width={width} full={full} second={second} time={time} isFavourite={isFavourite} onAction={onAction} onVolume={onVolume} onSeek={onSeek} />
   return (
     <Box flexDirection="column" width={width}>
-      <Text bold wrap="truncate-end">
-        {playing ? `${isPaused ? '⏸' : '▶'} ${playing}` : 'Nothing playing.'}
-      </Text>
+      <Title playing={playing} isPaused={isPaused} isFavourite={isFavourite} onAction={onAction} />
       <Text dimColor wrap="truncate-end">
         {second || ' '}
       </Text>
@@ -83,11 +82,11 @@ export function NowPlaying({ view, duration, width, full, onAction, onVolume, on
   )
 }
 
-type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: React.ReactNode } & Pick<Props, 'onAction' | 'onVolume' | 'onSeek'>
+type ColumnProps = { view: View; duration: number; width: number; full: Full; second: string; time: React.ReactNode } & Pick<Props, 'isFavourite' | 'onAction' | 'onVolume' | 'onSeek'>
 
 // Title, second line, tags and settings at the top; the waveform, or the bar,
 // at the foot.
-function Column({ view, duration, width, full, second, time, onAction, onVolume, onSeek }: ColumnProps) {
+function Column({ view, duration, width, full, second, time, isFavourite, onAction, onVolume, onSeek }: ColumnProps) {
   const { playing, isPaused, elapsed } = view
   const tags = [full.tags.artist, full.tags.album].filter(Boolean).join(' · ')
   const hasWave = !!full.peaks && full.peaks.peak.length > 0 && duration > 0 && elapsed >= 0
@@ -96,9 +95,7 @@ function Column({ view, duration, width, full, second, time, onAction, onVolume,
   return (
     <Box flexDirection="column" width={width} height={full.height}>
       {pixels && artRows >= MIN_ART_ROWS ? <Art art={pixels.art} cols={width} rows={artRows} graphics={pixels.graphics} /> : null}
-      <Text bold wrap="truncate-end">
-        {playing ? `${isPaused ? '⏸' : '▶'} ${playing}` : 'Nothing playing.'}
-      </Text>
+      <Title playing={playing} isPaused={isPaused} isFavourite={isFavourite} onAction={onAction} />
       <Text dimColor wrap="truncate-end">
         {second || ' '}
       </Text>
@@ -118,6 +115,23 @@ function Column({ view, duration, width, full, second, time, onAction, onVolume,
         time
       )}
     </Box>
+  )
+}
+
+// What plays, ▶ or ⏸ before it, then ★ when it is a favourite (a dim ☆ when
+// not): a click on either toggles it.
+function Title({ playing, isPaused, isFavourite, onAction }: { playing: string; isPaused: boolean; isFavourite?: boolean; onAction?(a: Action): void }) {
+  // the star is the third cell, after the ▶ and a space
+  const onClick = (hit: Hit) => void (playing && hit.x === 2 && onAction?.({ kind: 'favourite', isPlaying: true }))
+  return (
+    <Clickable onClick={onClick}>
+      <Text bold wrap="truncate-end">
+        {/* children as they are, not in a fragment: Text cleans only the strings it is given */}
+        {playing ? `${isPaused ? '⏸' : '▶'} ` : 'Nothing playing.'}
+        {playing ? isFavourite ? '★' : <Text dimColor>☆</Text> : null}
+        {playing ? ` ${playing}` : null}
+      </Text>
+    </Clickable>
   )
 }
 

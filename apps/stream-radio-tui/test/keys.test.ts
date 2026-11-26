@@ -139,17 +139,17 @@ describe('keyAction in the key list', () => {
 })
 
 describe('pick and move keys', () => {
-  const PL = { tab: 'playlist' as const, hasPick: false }
-  const PICKED = { tab: 'playlist' as const, hasPick: true }
+  const PL = { tab: 'queue' as const, hasPick: false }
+  const PICKED = { tab: 'queue' as const, hasPick: true }
   const FILES = { tab: 'files' as const, hasPick: false }
-  test('Alt-↑/↓ and u/d move, in the Playlist', () => {
+  test('Alt-↑/↓ and u/d move, in the Queue', () => {
     expect(keyAction('', key({ upArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: -1 })
     expect(keyAction('', key({ downArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: 1 })
     expect(keyAction('u', key(), 'list', PL)).toEqual({ kind: 'move', by: -1 })
     expect(keyAction('d', key(), 'list', PL)).toEqual({ kind: 'move', by: 1 })
     expect(keyAction('d', key(), 'list', FILES)).toBeNull()
   })
-  test('Delete (and Backspace) removes, in the Playlist', () => {
+  test('Delete (and Backspace) removes, in the Queue', () => {
     expect(keyAction('', key({ delete: true }), 'list', PL)).toEqual({ kind: 'remove' })
     expect(keyAction('', key({ backspace: true }), 'list', PL)).toEqual({ kind: 'remove' })
     expect(keyAction('', key({ delete: true }), 'list', FILES)).toBeNull()
@@ -164,16 +164,69 @@ describe('pick and move keys', () => {
     expect(keyAction('', key({ escape: true, meta: true }), 'list', PICKED)).toEqual({ kind: 'clearPick' })
     expect(keyAction('', key({ escape: true, meta: true }), 'list', PL)).toBeNull()
   })
+  test('u/d and Alt-↑/↓ move in the Playlists tab too, not in Files', () => {
+    const PLS = { tab: 'playlists' as const, hasPick: false }
+    expect(keyAction('u', key(), 'list', PLS)).toEqual({ kind: 'move', by: -1 })
+    expect(keyAction('d', key(), 'list', PLS)).toEqual({ kind: 'move', by: 1 })
+    expect(keyAction('', key({ downArrow: true, meta: true }), 'list', PLS)).toEqual({ kind: 'move', by: 1 })
+  })
   test('S and R sort', () => {
     expect(keyAction('S', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortNext' })
     expect(keyAction('R', key({ shift: true }), 'list', PL)).toEqual({ kind: 'sortReverse' })
   })
 })
 
+describe('tabs and the Playlists tab', () => {
+  const PLS = { tab: 'playlists' as const, hasPick: false }
+  test('Tab goes to the next tab, Shift-Tab (Ink: tab with shift) to the one before', () => {
+    expect(keyAction('\t', key({ tab: true }), 'list', PLS)).toEqual({ kind: 'tab', dir: 1 })
+    expect(keyAction('', key({ tab: true, shift: true }), 'list', PLS)).toEqual({ kind: 'tab', dir: -1 })
+    expect(keyAction('\t', key({ tab: true }), 'list')).toEqual({ kind: 'tab', dir: 1 })
+  })
+  test('a, A, U and Delete act in Playlists; and C do not move or clear', () => {
+    expect(keyAction('a', key(), 'list', PLS)).toEqual({ kind: 'add', where: 'end' })
+    expect(keyAction('A', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'add', where: 'next' })
+    expect(keyAction('U', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'folderUp' })
+    expect(keyAction('', key({ delete: true }), 'list', PLS)).toEqual({ kind: 'remove' })
+    expect(keyAction('', key({ backspace: true }), 'list', PLS)).toEqual({ kind: 'remove' })
+    expect(keyAction('C', key({ shift: true }), 'list', PLS)).toBeNull()
+  })
+  test('the name prompt edits a line, as the Files location does', () => {
+    expect(keyAction('x', key(), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'insert', text: 'x' } })
+    expect(keyAction('', key({ leftArrow: true }), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'left' } })
+    expect(keyAction('', key({ backspace: true }), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'erase' } })
+    expect(keyAction('\r', key({ return: true }), 'name')).toEqual({ kind: 'submit' })
+    expect(keyAction('', key({ escape: true }), 'name')).toEqual({ kind: 'cancel' })
+    expect(keyAction('q', key(), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'insert', text: 'q' } })
+  })
+})
+
+describe('favourite and Add to playlist', () => {
+  test('* favourites and P adds to a playlist, in every tab', () => {
+    for (const tab of ['files', 'queue', 'playlists'] as const) {
+      const ctx = { tab, hasPick: false }
+      expect(keyAction('*', key({ shift: true }), 'list', ctx)).toEqual({ kind: 'favourite' })
+      expect(keyAction('P', key({ shift: true }), 'list', ctx)).toEqual({ kind: 'addToList' })
+      expect(keyAction('*', key({ shift: true }), 'list', { tab, hasPick: true })).toEqual({ kind: 'favourite' })
+    }
+    expect(keyAction('P', key({ meta: true, shift: true }), 'list')).toBeNull()
+  })
+  test('the checklist: arrows choose, Enter toggles, Esc, q and P close it', () => {
+    expect(keyAction('', key({ upArrow: true }), 'checklist')).toEqual({ kind: 'up' })
+    expect(keyAction('j', key(), 'checklist')).toEqual({ kind: 'down' })
+    expect(keyAction('\r', key({ return: true }), 'checklist')).toEqual({ kind: 'submit' })
+    expect(keyAction('', key({ escape: true }), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('q', key(), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('P', key({ shift: true }), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('*', key({ shift: true }), 'checklist')).toBeNull()
+    expect(keyAction('x', key(), 'checklist')).toBeNull()
+  })
+})
+
 describe('chords are not letters', () => {
   test('Ctrl or Alt with a, A, S or R does nothing', () => {
     const FILES = { tab: 'files' as const, hasPick: false }
-    const PL = { tab: 'playlist' as const, hasPick: false }
+    const PL = { tab: 'queue' as const, hasPick: false }
     expect(keyAction('a', key({ ctrl: true }), 'list', FILES)).toBeNull()
     expect(keyAction('A', key({ meta: true, shift: true }), 'list', FILES)).toBeNull()
     expect(keyAction('S', key({ meta: true, shift: true }), 'list', PL)).toBeNull()

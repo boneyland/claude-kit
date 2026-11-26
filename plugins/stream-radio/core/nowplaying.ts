@@ -106,7 +106,7 @@ export function stepVolume(level: number, dir: 1 | -1): number {
   return at <= LOWEST ? 0 : Math.max(LOWEST, Math.min(at - 1, Math.round(at / STEP_RATIO)))
 }
 
-// Whether the playlist starts over at its end (all), the song plays again (one),
+// Whether the queue starts over at its end (all), the song plays again (one),
 // or playback ends (off).
 export type Repeat = 'all' | 'one' | 'off'
 export const nextRepeat = (r: Repeat): Repeat => (r === 'all' ? 'one' : r === 'one' ? 'off' : 'all')
@@ -129,13 +129,20 @@ export type Command =
   | { kind: 'seek'; seconds: number; isRelative?: true }
   // url: an http(s) URL, or an absolute path when isLocal
   | { kind: 'play'; url: string; isLocal?: true }
+  // the song playing, in or out of Favourites
+  | { kind: 'fav' }
+  // list: a playlist's name as typed (fav for Favourites)
+  | { kind: 'listAdd' | 'listRemove'; list: string }
+  // list: a playlist's name as typed, fav, or history
+  | { kind: 'playList'; list: string }
+  | { kind: 'history' }
   | { kind: 'error'; text: string }
 
 // Where a local path is read from: the home folder for `~`, the session's folder
 // for a relative path.
 export type Where = { home: string; cwd: string }
 
-const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | seek [+|-]<m:ss> | shuffle | repeat [all | one | off] | panel | stop'
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | seek [+|-]<m:ss> | shuffle | repeat [all | one | off] | panel | stop | fav | add <playlist> | remove <playlist> | play <playlist> | history'
 
 // A URL, or a local file, folder or playlist as an absolute path: `~/…`,
 // `/…`, `file://…` or relative to the session's folder. Quotes around it go.
@@ -175,6 +182,23 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (word === 'prev' || word === 'previous') return { kind: 'prev' }
   if (word === 'panel') return { kind: 'panel' }
   if (word === 'shuffle') return { kind: 'shuffle' }
+  if (word === 'fav') return { kind: 'fav' }
+  if (word === 'history') return { kind: 'history' }
+  const lists = /^(add|remove|play)(?:\s+(.*))?$/.exec(word)
+  if (lists) {
+    const arg = (lists[2] ?? '').trim()
+    if (arg === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
+    // one pair of quotes around a name goes
+    const name = arg.replace(/^(['"])(.*)\1$/, '$2').trim()
+    if (name === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
+    if (lists[1] === 'play') {
+      // a URL or a path plays as it would without `play` (a `~` counts only
+      // alone or as `~/`; `Lo~fi` is a name); a bare name is a
+      // playlist here, and locate() plays it as a file when it is one
+      return /\/|^~$|^\.|^[a-z][a-z0-9+.-]*:\/\//i.test(name) ? resolveTarget(arg, where) : { kind: 'playList', list: name }
+    }
+    return { kind: lists[1] === 'add' ? 'listAdd' : 'listRemove', list: name }
+  }
   const rep = /^repeat(?:\s+(.*))?$/.exec(word)
   if (rep) {
     const mode = (rep[1] ?? '').trim()
@@ -207,7 +231,7 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   return resolveTarget(target, where)
 }
 
-// The last part of a path or URL: a local playlist entry's name when its file
+// The last part of a path or URL: a local queue entry's name when its file
 // has no title tag.
 export const baseName = (path: string) => path.replace(/\/+$/, '').split('/').pop() || path
 
@@ -296,7 +320,7 @@ export function marquee(text: string, width: number, tick: number, chars = SCROL
   return out + ' '.repeat(width - used)
 }
 
-// A row of the panel's playlist: a folder, open or shut, or an entry to play.
+// A row of the panel's queue: a folder, open or shut, or an entry to play.
 // number counts the entries within their own folder; index is mpv's.
 export type TreeRow =
   | { kind: 'folder'; path: string; name: string; depth: number; count: number; isOpen: boolean; hasCurrent: boolean }
@@ -312,10 +336,10 @@ export function foldersOf(path: string, root: string): string[] {
   return parts.map((_, i) => `${root}/${parts.slice(0, i + 1).join('/')}`)
 }
 
-// The playlist as rows: entries under `root` grouped by their folders, in the
+// The queue as rows: entries under `root` grouped by their folders, in the
 // order mpv plays them, with the folders in `open` showing what they hold.
 // Without a root (a stream, a playlist file) the rows are the plain list.
-export function playlistRows(items: readonly string[], paths: readonly string[], root: string, open: ReadonlySet<string>, current: number): TreeRow[] {
+export function queueRows(items: readonly string[], paths: readonly string[], root: string, open: ReadonlySet<string>, current: number): TreeRow[] {
   const top: Node = { path: root, name: '', count: 0, hasCurrent: false, children: [] }
   const byPath = new Map<string, Node>()
   items.forEach((_, index) => {
@@ -353,7 +377,7 @@ export function playlistRows(items: readonly string[], paths: readonly string[],
 }
 
 // The entries whose name or folder holds every word of `text`, any case, as a
-// plain list in play order: numbered by place in the playlist, each with the
+// plain list in play order: numbered by place in the queue, each with the
 // folder it is in under `root` (empty at the top).
 export function filterRows(items: readonly string[], paths: readonly string[], root: string, text: string): TreeRow[] {
   const words = text.toLowerCase().split(/\s+/).filter(Boolean)

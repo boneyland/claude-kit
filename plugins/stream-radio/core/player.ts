@@ -11,6 +11,7 @@ import {
   foldersOf,
   metaValue,
   parseArgs,
+  resolveTarget,
   plain,
   type PlayerEvent,
   repeatOf,
@@ -19,6 +20,7 @@ import {
   WATCHED,
 } from './nowplaying'
 import { expandSource, isListedUrl, isNetwork, MAX_SONGS, videoOf } from './expand'
+import { installHistoryScript } from './history'
 import { isPlayable, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
@@ -101,7 +103,7 @@ export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
       if (!(await mpv(h, command))) settingRepeat = undefined
     }
   }
-  return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
+  return mode === 'all' ? 'Repeat: the whole queue.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
 }
 
 export const SAVE_MS = 10_000
@@ -318,7 +320,7 @@ let pending: Pending | undefined
 // mode or SETTING_REPEAT_MS pass.
 let settingRepeat: { mode: Repeat; until: number } | undefined
 const SETTING_REPEAT_MS = 2000
-// Whether this session is reordering the playlist: its moves are not read one
+// Whether this session is reordering the queue: its moves are not read one
 // by one. Edits run one at a time (edit), so one flag is enough.
 let isReordering = false
 // The Intent id of the player followed: another means a new start is under
@@ -892,12 +894,14 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         await refreshFromStored(h)
         startPoller(h, config)
         const why = error instanceof Error ? error.message : String(error)
-        h.log(`stream-radio: could not write the playlist file: ${why}`)
-        h.toast(`stream failed: could not write the playlist file${why ? ` (${plain(why).slice(0, 80)})` : ''}.`)
+        h.log(`stream-radio: could not write the queue file: ${why}`)
+        h.toast(`stream failed: could not write the queue file${why ? ` (${plain(why).slice(0, 80)})` : ''}.`)
         return
       }
 
       const loops = loopsFor(await h.vars.read('repeat'))
+      // the play history's recorder; without it (not written) mpv plays on
+      const script = await installHistoryScript(h)
       const argv = [
         player,
         '--no-video',
@@ -916,6 +920,9 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         ...(client ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`] : []),
         `--volume=${await h.vars.read('volume')}`,
         '--msg-level=all=error',
+        // -append: --script-opts would drop any script-opts in your mpv.conf
+        // (ytdl_hook's among them), and it takes the path whole, commas and all
+        ...(script ? [`--script=${script}`, `--script-opts-append=stream_radio_history-file=${p.history}`] : []),
         // the songs of the playlist file are the playlist; it starts at this one
         `--playlist-start=${index}`,
         `--playlist=${p.queue}`,
@@ -995,6 +1002,16 @@ export async function playSource(h: Host, config: PlayerConfig, source: string):
     await unload()
     throw error
   }
+}
+
+// Plays `entries` (a saved playlist, say) as the queue, starting at entry
+// `start`; `source` is what the queue is called. Like playSource after it has
+// expanded: a newer play or a stop wins. At most MAX_SONGS play; the note says so. Resolves to what to show, or ''.
+export async function playEntries(h: Host, config: PlayerConfig, entries: QueueEntry[], source: string, start: number): Promise<string> {
+  const mine = ++asked
+  const isCut = entries.length > MAX_SONGS
+  const said = await playNew(h, config, isCut ? entries.slice(0, MAX_SONGS) : entries, source, '', mine, start)
+  return said || (isCut ? `Played the first ${MAX_SONGS} songs.` : '')
 }
 
 // `entries` replace the queue and entry `start` plays; '' when started (or
@@ -1140,7 +1157,7 @@ export function connect(h: Host, config: PlayerConfig): Promise<void> {
 // while it plays, and the list is read again at each song.
 export const isFolder = new Map<string, boolean>()
 
-// A playlist entry as the panel lists it: its title, else its file name; a
+// A queue entry as the panel lists it: its title, else its file name; a
 // local folder (one mpv opens only when it gets there, as from a playlist
 // file) as `📁 Name/`. Under `root`, the folder played whole, mpv has read every
 // subfolder already, so an entry there is a file and needs no look; nor does a
@@ -1271,16 +1288,36 @@ export async function togglePause(h: Host): Promise<boolean> {
   return true
 }
 
+const LIBRARY_WORDS: ReadonlySet<string> = new Set(['fav', 'history', 'listAdd', 'listRemove', 'playList'])
+
 // `/stream`'s argument or the panel's field: a URL, or a local file, folder or
 // playlist that exists. Anything else comes back as the reply to show.
 export async function locate(h: Host, args: string, fallback: string) {
   // Home and the session's folder only for a path that needs them: a URL or a
   // word like `stop` reads neither.
   let parsed = parseArgs(args, fallback)
-  if (parsed.kind === 'error' || (parsed.kind === 'play' && parsed.isLocal)) {
+  const word = args.trim()
+  // A library word, or one of add / remove / play with nothing after it (a
+  // usage error): a file or folder of that name in the session's folder (a
+  // folder `history`, a file `play list.m3u`, a folder `play`) still plays as
+  // a path, as it did before the words existed.
+  const isLibraryWord = LIBRARY_WORDS.has(parsed.kind) || (parsed.kind === 'error' && /^(add|remove|play)\b/.test(word))
+  if (parsed.kind === 'error' || (parsed.kind === 'play' && parsed.isLocal) || isLibraryWord) {
     const home = await h.home().catch(() => '')
     const cwd = await h.cwd().catch(() => '')
-    parsed = parseArgs(args, fallback, { home, cwd })
+    const where = { home, cwd }
+    if (isLibraryWord) {
+      const there = async (name: string) => {
+        const at = resolveTarget(name, where)
+        return at.kind === 'play' && at.isLocal && (await h.fs.exists(at.url).catch(() => false)) ? at : undefined
+      }
+      const whole = await there(word)
+      if (whole) return whole
+      // `play <name>` plays <name> as a path when it is a song file or is there
+      if (parsed.kind === 'playList' && (isPlayable(baseName(parsed.list)) || (await there(parsed.list)))) parsed = resolveTarget(parsed.list, where)
+      // `play ./a.mp3` or `play ~/x.mp3` failed only for want of the folders
+      else if (parsed.kind === 'error') parsed = parseArgs(args, fallback, where)
+    } else parsed = parseArgs(args, fallback, where)
   }
   if (parsed.kind === 'play' && parsed.isLocal && !(await h.fs.exists(parsed.url).catch(() => false))) {
     return { kind: 'error' as const, text: `No such file or folder: ${parsed.url}` }
@@ -1309,8 +1346,9 @@ export type { QueueEntry }
 
 // Each entry as playing it expands it (expandSource: a folder's songs, a
 // playlist file's lines, a YouTube playlist's videos), MAX_SONGS in all; one
-// that stays itself keeps its title. note: what to say (a cap it hit).
-async function expand(h: Host, entries: readonly QueueEntry[]): Promise<{ songs: QueueEntry[]; note: string }> {
+// that stays itself keeps its title. note: what to say (a cap it hit). Add to
+// queue goes through it, and the TUI's favourite and Add to playlist on Files rows.
+export async function expandEntries(h: Host, entries: readonly QueueEntry[]): Promise<{ songs: QueueEntry[]; note: string }> {
   const songs: QueueEntry[] = []
   const notes: string[] = []
   for (const e of entries) {
@@ -1526,7 +1564,7 @@ async function loadAt(h: Host, songs: readonly QueueEntry[], at: number, count: 
 // the order given). Nothing queued and nothing playing: what is added becomes
 // the queue, and it plays. '' when done, else what to show.
 export async function addToQueue(h: Host, config: PlayerConfig, entries: readonly QueueEntry[], where: 'end' | 'next'): Promise<string> {
-  const { songs, note } = await expand(h, entries)
+  const { songs, note } = await expandEntries(h, entries)
   if (!songs.length) return note || 'Nothing to add.'
   const was = { isEmpty: false }
   const reply = await edit(h, (q, current) => {
@@ -1621,7 +1659,7 @@ export async function clearQueue(h: Host, config: PlayerConfig): Promise<string>
   if (done === 'busy') return BUSY
   if (done === 'failed') return 'Could not save the queue.'
   await refreshFromStored(h)
-  return 'Cleared the playlist. l brings it back.'
+  return 'Cleared the queue. l brings it back.'
 }
 
 // --- Mending mpv: while a player is followed, its list is checked against the

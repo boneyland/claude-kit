@@ -9,6 +9,15 @@ export async function stateDir(env: (name: string) => Promise<string | undefined
   return home ? `${home}/.local/state/stream-radio` : ''
 }
 
+// Where the saved playlists live: the data folder, not the state folder, since
+// a person's playlists are theirs to keep and back up.
+export async function libraryDir(env: (name: string) => Promise<string | undefined>): Promise<string> {
+  const data = await env('XDG_DATA_HOME')
+  if (data) return `${data}/stream-radio/playlists`
+  const home = await env('HOME')
+  return home ? `${home}/.local/share/stream-radio/playlists` : ''
+}
+
 // ONE player for every session. mpv runs detached from all of them (setsid),
 // listening on one socket in the player's folder, and keeps playing until
 // someone stops it. Next to it in that folder:
@@ -21,7 +30,9 @@ export async function stateDir(env: (name: string) => Promise<string | undefined
 // queue: the played order as a playlist file, the only thing mpv is handed.
 // queueJson, place, prev, queueLock: the queue the app owns, where it got to,
 // the last cleared queue, and the lock around changing it (storedFile.ts).
-export type Paths = { sock: string; intent: string; lock: string; log: string; state: string; queue: string; queueJson: string; place: string; prev: string; queueLock: string }
+// history, historyLua, libraryLock: the play history (written only by the Lua
+// script mpv runs), that script, and the lock around changing a saved playlist.
+export type Paths = { sock: string; intent: string; lock: string; log: string; state: string; queue: string; queueJson: string; place: string; prev: string; queueLock: string; history: string; historyLua: string; libraryLock: string }
 let dataDir: string | undefined
 
 export async function paths(h: Host): Promise<Paths> {
@@ -32,7 +43,7 @@ export async function paths(h: Host): Promise<Paths> {
     // The first time the folder is known, make sure it exists.
     if (dataDir) await h.run(['mkdir', '-p', dataDir], { timeoutMs: 3000 }).catch(() => undefined)
   }
-  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log`, state: `${dataDir}/state.json`, queue: `${dataDir}/queue.m3u`, queueJson: `${dataDir}/queue.json`, place: `${dataDir}/queue-place.json`, prev: `${dataDir}/queue.prev.json`, queueLock: `${dataDir}/queue.lock` }
+  return { sock: `${dataDir}/mpv.sock`, intent: `${dataDir}/player.json`, lock: `${dataDir}/reconnect.lock`, log: `${dataDir}/mpv.log`, state: `${dataDir}/state.json`, queue: `${dataDir}/queue.m3u`, queueJson: `${dataDir}/queue.json`, place: `${dataDir}/queue-place.json`, prev: `${dataDir}/queue.prev.json`, queueLock: `${dataDir}/queue.lock`, history: `${dataDir}/history.jsonl`, historyLua: `${dataDir}/history.lua`, libraryLock: `${dataDir}/library.lock` }
 }
 
 // What mpv's directory filter plays: its sound, video and playlist kinds.

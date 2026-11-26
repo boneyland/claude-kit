@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Host } from './host'
-import { isPlayable, listSongs, stateDir } from './paths'
+import { isPlayable, libraryDir, listSongs, stateDir } from './paths'
 
 const envOf = (vars: Record<string, string>) => async (name: string) => vars[name]
 
@@ -17,6 +17,12 @@ test('without it the folder is under HOME/.local/state', async () => {
 test('with neither it is empty, so the core asks again later', async () => {
   expect(await stateDir(envOf({}))).toBe('')
   expect(await stateDir(envOf({ HOME: '' }))).toBe('')
+})
+
+test('the playlists folder is under XDG_DATA_HOME, else HOME/.local/share', async () => {
+  expect(await libraryDir(envOf({ XDG_DATA_HOME: '/x', HOME: '/h' }))).toBe('/x/stream-radio/playlists')
+  expect(await libraryDir(envOf({ HOME: '/h' }))).toBe('/h/.local/share/stream-radio/playlists')
+  expect(await libraryDir(envOf({}))).toBe('')
 })
 
 test('playable: the sound, video and playlist files mpv plays, any case; no dotfiles', () => {

@@ -221,6 +221,7 @@ test('a big stored queue is listed with a bounded number of folder looks, none f
   const pane = await $.ui.mount(PANE)
   expect((await pane.find({ type: 'Button', key: 'item-304' }))?.props.label).toBe('  305. song 4.flac')
   await pane.unmount()
-  expect(looked.length).toBeLessThanOrEqual(200)
+  // the queue's own looks: the panel's lists are looked at besides
+  expect(looked.filter(p => p.startsWith('/x/')).length).toBeLessThanOrEqual(200)
   expect(looked.some(p => p.endsWith('.flac'))).toBe(false)
 })

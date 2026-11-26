@@ -3,9 +3,13 @@ import { Box } from 'ink'
 import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 
-export type Tab = 'files' | 'playlist'
-export const TABS: readonly Tab[] = ['files', 'playlist']
-const NAMES: Record<Tab, string> = { files: 'Files', playlist: 'Playlist' }
+export type Tab = 'files' | 'queue' | 'playlists'
+// in the order Tab goes through them
+export const TABS: readonly Tab[] = ['files', 'queue', 'playlists']
+const NAMES: Record<Tab, string> = { files: 'Files', queue: 'Queue', playlists: 'Playlists' }
+
+// The tab `dir` steps from `tab`, round from the last to the first.
+export const stepTab = (tab: Tab, dir: 1 | -1): Tab => TABS[(TABS.indexOf(tab) + dir + TABS.length) % TABS.length]
 
 // The tab names, the current one inverted; with `sortLabel`, a clickable
 // `sort: <field> ▾` at the right, and with `isReversed` set, after it a

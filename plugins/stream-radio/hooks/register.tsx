@@ -10,7 +10,7 @@ import {
   type Repeat,
   stepVolume,
   filterRows,
-  playlistRows,
+  queueRows,
   type TreeRow,
   SCROLL_CHARS,
   SCROLL_MS,
@@ -30,6 +30,7 @@ import {
   loadVolume,
   locate,
   pick,
+  playEntries,
   playQueue,
   playSource,
   refreshFromStored,
@@ -45,9 +46,12 @@ import {
   togglePause,
   toggleShuffle,
 } from '../core/player'
+import { addTo, historyText, planList, playingSong, removeFrom, toggleFavourite } from '../core/library-actions'
+import { readHistory } from '../core/libraryFile'
 import type { Host, PlayerKeys, StateStore } from '../core/host'
 import { migrateFromStore } from '../core/saved'
 import { hostOf } from './host-claude'
+import { libraryParts, resetLibrary, stopLibraryPoll } from './libraryPanel'
 
 // The panel reads these two through $.state for their versions.
 const QUEUE = { plugin: 'stream-radio', key: 'queue' } as const
@@ -68,7 +72,7 @@ const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_R
 const SEEK_SECONDS = 10
 const volumeLevel = atom({ plugin: 'stream-radio', key: 'volume' } as const, 60)
 const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
-// The playing playlist's shuffle, off again when something new starts.
+// The playing queue's shuffle, off again when something new starts.
 const isShuffled = atom({ plugin: 'stream-radio', key: 'isShuffled' } as const, false)
 // What the panel's list is narrowed to, as typed; empty again when something
 // new starts.
@@ -115,7 +119,7 @@ function storeOf($: EngineInterface): StateStore {
 
 // How far a title too long for the footer has scrolled, in ticks; 0 at its start.
 const scroll = atom({ plugin: 'stream-radio', key: 'scroll' } as const, 0)
-// The panel's playlist rows, kept for the versions of the queue and the open
+// The panel's queue rows, kept for the versions of the queue and the open
 // folders they were built from: a redraw for anything else (pause, a reply,
 // the panel's width) reuses them.
 let rowsCache: { key: string; rows: TreeRow[] } | undefined
@@ -145,7 +149,7 @@ async function labelParts($: EngineInterface) {
   const paused = await read($, isPaused)
   const done = await read($, elapsed)
   const part = await read($, chapter)
-  // A file in a playlist shows how far along it is; a live stream has no end.
+  // A file in the queue shows how far along it is; a live stream has no end.
   const progress = done >= 0 ? formatTime(done) : ''
   const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
   // A video of several songs names each in a chapter: the footer shows that
@@ -180,6 +184,8 @@ async function togglePane($: EngineInterface): Promise<'opened' | 'closed'> {
     await $.ui.close({ id: PANE })
     return 'closed'
   }
+  // the list shown starts at the queue each time
+  await resetLibrary($)
   await $.ui.open({ id: PANE, title: TITLE })
   return 'opened'
 }
@@ -278,6 +284,7 @@ export const register: Register = (on, options) => {
     detach()
     stopPoller()
     stopScroller()
+    stopLibraryPoll()
     await releaseLock(hostFor($, config))
 
     return next(e)
@@ -294,6 +301,23 @@ export const register: Register = (on, options) => {
         return { text: 'Stopped.' }
       }
       if (parsed.kind === 'panel') return { text: `Radio panel ${await togglePane($)}.` }
+      if (parsed.kind === 'fav' || parsed.kind === 'listAdd' || parsed.kind === 'listRemove') {
+        const h = hostFor($, config)
+        const song = await playingSong(h)
+        if (!song) return { text: 'Nothing playing.' }
+        return { text: parsed.kind === 'fav' ? await toggleFavourite(h, [song]) : parsed.kind === 'listAdd' ? await addTo(h, parsed.list, [song]) : await removeFrom(h, parsed.list, [song]) }
+      }
+      if (parsed.kind === 'history') {
+        const h = hostFor($, config)
+        return { text: historyText(await readHistory(h), Math.floor((await h.now()) / 1000)) }
+      }
+      if (parsed.kind === 'playList') {
+        const h = hostFor($, config)
+        const plan = await planList(h, parsed.list)
+        if (typeof plan === 'string') return { text: plan }
+        void playEntries(h, config, plan.entries, plan.source, 0).then(note => note && h.toast(note), error => h.toast(failedText(error)))
+        return { text: `Playing ${plan.name}.` }
+      }
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.
       if (!isFollowing() && parsed.kind !== 'play' && parsed.kind !== 'last') await connect(hostFor($, config), config).catch(() => undefined)
@@ -336,6 +360,9 @@ export const register: Register = (on, options) => {
         return { text: where ? `Resuming ${where}.` : `Starting ${again}.` }
       }
 
+      // Every other kind is answered above; this narrows the type to a URL or path.
+      if (parsed.kind !== 'play') return { text: 'Nothing to play.' }
+
       // In the background, as a start always was: a hook that takes long is
       // reported as unanswered. What the expansion says shows as a toast.
       const h = hostFor($, config)
@@ -347,6 +374,13 @@ export const register: Register = (on, options) => {
     } catch (error) {
       return { text: `stream-radio failed: ${error instanceof Error ? error.message : String(error)}` }
     }
+  })
+
+  // The panel closed, by the person or here: its lists are no longer looked at.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const done = await next(e)
+    await resetLibrary($).catch(() => undefined)
+    return done
   })
 
   // The track at the right of the prompt footer after the engine's own labels;
@@ -414,10 +448,11 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The panel: what plays, its controls, the playlist or chapters to pick from,
+  // The panel: what plays, its controls, the queue or chapters to pick from,
   // and a URL field. Each action's reply shows in it: a button has no reply line.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button, Input } = ui
     const width = Math.max(20, e.props.bodyColumns)
     // Every value read here redraws the whole panel when it changes, so it reads
     // none that change by the second: no time (the footer has it), and the
@@ -440,7 +475,7 @@ export const register: Register = (on, options) => {
         key: rowsKey,
         rows: filter
           ? filterRows(q.items, q.paths, q.root, filter)
-          : playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current),
+          : queueRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current),
       }
     }
     const rows = rowsCache.rows
@@ -465,6 +500,16 @@ export const register: Register = (on, options) => {
         )
         .catch(() => undefined)
     const play = (url: string) => act(async () => (later(playSource(hostFor($, config), config, url)), ''))
+    const library = await libraryParts($, ui, {
+      host: () => hostFor($, config),
+      pane: PANE,
+      hasQueue: q.kind !== 'none',
+      title,
+      width,
+      act,
+      later,
+      playEntries: (h, entries, source, start) => playEntries(h, config, entries, source, start),
+    })
     const state = [
       paused ? 'paused' : '',
       q.kind !== 'none' && q.current >= 0 ? `${q.current + 1} of ${q.items.length}` : '',
@@ -516,6 +561,8 @@ export const register: Register = (on, options) => {
         ) : (
           <Text dimColor>Nothing playing.</Text>
         )}
+        {/* Outside the playing-only block: stopped, they act on the queue's song. */}
+        {library.controls}
         {/* Play last (or Resume) only while idle: playing, it is what plays. */}
         {(last && !title) || (defaultUrl && defaultUrl !== last) ? (
           <Box flexDirection="row" gap={1}>
@@ -536,24 +583,40 @@ export const register: Register = (on, options) => {
         ) : null}
         <Input
           key="url"
-          placeholder="URL, or a file or folder path"
+          placeholder="URL, file or folder path, or play <playlist>"
           submitLabel="Enter to play"
           onSubmit={(value: string) => {
             return act(async () => {
-              const parsed = await locate(hostFor($, config), value.trim(), '')
-              if (parsed.kind === 'play') return (later(playSource(hostFor($, config), config, parsed.url)), '')
-              return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
+              const h = hostFor($, config)
+              const parsed = await locate(h, value.trim(), '')
+              if (parsed.kind === 'play') return (later(playSource(h, config, parsed.url)), '')
+              // `history` lists the plays, as /stream history does; `play history` plays them
+              if (parsed.kind === 'history') return historyText(await readHistory(h), Math.floor((await h.now()) / 1000))
+              if (parsed.kind === 'playList') {
+                const plan = await planList(h, parsed.list)
+                if (typeof plan === 'string') return plan
+                later(playEntries(h, config, plan.entries, plan.source, 0))
+                return `Playing ${plan.name}.`
+              }
+              if (parsed.kind === 'fav' || parsed.kind === 'listAdd' || parsed.kind === 'listRemove') {
+                const song = await playingSong(h)
+                if (!song) return 'Nothing playing.'
+                return parsed.kind === 'fav' ? toggleFavourite(h, [song]) : parsed.kind === 'listAdd' ? addTo(h, parsed.list, [song]) : removeFrom(h, parsed.list, [song])
+              }
+              return parsed.kind === 'error' ? parsed.text : 'Type a URL, a path to a file or folder, or play <playlist>.'
             })
           }}
         />
         {said !== '' && <Text dimColor>{said}</Text>}
-        {q.kind !== 'none' ? (
+        {library.picker}
+        {library.list ?? null}
+        {library.list === undefined && q.kind !== 'none' ? (
           <Box flexDirection="column">
             <Text dimColor>
               {filter
                 ? `${rows.length} of ${q.items.length} ${q.kind === 'playlist' ? 'songs' : 'chapters'} match`
                 : q.kind === 'playlist'
-                  ? 'Playlist'
+                  ? 'Queue'
                   : 'Chapters'}
             </Text>
             {q.items.length > 1 ? (

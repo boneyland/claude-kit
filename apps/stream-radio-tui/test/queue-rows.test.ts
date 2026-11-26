@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Queue } from '@core/host'
-import { filterFlat, flatRows } from '../src/playlist/rows'
+import { filterFlat, flatRows } from '../src/queue/rows'
 import type { Tags } from '../src/media/tags'
 
 const q: Queue = {

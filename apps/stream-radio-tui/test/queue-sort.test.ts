@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { nextSortField, sortOrder, type SortRow } from '../src/playlist/sort'
+import { nextSortField, sortOrder, type SortRow } from '../src/queue/sort'
 
 const t = (title: string, artist = '', albumArtist = '', album = '') => ({ title, artist, albumArtist, album })
 const rows: SortRow[] = [
