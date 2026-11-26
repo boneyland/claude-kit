@@ -62,8 +62,9 @@ export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, f
 // The saved playlists and Recently played, read from disk while the tab
 // shows (isShown) and checked every POLL_MS: an open list's file, Recently
 // played's history.jsonl, or at the top level the folder and each list in it.
-// A check reads again only what changed.
-export function useLibrary(h: Host, isShown: boolean): Library {
+// A check reads again only what changed. An open saved list whose file has
+// gone (deleted or renamed elsewhere) closes back to the top level, and onGone runs.
+export function useLibrary(h: Host, isShown: boolean, onGone?: () => void): Library {
   const [listsRef, setLists] = useRefState<ListInfo[] | undefined>(undefined)
   const [openRef, setOpen] = useRefState<OpenList | undefined>(undefined)
   const [nowRef, setNow] = useRefState(0)
@@ -117,6 +118,14 @@ export function useLibrary(h: Host, isShown: boolean): Library {
       const mark = await stamp(target)
       if (!alive.current || target !== want.current) return
       if (target === HISTORY) await tickNow()
+      // Favourites lists before its file exists; any other list without one is gone
+      if (target !== undefined && target !== HISTORY && target !== FAVOURITES && mark === '0') {
+        want.current = undefined
+        seen.current = undefined
+        setOpen(undefined)
+        onGone?.()
+        return void check(true)
+      }
       if (!force && mark === seen.current) return
       if (target === undefined) {
         const lists = await listPlaylists(h)

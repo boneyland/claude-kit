@@ -37,20 +37,21 @@ export const QUEUE_MENU: readonly MenuItem[] = [
   { label: 'Clear queue', key: 'C', action: { kind: 'clearQueue', isSure: true } },
 ]
 
-// Playlists, on a list at the top level. Favourites has no Rename or Delete;
+// Playlists, on list `name` at the top level (HISTORY for Recently played):
+// each item names the list, not the row. Favourites has no Rename or Delete;
 // Recently played has Clear instead.
-const LIST_PLAY: readonly MenuItem[] = [
-  { label: 'Play', key: '', action: { kind: 'playList' } },
-  { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end' } },
-  { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next' } },
+const listPlay = (name: string): MenuItem[] => [
+  { label: 'Play', key: '', action: { kind: 'playList', name } },
+  { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end', list: name } },
+  { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next', list: name } },
 ]
-export const LIST_MENU: readonly MenuItem[] = [
-  ...LIST_PLAY,
-  { label: 'Rename', key: '', action: { kind: 'rename' } },
-  { label: 'Delete playlist', key: 'Del', action: { kind: 'deleteList' } },
+export const listMenu = (name: string): readonly MenuItem[] => [
+  ...listPlay(name),
+  { label: 'Rename', key: '', action: { kind: 'rename', name } },
+  { label: 'Delete playlist', key: 'Del', action: { kind: 'deleteList', name } },
 ]
-export const FAVOURITES_MENU: readonly MenuItem[] = LIST_PLAY
-export const HISTORY_MENU: readonly MenuItem[] = [...LIST_PLAY, { label: 'Clear', key: '', action: { kind: 'clearHistory' } }]
+export const favouritesMenu = (name: string): readonly MenuItem[] => listPlay(name)
+export const historyMenu = (name: string): readonly MenuItem[] => [...listPlay(name), { label: 'Clear', key: '', action: { kind: 'clearHistory' } }]
 
 // Playlists, on a song inside a list; Recently played's can't be removed.
 export const HISTORY_SONG_MENU: readonly MenuItem[] = [

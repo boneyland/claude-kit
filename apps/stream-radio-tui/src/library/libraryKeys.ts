@@ -10,13 +10,14 @@ import type { Action, Mode } from '../keys'
 import type { Hit } from '../mouse/Clickable'
 import { useRefState } from '../ui/hooks'
 import { edit, type Line } from '../ui/lineEdit'
-import { confirmMenu, FAVOURITES_MENU, HISTORY_MENU, HISTORY_SONG_MENU, LIST_MENU, LIST_SONG_MENU, type MenuItem } from '../ui/Menu'
+import { confirmMenu, favouritesMenu, historyMenu, HISTORY_SONG_MENU, listMenu, LIST_SONG_MENU, type MenuItem } from '../ui/Menu'
 import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, type Held, type Selection } from '../ui/selection'
 import type { Turns } from '../ui/turns'
 import { HISTORY, libraryRows, useLibrary, type Library, type LibraryRow } from './useLibrary'
 
 const BUSY = 'The playlists are busy; try again.'
 const HISTORY_READ_ONLY = "Recently played can't be edited; Clear it from its menu."
+const GONE = 'That playlist is gone.'
 
 // What the tab needs of the App around it.
 export type PlaylistsUi = {
@@ -60,7 +61,11 @@ const listName = (r: LibraryRow | undefined) => (r?.kind === 'list' ? r.info.nam
 // and what its keys do.
 // playing: what plays; a list showing is checked again when it changes.
 export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, playing: string, { act, inTurn }: Turns, ui: PlaylistsUi): PlaylistsTab {
-  const lib = useLibrary(h, isShown)
+  const lib = useLibrary(h, isShown, () => {
+    setFilterState('')
+    if (ui.mode() === 'filter') ui.setMode('list')
+    ui.say(GONE)
+  })
   useEffect(() => void (isShown && lib.check()), [playing])
   // the press before opened or left a list: a double-click's second press lands on the new rows
   const hasOpened = useRef(false)
@@ -112,11 +117,11 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     if (!o) return
     act(() => playEntries(h, config, o.songs.map(entryOf), o.file ?? '', index))
   }
-  const add = (where: 'end' | 'next') => {
-    const row = rows[sel().cursor]
+  // list: the one a menu named; else the cursor's at the top level, or the songs inside one
+  const add = (where: 'end' | 'next', list?: string) => {
     const next = where === 'next' ? ' to play next' : ''
-    const name = listName(row)
-    if (!lib.open && name) {
+    const name = list ?? (lib.open ? undefined : listName(rows[sel().cursor]))
+    if (name) {
       return act(() =>
         inTurn(async () => {
           const plan = await planList(h, name)
@@ -136,7 +141,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     if (!o) {
       // a list at the top level: Delete playlist, which asks first
       if (row?.kind === 'history') return ui.say(HISTORY_READ_ONLY)
-      if (row?.kind === 'list') return row.info.name === FAVOURITES ? ui.say(`${FAVOURITES} can't be deleted.`) : handleList({ kind: 'deleteList' })
+      if (row?.kind === 'list') return row.info.name === FAVOURITES ? ui.say(`${FAVOURITES} can't be deleted.`) : handleList({ kind: 'deleteList', name: row.info.name })
       return
     }
     if (o.kind === 'history') return ui.say(HISTORY_READ_ONLY)
@@ -158,22 +163,21 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       }),
     )
   }
-  // Delete playlist, Clear, Rename and Play, from a list's menu (the cursor's row).
+  // Delete playlist, Clear, Rename and Play, from a list's menu: on the list
+  // the action names, whatever row the cursor is on by now.
   const handleList = (a: Action): boolean => {
     const at = sel().cursor
-    const row = rows[at]
-    const name = listName(row)
-    if (!name || lib.open) return true
     switch (a.kind) {
       case 'playList':
-        act(() => playList(h, config, name, 0))
+        act(() => playList(h, config, a.name, 0))
         return true
       case 'rename':
-        if (row?.kind === 'list' && name !== FAVOURITES) ask({ kind: 'rename', from: name })
+        if (a.name !== FAVOURITES && a.name !== HISTORY) ask({ kind: 'rename', from: a.name })
         return true
-      case 'deleteList':
-        if (row?.kind !== 'list' || name === FAVOURITES) return true
-        if (!a.isSure) ui.showMenu(confirmMenu(`Delete "${name}"`, { kind: 'deleteList', isSure: true }), at)
+      case 'deleteList': {
+        const { name } = a
+        if (name === FAVOURITES || name === HISTORY) return true
+        if (!a.isSure) ui.showMenu(confirmMenu(`Delete "${name}"`, { kind: 'deleteList', name, isSure: true }), at)
         else
           act(() =>
             inTurn(async () => {
@@ -183,8 +187,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
             }),
           )
         return true
+      }
       case 'clearHistory':
-        if (row?.kind !== 'history') return true
         if (!a.isSure) ui.showMenu(confirmMenu('Clear Recently played', { kind: 'clearHistory', isSure: true }), at)
         else
           act(() =>
@@ -252,7 +256,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
           return true
         case 'submit': {
           ui.setMode('list')
-          const first = rows.find(r => r.kind === 'song')
+          // the filter as typed: keys in one go may not have redrawn the rows yet
+          const first = libraryRows(lib, filterRef.current.trim()).find(r => r.kind === 'song')
           if (first?.kind === 'song') playFrom(first.index)
           else ui.say('Nothing matches.')
           return true
@@ -277,7 +282,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         if (lib.open) close()
         return true
       case 'add':
-        add(a.where)
+        add(a.where, a.list)
         return true
       case 'remove':
         remove()
@@ -321,8 +326,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     menuOf: at => {
       const row = rows[at]
       if (row?.kind === 'song') return o?.kind === 'history' ? HISTORY_SONG_MENU : LIST_SONG_MENU
-      if (row?.kind === 'history') return HISTORY_MENU
-      if (row?.kind === 'list') return row.info.name === FAVOURITES ? FAVOURITES_MENU : LIST_MENU
+      if (row?.kind === 'history') return historyMenu(HISTORY)
+      if (row?.kind === 'list') return row.info.name === FAVOURITES ? favouritesMenu(FAVOURITES) : listMenu(row.info.name)
       return undefined
     },
     onRow: (at, hit, first) => {

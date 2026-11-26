@@ -69,7 +69,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // Read by the key handler through .current: see useRefState.
   const [modeRef, setMode] = useRefState<Mode>('list')
   // Queue when there is something in it, else Files
-  const [tabRef, setTab] = useRefState<Tab>(view.queue.kind !== 'none' ? 'queue' : 'files')
+  const [tabRef, setTabState] = useRefState<Tab>(view.queue.kind !== 'none' ? 'queue' : 'files')
+  // Another tab leaves a line being typed: each tab's filter is its own.
+  const setTab = (t: Tab) => {
+    if (t !== tabRef.current && ['filter', 'name', 'open'].includes(modeRef.current)) setMode('list')
+    setTabState(t)
+  }
   const tab = tabRef.current
   const book = useTagBook(h, tagReader)
   const files = useFiles(h, book)

@@ -25,6 +25,13 @@ describe('the key lists', () => {
     expect(missing).toEqual([])
   })
 
+  test('the Playlists keys tell + New playlist… and the name prompt', () => {
+    const all = PLAYLISTS_KEY_HELP.map(([k, what]) => `${k} ${what}`).join('\n')
+    expect(all).toContain('New playlist')
+    expect(all).toMatch(/Enter\s+Esc/)
+    expect(README.slice(README.indexOf('### Playlists'))).toContain('New playlist')
+  })
+
   test('stop keeps the playlist, and S ends at as queued', () => {
     expect(KEY_HELP).toContainEqual(['x', 'stop (the queue stays)'])
     expect(KEY_HELP.find(([k]) => k === 'S')![1]).toContain('as queued')

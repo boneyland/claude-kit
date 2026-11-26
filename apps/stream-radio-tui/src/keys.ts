@@ -56,19 +56,22 @@ export type Action =
   // sort by the next field; by this one, the other way round
   | { kind: 'sortNext' }
   | { kind: 'sortReverse' }
-  // Files: the picked rows (or the cursor's) to the queue's end, or to play next
-  | { kind: 'add'; where: 'end' | 'next' }
+  // Files: the picked rows (or the cursor's) to the queue's end, or to play
+  // next; Playlists, from a list's menu: `list`, the list it was opened on
+  | { kind: 'add'; where: 'end' | 'next'; list?: string }
   // Files: the folder above
   | { kind: 'folderUp' }
   // Files, at the folder of the song playing
   | { kind: 'goPlaying' }
   // the cursor's row's menu
   | { kind: 'menu' }
-  // Playlists, from a list's menu: play it from its first song; rename it;
-  // delete it, or clear Recently played (each asks first, then isSure)
-  | { kind: 'playList' }
-  | { kind: 'rename' }
-  | { kind: 'deleteList'; isSure?: boolean }
+  // Playlists, from a list's menu (`name`: the list it was opened on, so a
+  // poll that moves the rows meanwhile can't change which): play it from its
+  // first song; rename it; delete it, or clear Recently played (each asks
+  // first, then isSure)
+  | { kind: 'playList'; name: string }
+  | { kind: 'rename'; name: string }
+  | { kind: 'deleteList'; name: string; isSure?: boolean }
   | { kind: 'clearHistory'; isSure?: boolean }
 
 // How far b and f jump, as the mod's panel does.

@@ -1926,6 +1926,83 @@ describe('the Playlists tab', () => {
     await vi.waitFor(() => expect(rowsText(lines())).toContain('Road eight'))
   })
 
+  describe('fix round 1', () => {
+    const ZEBRA = { ...FILES, Zebra: m3u(['/m/z1.mp3', 'Zed one']) }
+    // a list sorting above the cursor's, seen by the next poll
+    const addAbove = async (ui: Awaited<ReturnType<typeof open>>) => {
+      nodeFs.writeFileSync(ui.lib.file('Aardvark'), m3u())
+      ui.lib.tick()
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toMatch(/Aardvark\s+·/))
+    }
+
+    test('Delete playlist deletes the list it named, though a poll moved the rows under the confirm', async () => {
+      const ui = await open(ZEBRA)
+      await ui.press('j', 'j', 'j', 'j', 'm', 'j', 'j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Delete "Zebra"'))
+      await addAbove(ui)
+      await ui.press(ENTER)
+      await vi.waitFor(() => expect(nodeFs.existsSync(ui.lib.file('Zebra'))).toBe(false))
+      expect(nodeFs.existsSync(ui.lib.file('Road trip'))).toBe(true)
+    })
+
+    test("the menu's Play plays the list it was opened on", async () => {
+      const ui = await open(ZEBRA)
+      await ui.press('j', 'j', 'j', 'j', 'm')
+      await addAbove(ui)
+      await ui.press(ENTER)
+      await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(ui.host, ui.session.config, [{ path: '/m/z1.mp3', title: 'Zed one' }], ui.lib.file('Zebra'), 0))
+    })
+
+    test("a tab switch leaves filter mode; neither tab's filter writes the other's", async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      await ui.press('/', 't')
+      const q = ui.where(' Queue ')
+      await ui.click(q.x + 2, q.y)
+      await ui.press('z', 'z')
+      expect(await ui.vars.read('filter')).toBe('')
+      expect(rowsText(ui.lines())).not.toContain('/ filter:')
+      // and back: the Queue's filter typed, then a click on Playlists
+      await ui.press('/', 'z')
+      expect(await ui.vars.read('filter')).toBe('z')
+      const p = ui.where(' Playlists ')
+      await ui.click(p.x + 2, p.y)
+      await ui.press('z')
+      expect(await ui.vars.read('filter')).toBe('z')
+      expect(rowsText(ui.lines())).toContain('/ filter: t')
+      expect(rowsText(ui.lines())).not.toContain('/ filter: tz')
+    })
+
+    test('Enter in the filter plays from the first match of the text typed, before a redraw', async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      for (const k of ['/', 't', 'h', 'r', ENTER]) ui.ui.stdin.write(k)
+      await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(ui.host, ui.session.config, expect.any(Array), ui.lib.file('Road trip'), 2))
+    })
+
+    test('an open list deleted elsewhere goes back to the top level, saying so', async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      nodeFs.rmSync(ui.lib.file('Road trip'))
+      ui.lib.tick()
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('+ New playlist…'))
+      expect(status(ui.lines())).toContain('That playlist is gone.')
+    })
+
+    test('an open Favourites with no file yet is not gone', async () => {
+      const ui = await open({ 'Road trip': FILES['Road trip'] })
+      await ui.press(ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toMatch(/★ Favourites · 0 songs/))
+      ui.lib.tick()
+      await ui.settled()
+      expect(rowsText(ui.lines())).toMatch(/★ Favourites · 0 songs/)
+      expect(status(ui.lines())).not.toContain('gone')
+    })
+  })
+
   test('the poll runs only while the tab shows', async () => {
     const { press, lib } = await open()
     expect(lib.timers.size).toBe(1)

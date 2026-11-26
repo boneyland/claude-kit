@@ -47,13 +47,14 @@ export const FILES_KEY_HELP: [string, string][] = [
 ]
 
 export const PLAYLISTS_KEY_HELP: [string, string][] = [
-  ['Enter', 'open a list; on ../ go back; on a song, play the list from it'],
+  ['Enter', 'open a list; on ../ go back; on + New playlist…, name a new one; on a song, play the list from it'],
   ['← →', 'back to the lists, or open the list'],
   ['U', 'back to the lists (../)'],
   ['a', 'add to queue: the picked songs, or the whole list'],
   ['A', 'play next: the same, after the song playing'],
   ['Delete', 'take the picked songs out of the list (the files stay); on a playlist, delete it, after asking'],
   ['/', 'filter the open list; Enter plays it from the first match, Esc clears'],
+  ['Enter  Esc', 'in the name prompt (New playlist, Rename): save the name, or leave it as it was'],
 ]
 
 // What the mouse does.
