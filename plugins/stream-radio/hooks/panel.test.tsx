@@ -30,7 +30,7 @@ function engine(on: On) {
   return Object.defineProperty(world, 'panes', { get: () => panes.open }) as typeof world & { readonly panes: string[] }
 }
 
-test('the footer opens the panel, which lists the playlist and picks, skips and pauses', async ($, on) => {
+test('the footer opens the panel, which lists the queue and picks, skips and pauses', async ($, on) => {
   const clock = mock.clock(on)
   const world = engine(on)
   await $.command.run({ command: 'stream', args: 'https://example.com/list' } as never).catch(() => undefined)

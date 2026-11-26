@@ -73,7 +73,7 @@ afterEach(async () => {
 
 const ONE = [{ filename: '/m/a.flac', current: true }]
 
-test('one song without chapters is a playlist of one', async () => {
+test('one song without chapters is a queue of one', async () => {
   const h = await loaded({ playlist: ONE, 'chapter-list': [] })
   await until(async () => (await h.vars.read('queue')).kind === 'playlist')
   expect((await h.vars.read('queue')).paths).toEqual(['/m/a.flac'])
@@ -472,7 +472,7 @@ test('remove the playing song plays the next; remove all clears and stops (no re
   expect(sent('playlist-play-index')).toEqual([])
   expect(readJson(PLACE)).toMatchObject({ rev: 2, current: '1.1', seconds: 0 })
 
-  expect(await removeFromQueue(h, session!.config, [0])).toBe('Cleared the playlist. l brings it back.')
+  expect(await removeFromQueue(h, session!.config, [0])).toBe('Cleared the queue. l brings it back.')
   expect(readJson(path.join(dir, 'player.json')).isStopped).toBe(true)
   expect(readJson(QUEUE_JSON).entries).toEqual([])
   expect(sent('playlist-remove')).toHaveLength(2)
@@ -482,7 +482,7 @@ test('clear backs up; l brings it back', async () => {
   stored(['/m/a.flac', '/m/b.flac', '/m/c.flac'], 2)
   session = await openSession([], { env, run })
   const h = session.host
-  expect(await clearQueue(h, session.config)).toBe('Cleared the playlist. l brings it back.')
+  expect(await clearQueue(h, session.config)).toBe('Cleared the queue. l brings it back.')
   expect(readJson(QUEUE_JSON).entries).toEqual([])
   expect(readJson(PREV).entries.map((e: { path: string }) => e.path)).toEqual(['/m/a.flac', '/m/b.flac', '/m/c.flac'])
   expect((await h.vars.read('queue')).kind).toBe('none')
@@ -506,7 +506,7 @@ test('clear stops the player before it empties the file, so no mend writes the p
     }
     return was(argv, opts)
   })
-  expect(await clearQueue(h, session!.config)).toBe('Cleared the playlist. l brings it back.')
+  expect(await clearQueue(h, session!.config)).toBe('Cleared the queue. l brings it back.')
   expect(quitFirst).toBe(true)
   expect(readJson(QUEUE_JSON).entries).toEqual([])
   expect(readJson(path.join(dir, 'player.json')).isStopped).toBe(true)

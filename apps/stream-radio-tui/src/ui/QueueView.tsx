@@ -3,7 +3,7 @@ import { Box } from 'ink'
 import { Text } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
-import type { FlatRow } from '../playlist/rows'
+import type { FlatRow } from '../queue/rows'
 
 type Props = {
   heading: string
@@ -25,9 +25,9 @@ type Props = {
   onWheel?(dir: 'up' | 'down'): void
 }
 
-// The Playlist tab: one row per song, the window of rows from `first`.
+// The Queue tab: one row per song, the window of rows from `first`.
 // at: a row's place in `rows` (not its queue index).
-export function PlaylistView({ heading, rows, selected, picked, dropAt, current, height, width, first, onRow, onRowDrag, onRowRelease, onMenu, onWheel }: Props) {
+export function QueueView({ heading, rows, selected, picked, dropAt, current, height, width, first, onRow, onRowDrag, onRowRelease, onMenu, onWheel }: Props) {
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Text dimColor wrap="truncate-end">

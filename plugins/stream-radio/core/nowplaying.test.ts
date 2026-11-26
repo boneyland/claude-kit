@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { baseName, filterRows, fit, foldersOf, metaValue, plain, playlistRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, repeatOf, resolveTarget, splitEvents, textWidth, titleColumns, trackTitle } from './nowplaying'
+import { baseName, filterRows, fit, foldersOf, metaValue, plain, queueRows, formatTime, holdTicks, LABEL_COLUMNS, marquee, parseArgs, repeatOf, resolveTarget, splitEvents, textWidth, titleColumns, trackTitle } from './nowplaying'
 
 const MARQUEE_HOLD = holdTicks(600)
 
@@ -27,8 +27,8 @@ test('titles and tags from the stream come without control characters', () => {
   expect(metaValue({ artist: `\x1b[2JBand` }, 'artist')).toBe('[2JBand')
 })
 
-test('folder names in the playlist tree are drawn without control characters', () => {
-  const rows = playlistRows(['a.mp3'], [`/m/Bad\x1b]0;x\x07Dir/a.mp3`], '/m', new Set(), 0)
+test('folder names in the queue tree are drawn without control characters', () => {
+  const rows = queueRows(['a.mp3'], [`/m/Bad\x1b]0;x\x07Dir/a.mp3`], '/m', new Set(), 0)
   // the name is drawn; the path stays the real one, for finding the folder
   expect(rows[0]).toMatchObject({ kind: 'folder', name: 'Bad]0;xDir', path: '/m/Bad\x1b]0;x\x07Dir' })
 })
@@ -148,7 +148,7 @@ test('the folders between the root and a path', () => {
 })
 
 test('a shut folder is one row with its count; its songs stay hidden', () => {
-  const rows = playlistRows(NAMES, PATHS, ROOT, new Set(), 0)
+  const rows = queueRows(NAMES, PATHS, ROOT, new Set(), 0)
   expect(rows.map(r => (r.kind === 'folder' ? `[${r.name} ${r.count}${r.isOpen ? ' open' : ''}]` : `${r.depth}:${r.number}.${r.name}`))).toEqual([
     '0:1.Intro',
     '[Disc 2 3]',
@@ -157,7 +157,7 @@ test('a shut folder is one row with its count; its songs stay hidden', () => {
 })
 
 test('an open folder shows its songs indented, numbered within it', () => {
-  const rows = playlistRows(NAMES, PATHS, ROOT, new Set(['/m/Album/Disc 2', '/m/Album/Disc 2/Bonus']), 3)
+  const rows = queueRows(NAMES, PATHS, ROOT, new Set(['/m/Album/Disc 2', '/m/Album/Disc 2/Bonus']), 3)
   expect(rows.map(r => (r.kind === 'folder' ? `${r.depth}:[${r.name} ${r.count}]` : `${r.depth}:${r.number}.${r.name}#${r.index}`))).toEqual([
     '0:1.Intro#0',
     '0:[Disc 2 3]',
@@ -168,12 +168,12 @@ test('an open folder shows its songs indented, numbered within it', () => {
     '0:2.End#4',
   ])
   // The current song's folders know they hold it.
-  const shut = playlistRows(NAMES, PATHS, ROOT, new Set(), 3)
+  const shut = queueRows(NAMES, PATHS, ROOT, new Set(), 3)
   expect(shut.find(r => r.kind === 'folder')).toMatchObject({ name: 'Disc 2', hasCurrent: true, isOpen: false })
 })
 
-test('without a root the playlist is a plain list', () => {
-  const rows = playlistRows(NAMES, PATHS, '', new Set(), 0)
+test('without a root the queue is a plain list', () => {
+  const rows = queueRows(NAMES, PATHS, '', new Set(), 0)
   expect(rows.map(r => (r.kind === 'item' ? r.number : -1))).toEqual([1, 2, 3, 4, 5])
 })
 

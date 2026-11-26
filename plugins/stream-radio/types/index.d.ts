@@ -1,9 +1,9 @@
 // What the footer shows: the stream's title, or empty when nothing plays.
 export type Playing = string
 
-// The playlist's entries or the file's chapters, by title; current is the one
+// The queue's entries or the file's chapters, by title; current is the one
 // playing, -1 when unknown.
-// paths: each playlist entry's file or URL; root: the local folder they were
+// paths: each queue entry's file or URL; root: the local folder they were
 // played from, '' for none, under which the panel groups them by folder.
 export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number; paths: string[]; root: string }
 
@@ -24,9 +24,9 @@ declare module 'claude-code' {
       lastUrl: string
       // How far a title too long for the footer has scrolled, in ticks.
       scroll: number
-      // What the panel lists to pick from: the playlist, else the file's chapters.
+      // What the panel lists to pick from: the queue, else the file's chapters.
       queue: Queue
-      // The folders the panel's playlist shows open.
+      // The folders the panel's queue shows open.
       openFolders: string[]
       // The reply to the panel's last action; empty for none.
       notice: string
@@ -35,7 +35,7 @@ declare module 'claude-code' {
       repeat: 'all' | 'one' | 'off'
       // What the panel's list is narrowed to; empty for all of it.
       filter: string
-      // Whether the playing playlist is shuffled.
+      // Whether the playing queue is shuffled.
       isShuffled: boolean
       volume: number
       // Where the last URL got to, kept across a reload.

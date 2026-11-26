@@ -2,7 +2,7 @@ import type { Queue } from '@core/host'
 import type { Tags } from '../media/tags'
 import { tilde } from '../ui/hooks'
 
-// One song (or chapter) of the Playlist tab. index: its place in mpv's
+// One song (or chapter) of the Queue tab. index: its place in mpv's
 // queue; number: as shown, from 1.
 export type FlatRow = { index: number; number: number; title: string; artist: string; where: string }
 

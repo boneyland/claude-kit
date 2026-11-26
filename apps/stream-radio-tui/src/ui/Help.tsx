@@ -2,7 +2,7 @@ import React from 'react'
 import { Box } from 'ink'
 import { Text } from './Text'
 import { textWidth } from '@core/nowplaying'
-import { FILES_KEY_HELP, KEY_HELP, MOUSE_HELP, PLAYLIST_KEY_HELP } from '../help'
+import { FILES_KEY_HELP, KEY_HELP, MOUSE_HELP, QUEUE_KEY_HELP } from '../help'
 import type { Tab } from './Tabs'
 
 const COLUMN = 20
@@ -11,14 +11,14 @@ const COLUMN = 20
 const pad = (text: string) => text + ' '.repeat(Math.max(0, COLUMN - textWidth(text)))
 
 // The lines of the list, headings and all.
-export function helpLines(tab: Tab = 'playlist'): { text: string; isHeading?: boolean }[] {
+export function helpLines(tab: Tab = 'queue'): { text: string; isHeading?: boolean }[] {
   const rows = (list: [string, string][]) => list.map(([k, what]) => ({ text: `  ${pad(k)}${what}` }))
   return [
     { text: 'Keys', isHeading: true },
     ...rows(KEY_HELP),
     { text: '' },
-    { text: tab === 'playlist' ? 'Playlist tab' : 'Files tab', isHeading: true },
-    ...rows(tab === 'playlist' ? PLAYLIST_KEY_HELP : FILES_KEY_HELP),
+    { text: tab === 'queue' ? 'Queue tab' : 'Files tab', isHeading: true },
+    ...rows(tab === 'queue' ? QUEUE_KEY_HELP : FILES_KEY_HELP),
     { text: '' },
     { text: 'Mouse', isHeading: true },
     ...rows(MOUSE_HELP),

@@ -102,7 +102,7 @@ export async function setRepeat(h: Host, mode: Repeat): Promise<string> {
       if (!(await mpv(h, command))) settingRepeat = undefined
     }
   }
-  return mode === 'all' ? 'Repeat: the whole playlist.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
+  return mode === 'all' ? 'Repeat: the whole queue.' : mode === 'one' ? 'Repeat: this song.' : 'Repeat off: playback ends after the last song.'
 }
 
 export const SAVE_MS = 10_000
@@ -319,7 +319,7 @@ let pending: Pending | undefined
 // mode or SETTING_REPEAT_MS pass.
 let settingRepeat: { mode: Repeat; until: number } | undefined
 const SETTING_REPEAT_MS = 2000
-// Whether this session is reordering the playlist: its moves are not read one
+// Whether this session is reordering the queue: its moves are not read one
 // by one. Edits run one at a time (edit), so one flag is enough.
 let isReordering = false
 // The Intent id of the player followed: another means a new start is under
@@ -893,8 +893,8 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         await refreshFromStored(h)
         startPoller(h, config)
         const why = error instanceof Error ? error.message : String(error)
-        h.log(`stream-radio: could not write the playlist file: ${why}`)
-        h.toast(`stream failed: could not write the playlist file${why ? ` (${plain(why).slice(0, 80)})` : ''}.`)
+        h.log(`stream-radio: could not write the queue file: ${why}`)
+        h.toast(`stream failed: could not write the queue file${why ? ` (${plain(why).slice(0, 80)})` : ''}.`)
         return
       }
 
@@ -1154,7 +1154,7 @@ export function connect(h: Host, config: PlayerConfig): Promise<void> {
 // while it plays, and the list is read again at each song.
 export const isFolder = new Map<string, boolean>()
 
-// A playlist entry as the panel lists it: its title, else its file name; a
+// A queue entry as the panel lists it: its title, else its file name; a
 // local folder (one mpv opens only when it gets there, as from a playlist
 // file) as `📁 Name/`. Under `root`, the folder played whole, mpv has read every
 // subfolder already, so an entry there is a file and needs no look; nor does a
@@ -1635,7 +1635,7 @@ export async function clearQueue(h: Host, config: PlayerConfig): Promise<string>
   if (done === 'busy') return BUSY
   if (done === 'failed') return 'Could not save the queue.'
   await refreshFromStored(h)
-  return 'Cleared the playlist. l brings it back.'
+  return 'Cleared the queue. l brings it back.'
 }
 
 // --- Mending mpv: while a player is followed, its list is checked against the

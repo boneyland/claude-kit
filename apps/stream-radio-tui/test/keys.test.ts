@@ -139,17 +139,17 @@ describe('keyAction in the key list', () => {
 })
 
 describe('pick and move keys', () => {
-  const PL = { tab: 'playlist' as const, hasPick: false }
-  const PICKED = { tab: 'playlist' as const, hasPick: true }
+  const PL = { tab: 'queue' as const, hasPick: false }
+  const PICKED = { tab: 'queue' as const, hasPick: true }
   const FILES = { tab: 'files' as const, hasPick: false }
-  test('Alt-↑/↓ and u/d move, in the Playlist', () => {
+  test('Alt-↑/↓ and u/d move, in the Queue', () => {
     expect(keyAction('', key({ upArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: -1 })
     expect(keyAction('', key({ downArrow: true, meta: true }), 'list', PL)).toEqual({ kind: 'move', by: 1 })
     expect(keyAction('u', key(), 'list', PL)).toEqual({ kind: 'move', by: -1 })
     expect(keyAction('d', key(), 'list', PL)).toEqual({ kind: 'move', by: 1 })
     expect(keyAction('d', key(), 'list', FILES)).toBeNull()
   })
-  test('Delete (and Backspace) removes, in the Playlist', () => {
+  test('Delete (and Backspace) removes, in the Queue', () => {
     expect(keyAction('', key({ delete: true }), 'list', PL)).toEqual({ kind: 'remove' })
     expect(keyAction('', key({ backspace: true }), 'list', PL)).toEqual({ kind: 'remove' })
     expect(keyAction('', key({ delete: true }), 'list', FILES)).toBeNull()
@@ -173,7 +173,7 @@ describe('pick and move keys', () => {
 describe('chords are not letters', () => {
   test('Ctrl or Alt with a, A, S or R does nothing', () => {
     const FILES = { tab: 'files' as const, hasPick: false }
-    const PL = { tab: 'playlist' as const, hasPick: false }
+    const PL = { tab: 'queue' as const, hasPick: false }
     expect(keyAction('a', key({ ctrl: true }), 'list', FILES)).toBeNull()
     expect(keyAction('A', key({ meta: true, shift: true }), 'list', FILES)).toBeNull()
     expect(keyAction('S', key({ meta: true, shift: true }), 'list', PL)).toBeNull()

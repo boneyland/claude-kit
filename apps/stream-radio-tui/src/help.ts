@@ -11,7 +11,7 @@ export const KEY_HELP: [string, string][] = [
   ['PgUp  PgDn', 'move a page'],
   ['Home  End', 'the first or last row'],
   ['Shift-↑ ↓', 'pick rows from the cursor'],
-  ['space', 'pause or resume; stopped, play the playlist from its song\'s start; while rows are picked, pick or unpick this one'],
+  ['space', 'pause or resume; stopped, play the queue from its song\'s start; while rows are picked, pick or unpick this one'],
   ['Esc', 'clear the pick'],
   ['m', "the row's menu"],
   ['S', 'sort by the next field; after the last, as queued'],
@@ -22,18 +22,18 @@ export const KEY_HELP: [string, string][] = [
   ['r', 'repeat: all, one, off'],
   ['o', 'go to a folder, or a YouTube playlist URL, in Files'],
   ['G', "Files: the folder of the song playing, the cursor on it"],
-  ['l', 'resume the playlist from where it got to'],
-  ['x', 'stop (the playlist stays)'],
+  ['l', 'resume the queue from where it got to'],
+  ['x', 'stop (the queue stays)'],
   ['?', 'this list'],
   ['q, Ctrl-C twice', 'quit; the music keeps playing'],
 ]
 
-export const PLAYLIST_KEY_HELP: [string, string][] = [
+export const QUEUE_KEY_HELP: [string, string][] = [
   ['Enter', 'play the song from its start'],
   ['Alt-↑ ↓  u d', 'move the picked songs (or this one)'],
   ['Delete', 'remove the picked songs (or this one)'],
   ['R', 'sort the other way round'],
-  ['C twice', 'clear the playlist and stop; l brings it back'],
+  ['C twice', 'clear the queue and stop; l brings it back'],
   ['/', 'filter the list; Enter plays the first match, Esc clears'],
 ]
 
@@ -51,12 +51,12 @@ export const MOUSE_HELP: [string, string][] = [
   ['click', 'select a row; on a folder, open or shut it; on ../, go up'],
   ['Ctrl-click', 'pick or unpick a row'],
   ['Shift-, Alt-click', 'pick the rows from the cursor to there'],
-  ['double-click', 'Playlist: play the song; Files: add to queue'],
+  ['double-click', 'Queue: play the song; Files: add to queue'],
   ['right-click, ⋯', "the row's menu"],
-  ['drag', 'Playlist: move the picked songs (or the one dragged)'],
+  ['drag', 'Queue: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
   ['sort: …', 'sort by the next field'],
-  ['↓  ↑ after it', 'Playlist: sort the other way round'],
+  ['↓  ↑ after it', 'Queue: sort the other way round'],
   ['Files heading', 'edit the location there; Esc leaves it'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
   ['volume bar', 'set the volume there'],
@@ -75,13 +75,13 @@ A full-screen player for the stream-radio mod's shared mpv. With a URL, or a
 file, folder or playlist, it plays that; with none it follows the player that
 is running, or shows the last URL, ready to play with l.
 
-Two tabs: Files, to browse folders and add songs, and Playlist, the queue.
+Two tabs: Files, to browse folders and add songs, and Queue, what plays.
 
 Keys (both tabs):
 ${list(KEY_HELP)}
 
-Playlist tab:
-${list(PLAYLIST_KEY_HELP)}
+Queue tab:
+${list(QUEUE_KEY_HELP)}
 
 Files tab:
 ${list(FILES_KEY_HELP)}

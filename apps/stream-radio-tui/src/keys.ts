@@ -48,7 +48,7 @@ export type Action =
   | { kind: 'move'; by: 1 | -1 }
   | { kind: 'remove' }
   // the whole queue, stopping the player; from a key, only when pressed twice
-  | { kind: 'clearPlaylist'; isSure?: boolean }
+  | { kind: 'clearQueue'; isSure?: boolean }
   // the cursor a row up or down, picking the rows from the anchor
   | { kind: 'extendPick'; by: 1 | -1 }
   | { kind: 'togglePick' }
@@ -149,7 +149,7 @@ function lineKey(input: string, key: Keys): Edit | null {
 export type KeyContext = { tab: Tab; hasPick: boolean }
 
 // What a key press means in `mode`; null for a key that means nothing there.
-export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext = { tab: 'playlist', hasPick: false }): Action | null {
+export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext = { tab: 'queue', hasPick: false }): Action | null {
   if (key.ctrl && input === 'c') return { kind: 'interrupt' }
   if (mode === 'help') {
     if (key.escape || input === '?' || input === 'q') return { kind: 'closeHelp' }
@@ -178,24 +178,24 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   }
   // Tab and Shift-Tab: with two tabs, either goes to the other
   if (key.tab) return { kind: 'tab' }
-  const isPlaylist = ctx.tab === 'playlist'
+  const isQueue = ctx.tab === 'queue'
   // Ink calls Esc meta too, so it is read first
   if (key.escape) return ctx.hasPick ? { kind: 'clearPick' } : null
   if ((key.upArrow || key.downArrow) && key.shift) return { kind: 'extendPick', by: key.upArrow ? -1 : 1 }
-  if ((key.upArrow || key.downArrow) && key.meta) return isPlaylist ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
+  if ((key.upArrow || key.downArrow) && key.meta) return isQueue ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
   // Ink names the key most terminals send for Backspace `delete` too
-  if (key.delete || key.backspace) return isPlaylist ? { kind: 'remove' } : null
+  if (key.delete || key.backspace) return isQueue ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
-  if (isPlaylist && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
+  if (isQueue && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
   // plain letters only: Ctrl-A or Alt-S are someone else's chords
   const isPlain = !key.ctrl && !key.meta
-  if (isPlain && !isPlaylist && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
+  if (isPlain && !isQueue && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
   if (isPlain && input === 'm') return { kind: 'menu' }
-  if (isPlain && !isPlaylist && input === 'U') return { kind: 'folderUp' }
+  if (isPlain && !isQueue && input === 'U') return { kind: 'folderUp' }
   if (isPlain && input === 'G') return { kind: 'goPlaying' }
   if (isPlain && input === 'S') return { kind: 'sortNext' }
   if (isPlain && input === 'R') return { kind: 'sortReverse' }
-  if (isPlain && isPlaylist && input === 'C') return { kind: 'clearPlaylist' }
+  if (isPlain && isQueue && input === 'C') return { kind: 'clearQueue' }
   if (key.upArrow) return { kind: 'up' }
   if (key.downArrow) return { kind: 'down' }
   const jump = jumpOf(key)

@@ -29,7 +29,7 @@ test('a double-width character still takes two', () => {
 })
 
 // string-width calls ▶ two columns (it can be an emoji); terminals draw it
-// as one, as Ink did before the fix. The playlist's playing row starts with it.
+// as one, as Ink did before the fix. The queue's playing row starts with it.
 test('▶ keeps one column, so a fixed-width row still reaches its edge', () => {
   const { lastFrame } = render(
     <Box>

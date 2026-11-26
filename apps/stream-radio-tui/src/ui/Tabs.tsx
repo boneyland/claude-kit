@@ -3,9 +3,9 @@ import { Box } from 'ink'
 import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 
-export type Tab = 'files' | 'playlist'
-export const TABS: readonly Tab[] = ['files', 'playlist']
-const NAMES: Record<Tab, string> = { files: 'Files', playlist: 'Playlist' }
+export type Tab = 'files' | 'queue'
+export const TABS: readonly Tab[] = ['files', 'queue']
+const NAMES: Record<Tab, string> = { files: 'Files', queue: 'Queue' }
 
 // The tab names, the current one inverted; with `sortLabel`, a clickable
 // `sort: <field> ▾` at the right, and with `isReversed` set, after it a

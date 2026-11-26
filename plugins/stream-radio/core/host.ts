@@ -4,9 +4,9 @@
 import type { Repeat } from './nowplaying'
 
 // Kept identical to types/index.d.ts (checked in hooks/host-claude.ts).
-// The playlist's entries or the file's chapters, by title; current is the one
+// The queue's entries or the file's chapters, by title; current is the one
 // playing, -1 when unknown.
-// paths: each playlist entry's file or URL; root: the local folder they were
+// paths: each queue entry's file or URL; root: the local folder they were
 // played from, '' for none, under which the panel groups them by folder.
 export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; current: number; paths: string[]; root: string }
 
@@ -33,9 +33,9 @@ export type PlayerKeys = {
   chapter: string
   // the last URL that actually played
   lastUrl: string
-  // what there is to pick from: the playlist, else the file's chapters
+  // what there is to pick from: the queue, else the file's chapters
   queue: Queue
-  // the folders the playlist shows open
+  // the folders the queue shows open
   openFolders: string[]
   // what the list is narrowed to; empty for all of it
   filter: string

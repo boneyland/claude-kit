@@ -3,7 +3,7 @@ import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '@core/host'
 import { DEFAULT_CONFIG } from '../src/config'
-import { usePlaylist, type Playlist } from '../src/playlist/usePlaylist'
+import { useQueue, type QueueTab } from '../src/queue/useQueue'
 import type { View } from '../src/ui/hooks'
 import type { TagBook } from '../src/ui/tagbook'
 
@@ -16,10 +16,10 @@ const view = (elapsed: number, filter = ''): View =>
 let version = 0
 const book: TagBook = { get: () => undefined, need: () => undefined, know: () => undefined, version: () => version }
 const turns = { act: () => undefined, inTurn: async () => undefined }
-const seen: Playlist[] = []
+const seen: QueueTab[] = []
 
 function Probe({ v }: { v: View }) {
-  seen.push(usePlaylist({} as Host, DEFAULT_CONFIG, v, book, '', turns))
+  seen.push(useQueue({} as Host, DEFAULT_CONFIG, v, book, '', turns))
   return null
 }
 

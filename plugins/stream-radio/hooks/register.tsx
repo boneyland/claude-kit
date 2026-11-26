@@ -10,7 +10,7 @@ import {
   type Repeat,
   stepVolume,
   filterRows,
-  playlistRows,
+  queueRows,
   type TreeRow,
   SCROLL_CHARS,
   SCROLL_MS,
@@ -68,7 +68,7 @@ const resumeAt = atom({ plugin: 'stream-radio', key: 'resumeAt' } as const, NO_R
 const SEEK_SECONDS = 10
 const volumeLevel = atom({ plugin: 'stream-radio', key: 'volume' } as const, 60)
 const repeatMode = atom({ plugin: 'stream-radio', key: 'repeat' } as const, 'all' as Repeat)
-// The playing playlist's shuffle, off again when something new starts.
+// The playing queue's shuffle, off again when something new starts.
 const isShuffled = atom({ plugin: 'stream-radio', key: 'isShuffled' } as const, false)
 // What the panel's list is narrowed to, as typed; empty again when something
 // new starts.
@@ -115,7 +115,7 @@ function storeOf($: EngineInterface): StateStore {
 
 // How far a title too long for the footer has scrolled, in ticks; 0 at its start.
 const scroll = atom({ plugin: 'stream-radio', key: 'scroll' } as const, 0)
-// The panel's playlist rows, kept for the versions of the queue and the open
+// The panel's queue rows, kept for the versions of the queue and the open
 // folders they were built from: a redraw for anything else (pause, a reply,
 // the panel's width) reuses them.
 let rowsCache: { key: string; rows: TreeRow[] } | undefined
@@ -145,7 +145,7 @@ async function labelParts($: EngineInterface) {
   const paused = await read($, isPaused)
   const done = await read($, elapsed)
   const part = await read($, chapter)
-  // A file in a playlist shows how far along it is; a live stream has no end.
+  // A file in the queue shows how far along it is; a live stream has no end.
   const progress = done >= 0 ? formatTime(done) : ''
   const icon = paused ? `⏸ ${progress}`.trim() : progress || '♪'
   // A video of several songs names each in a chapter: the footer shows that
@@ -414,7 +414,7 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The panel: what plays, its controls, the playlist or chapters to pick from,
+  // The panel: what plays, its controls, the queue or chapters to pick from,
   // and a URL field. Each action's reply shows in it: a button has no reply line.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Input } = $.ui.resolve(e)
@@ -440,7 +440,7 @@ export const register: Register = (on, options) => {
         key: rowsKey,
         rows: filter
           ? filterRows(q.items, q.paths, q.root, filter)
-          : playlistRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current),
+          : queueRows(q.items, q.paths, q.root, new Set(openRead.value ?? []), q.current),
       }
     }
     const rows = rowsCache.rows
@@ -553,7 +553,7 @@ export const register: Register = (on, options) => {
               {filter
                 ? `${rows.length} of ${q.items.length} ${q.kind === 'playlist' ? 'songs' : 'chapters'} match`
                 : q.kind === 'playlist'
-                  ? 'Playlist'
+                  ? 'Queue'
                   : 'Chapters'}
             </Text>
             {q.items.length > 1 ? (

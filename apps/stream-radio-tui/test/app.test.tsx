@@ -52,7 +52,7 @@ vi.mock('@core/player', async original => {
       return ''
     }),
     unsortQueue: vi.fn(async () => ''),
-    clearQueue: vi.fn(async () => 'Cleared the playlist. l brings it back.'),
+    clearQueue: vi.fn(async () => 'Cleared the queue. l brings it back.'),
     removeFromQueue: vi.fn(async () => ''),
     addToQueue: vi.fn(async () => ''),
   }
@@ -207,8 +207,8 @@ describe('drawing', () => {
     expect(all[lineOf(all, /3\. Song three/)]).toMatch(/▶\s+3\. Song three/)
     expect(all.some(l => /^\s*2\. Song two/.test(l.trimStart()) && !l.includes('▶ '))).toBe(true)
     // now playing sits on the same line as the list's heading
-    const heading = lineOf(all, /Playlist/)
-    expect(all[heading]).toMatch(/Playlist.*▶ Song three/)
+    const heading = lineOf(all, /Queue/)
+    expect(all[heading]).toMatch(/Queue.*▶ Song three/)
     expect(all.join('\n')).toMatch(/2:41 ━+─* 4:05/)
     expect(all.join('\n')).toContain('vol 60%')
     expect(all.join('\n')).toContain('repeat all')
@@ -222,7 +222,7 @@ describe('drawing', () => {
     const { lines } = await show(60)
     const all = lines()
     const title = lineOf(all, /▶ Song three/)
-    const heading = lineOf(all, /Playlist/)
+    const heading = lineOf(all, /Queue/)
     expect(title).toBeGreaterThan(-1)
     expect(heading).toBeGreaterThan(title)
     expect(all[heading]).not.toContain('Song three')
@@ -232,9 +232,9 @@ describe('drawing', () => {
     expect(all.every(l => l.length <= 60)).toBe(true)
   })
 
-  test('a playlist under the home folder is headed with ~', async () => {
+  test('the queue under the home folder is headed with ~', async () => {
     const { lines } = await show(100, PLAYING, '', '/m')
-    expect(lines().join('\n')).toContain('Playlist · ~/Album')
+    expect(lines().join('\n')).toContain('Queue · ~/Album')
     expect(tilde('/m', '/m')).toBe('~')
     expect(tilde('/music/Album', '/m')).toBe('/music/Album')
     expect(tilde('/m/Album', '')).toBe('/m/Album')
@@ -247,7 +247,7 @@ describe('drawing', () => {
   })
 
   test('a length mpv does not know yet at the title change is asked again as the position moves', async () => {
-    // A playlist's next file: the title changes while mpv is still opening it,
+    // The queue's next file: the title changes while mpv is still opening it,
     // so its duration is unavailable then; a second later it is known.
     let isLoaded = false
     vi.mocked(player.mpv).mockImplementation(async (_h, command) =>
@@ -687,12 +687,12 @@ describe('mouse rows', () => {
 describe('tabs', () => {
   // Tests draw without colour, so which tab shows is read from the heading
   // under the tab row.
-  const INV = /^\s*Playlist/
+  const INV = /^\s*Queue/
   const INV_FILES = /^\s*Files/
-  const tabHeading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+  const tabHeading = (all: string[]) => all[lineOf(all, /Files\s+Queue/) + 1] ?? ''
   const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
 
-  test('starts on Playlist with a queue, on Files without', async () => {
+  test('starts on Queue with a queue, on Files without', async () => {
     const a = await show(100)
     expect(tabHeading(a.lines())).toMatch(INV)
     expect(a.lines().join('\n')).toContain('3. Song three')
@@ -717,7 +717,7 @@ describe('tabs', () => {
     const at = where(' Files ')
     await click(at.x + 2, at.y)
     expect(tabHeading(lines())).toMatch(INV_FILES)
-    const back = where(' Playlist ')
+    const back = where(' Queue ')
     await click(back.x + 2, back.y)
     expect(tabHeading(lines())).toMatch(INV)
   })
@@ -730,7 +730,7 @@ describe('tabs', () => {
     expect(lines().join('\n')).toContain('1. Intro')
   })
 
-  test('the playlist is flat: every song, no folders, shut or not', async () => {
+  test('the queue is flat: every song, no folders, shut or not', async () => {
     const { lines } = await show(100, { ...PLAYING, openFolders: [] })
     const all = lines().join('\n')
     expect(all).not.toContain('📁')
@@ -801,7 +801,7 @@ describe('files', () => {
   const showFiles = async (saved: Record<string, string> = {}, tree = TREE, extra: Extra = {}) => {
     return show(100, EMPTY, '', '/h', { fs: fsOf(tree, saved), ...extra })
   }
-  const heading = (all: string[]) => all[lineOf(all, /Files\s+Playlist/) + 1] ?? ''
+  const heading = (all: string[]) => all[lineOf(all, /Files\s+Queue/) + 1] ?? ''
 
   test('with nothing remembered it opens ~/Music: ../ first, folders, then playable files', async () => {
     const { lines } = await showFiles()
@@ -966,7 +966,7 @@ describe('files', () => {
     await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
   })
 
-  test('o from the Playlist goes to Files', async () => {
+  test('o from the Queue goes to Files', async () => {
     const { lines, press } = await show(100, PLAYING, '', '/h', { fs: fsOf(TREE) })
     await press('o')
     expect(heading(lines())).toMatch(/^\s*Files/)
@@ -1058,7 +1058,7 @@ describe('files actions', () => {
     expect(lines().join('\n')).toContain('1 picked')
   })
 
-  test('the Playlist menu removes a song', async () => {
+  test('the Queue menu removes a song', async () => {
     const { rightClick, click, where, host, session, lines } = await show(100)
     await rightClick(where('Song two').x, where('Song two').y)
     expect(lines().join('\n')).toContain('Move up')
@@ -1153,7 +1153,7 @@ describe('pr review fixes', () => {
     expect(errors.mock.calls.some(c => String(c[0]).includes('same key'))).toBe(false)
   })
 
-  test('the Playlist stats its songs a few at a time, and a folder in the queue only once', async () => {
+  test('the Queue stats its songs a few at a time, and a folder in the queue only once', async () => {
     let running = 0
     let most = 0
     const stats: string[] = []
@@ -1183,7 +1183,7 @@ describe('pr review fixes', () => {
   })
 })
 
-describe('playlist editing', () => {
+describe('queue editing', () => {
   const FIVE: Partial<PlayerKeys> = {
     ...PLAYING,
     queue: {
@@ -1197,23 +1197,23 @@ describe('playlist editing', () => {
   const SHIFT_DOWN = '\x1b[1;2B'
   const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
 
-  test('C once only asks; C again clears the playlist and stops', async () => {
+  test('C once only asks; C again clears the queue and stops', async () => {
     const { press, lines, host, session } = await show(100, FIVE)
     await press('C')
     expect(status(lines())).toContain('Press C again to clear all 5 songs.')
     expect(player.clearQueue).not.toHaveBeenCalled()
     await press('C')
     await vi.waitFor(() => expect(player.clearQueue).toHaveBeenCalledWith(host, session.config))
-    await vi.waitFor(() => expect(status(lines())).toContain('Cleared the playlist. l brings it back.'))
+    await vi.waitFor(() => expect(status(lines())).toContain('Cleared the queue. l brings it back.'))
   })
 
-  test("C in Files doesn't clear the playlist", async () => {
+  test("C in Files doesn't clear the queue", async () => {
     const { press } = await show(100, FIVE)
     await press('\t', 'C', 'C')
     expect(player.clearQueue).not.toHaveBeenCalled()
   })
 
-  test("the row's menu clears the playlist at once", async () => {
+  test("the row's menu clears the queue at once", async () => {
     const { press, host, session } = await show(100, FIVE)
     await press('m', 'k', '\r')
     await vi.waitFor(() => expect(player.clearQueue).toHaveBeenCalledWith(host, session.config))
@@ -1336,7 +1336,7 @@ describe('playlist editing', () => {
     expect(lines().join('\n')).toContain('l plays Cc song at 1:23')
   })
 
-  test('a stopped playlist can still be edited', async () => {
+  test('a stopped queue can still be edited', async () => {
     const { press, host, session } = await show(100, { ...FIVE, playing: '' })
     await press('\x1b[3~')
     expect(player.removeFromQueue).toHaveBeenCalledWith(host, session.config, [0])
@@ -1400,8 +1400,8 @@ describe('review fixes', () => {
     await rightClick(where('Track 2 ').x, where('Track 2 ').y)
     await click(where(' Files ').x + 2, where(' Files ').y)
     expect(lines().join('\n')).not.toContain('Move up')
-    // the click only closed the menu: still on the Playlist, where Enter plays the row
-    expect(lines()[lineOf(lines(), /Files\s+Playlist/) + 1]).toMatch(/^\s*Playlist/)
+    // the click only closed the menu: still on the Queue, where Enter plays the row
+    expect(lines()[lineOf(lines(), /Files\s+Queue/) + 1]).toMatch(/^\s*Queue/)
     await press(ENTER)
     expect(player.pick).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1)
     expect(player.addToQueue).not.toHaveBeenCalled()
@@ -1582,7 +1582,7 @@ describe('the key list', () => {
       const all = lines().join('\n')
       // the list and pane give way to it
       expect(all).not.toContain('2. Song two')
-      for (const text of ['Keys', 'stop (the playlist stays)', 'resume the playlist', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
+      for (const text of ['Keys', 'stop (the queue stays)', 'resume the queue', 'filter the list', 'quit; the music keeps playing', 'Mouse', 'double-click', 'seek there', 'Shift-drag']) {
         expect(all).toContain(text)
       }
       await press(close)
@@ -1606,7 +1606,7 @@ describe('the key list', () => {
     const { press, lines } = await show(100, PLAYING, '', '', { rows: 56 })
     await press('?')
     let all = lines().join('\n')
-    for (const text of ['Playlist tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
+    for (const text of ['Queue tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
     expect(all).not.toContain('Files tab')
     await press(ESC, '\t', '?')
     all = lines().join('\n')

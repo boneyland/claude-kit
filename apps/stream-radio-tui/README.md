@@ -25,14 +25,14 @@ Needs `node` 22 or newer, `mpv`, `curl`, and `sha256sum` or `shasum`. YouTube al
 ## Use
 
 ```
-stream-radio-tui                     # follows the running player, or shows the playlist as it was left
+stream-radio-tui                     # follows the running player, or shows the queue as it was left
 stream-radio-tui https://www.youtube.com/watch?v=tRsQsTMvPNg
-stream-radio-tui ~/Music/Album       # a folder, file, .m3u/.pls or YouTube playlist becomes the playlist
+stream-radio-tui ~/Music/Album       # a folder, file, .m3u/.pls or YouTube playlist becomes the queue
 ```
 
-With no argument it attaches to the player that is already running, or shows the playlist as it was left, ready to play with `l` (from where it got to) or `space` (from the start of its song). A YouTube link to a video in a playlist (`watch?v=…&list=…`) queues the playlist and starts at that video; while yt-dlp or curl reads a playlist, the title shows `loading…`.
+With no argument it attaches to the player that is already running, or shows the queue as it was left, ready to play with `l` (from where it got to) or `space` (from the start of its song). A YouTube link to a video in a playlist (`watch?v=…&list=…`) queues the playlist and starts at that video; while yt-dlp or curl reads a playlist, the title shows `loading…`.
 
-The list has two tabs: **Files**, a folder browser to pick songs from, and **Playlist**, the queue that plays. It opens on the Playlist when something is queued, else on Files. `Tab` or a click on a tab's name switches; each tab keeps its own cursor, picked rows and scroll.
+The list has two tabs: **Files**, a folder browser to pick songs from, and **Queue**, what plays. It opens on the Queue when something is queued, else on Files. `Tab` or a click on a tab's name switches; each tab keeps its own cursor, picked rows and scroll.
 
 ### Both tabs
 
@@ -43,7 +43,7 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | `PgUp` `PgDn` | move a page up or down |
 | `Home` `End` | the first or last row |
 | `Shift-↑` `Shift-↓` | pick rows from the cursor (`Shift-↓` then `Shift-↑` leaves one row picked, as in a file manager) |
-| `space` | pause or resume; while stopped, play the playlist from the start of the song it stopped on (`l` resumes mid-song); while any row is picked, pick or unpick the cursor's row instead |
+| `space` | pause or resume; while stopped, play the queue from the start of the song it stopped on (`l` resumes mid-song); while any row is picked, pick or unpick the cursor's row instead |
 | `Esc` | clear the pick |
 | `m` | the row's menu (also a right-click, or the `⋯` at the end of the cursor's row) |
 | `S` | sort by the next field; after the last, back to `as queued` (also the `sort:` control on the tab row) |
@@ -54,8 +54,8 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Pla
 | `r` | repeat: all, one, off |
 | `o` | go to a folder, or a YouTube playlist URL, in Files |
 | `G` | Files at the folder of the song playing, the cursor on it |
-| `l` | resume the playlist from where it got to (after `x`, or on a fresh start); after `C` `C` it brings the cleared playlist back; while it plays, does nothing |
-| `x` | stop; the playlist stays, and `Enter` or `l` plays it again |
+| `l` | resume the queue from where it got to (after `x`, or on a fresh start); after `C` `C` it brings the cleared queue back; while it plays, does nothing |
+| `x` | stop; the queue stays, and `Enter` or `l` plays it again |
 | `?` | every key of the tab showing, and what the mouse does; `?`, `Esc` or `q` closes it |
 | `q`, or `Ctrl-C` twice | quit the TUI; the music keeps playing. A single `Ctrl-C` only says to press it again, so a copy habit does not quit (kitty copies with `Ctrl-Shift-C`) |
 
@@ -80,7 +80,7 @@ Files never starts, stops or skips music while something plays. Adding while not
 
 A YouTube playlist URL typed after `o` lists its videos as one folder (read with `yt-dlp`, up to 1000); adding the folder adds every video. If yt-dlp can't list it, its error shows on the status line and the tree stays as it was.
 
-### Playlist
+### Queue
 
 One row per song: its title (from its tags, else its file name), then, dimmed, its artist and its folder or site. A video with chapters lists its chapters here until something is added.
 
@@ -91,10 +91,10 @@ One row per song: its title (from its tags, else its file name), then, dimmed, i
 | `Delete` (or Backspace) | remove the picked songs |
 | `S` | sort by title, artist, album artist, album, or folder then file name, then `as queued` (the order the songs were added or moved to) |
 | `R` | the same sort the other way round (also the `↓` / `↑` after `sort:` on the tab row) |
-| `C` twice | clear the playlist and stop; `l` brings it back (also in the row's menu) |
+| `C` twice | clear the queue and stop; `l` brings it back (also in the row's menu) |
 | `/` | filter the list; `Enter` plays the first match, `Esc` clears |
 
-A sort reorders what plays: it plays in that order afterwards, and songs added later go where they are added (not sorted in). It can be undone: `S` past the last field, or `s` on a shuffle, goes back to `as queued`, the order the songs were added or moved to. Moving a song by hand makes the order shown the queued order, and turns a sort or shuffle off; a sort replaces a shuffle. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the playlist. A stop keeps the queue: it still lists, and while stopped you can edit it, `Enter` plays a song from its start, `space` (or the play control) plays the song it stopped on from its start, and `l` resumes the saved place.
+A sort reorders what plays: it plays in that order afterwards, and songs added later go where they are added (not sorted in). It can be undone: `S` past the last field, or `s` on a shuffle, goes back to `as queued`, the order the songs were added or moved to. Moving a song by hand makes the order shown the queued order, and turns a sort or shuffle off; a sort replaces a shuffle. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the queue. A stop keeps the queue: it still lists, and while stopped you can edit it, `Enter` plays a song from its start, `space` (or the play control) plays the song it stopped on from its start, and `l` resumes the saved place.
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 
@@ -102,9 +102,9 @@ A sort reorders what plays: it plays in that order afterwards, and songs added l
 
 Everything the keys do, the mouse can do too:
 
-- **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Playlist, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
-- **Drag:** in the Playlist, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
-- **Tabs:** a click on `Files` or `Playlist` switches; a click on `sort: …` sorts by the next field. In the Playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
+- **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
+- **Drag:** in the Queue, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
+- **Tabs:** a click on `Files` or `Queue` switches; a click on `sort: …` sorts by the next field. In the Queue, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
@@ -139,7 +139,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | `volume` | 60 | 0 to 100, where playback starts |
 | `player` | `mpv` | the mpv executable; it also decodes the art and waveforms |
 | `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md)) |
-| `defaultUrl` | empty | what `l` plays when the playlist is empty and nothing cleared can come back |
+| `defaultUrl` | empty | what `l` plays when the queue is empty and nothing cleared can come back |
 | `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |
 | `mouse` | `on` | clicks and the wheel (see Mouse); `off` leaves text selection to the terminal |
 

@@ -106,7 +106,7 @@ export function stepVolume(level: number, dir: 1 | -1): number {
   return at <= LOWEST ? 0 : Math.max(LOWEST, Math.min(at - 1, Math.round(at / STEP_RATIO)))
 }
 
-// Whether the playlist starts over at its end (all), the song plays again (one),
+// Whether the queue starts over at its end (all), the song plays again (one),
 // or playback ends (off).
 export type Repeat = 'all' | 'one' | 'off'
 export const nextRepeat = (r: Repeat): Repeat => (r === 'all' ? 'one' : r === 'one' ? 'off' : 'all')
@@ -207,7 +207,7 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   return resolveTarget(target, where)
 }
 
-// The last part of a path or URL: a local playlist entry's name when its file
+// The last part of a path or URL: a local queue entry's name when its file
 // has no title tag.
 export const baseName = (path: string) => path.replace(/\/+$/, '').split('/').pop() || path
 
@@ -296,7 +296,7 @@ export function marquee(text: string, width: number, tick: number, chars = SCROL
   return out + ' '.repeat(width - used)
 }
 
-// A row of the panel's playlist: a folder, open or shut, or an entry to play.
+// A row of the panel's queue: a folder, open or shut, or an entry to play.
 // number counts the entries within their own folder; index is mpv's.
 export type TreeRow =
   | { kind: 'folder'; path: string; name: string; depth: number; count: number; isOpen: boolean; hasCurrent: boolean }
@@ -312,10 +312,10 @@ export function foldersOf(path: string, root: string): string[] {
   return parts.map((_, i) => `${root}/${parts.slice(0, i + 1).join('/')}`)
 }
 
-// The playlist as rows: entries under `root` grouped by their folders, in the
+// The queue as rows: entries under `root` grouped by their folders, in the
 // order mpv plays them, with the folders in `open` showing what they hold.
 // Without a root (a stream, a playlist file) the rows are the plain list.
-export function playlistRows(items: readonly string[], paths: readonly string[], root: string, open: ReadonlySet<string>, current: number): TreeRow[] {
+export function queueRows(items: readonly string[], paths: readonly string[], root: string, open: ReadonlySet<string>, current: number): TreeRow[] {
   const top: Node = { path: root, name: '', count: 0, hasCurrent: false, children: [] }
   const byPath = new Map<string, Node>()
   items.forEach((_, index) => {
@@ -353,7 +353,7 @@ export function playlistRows(items: readonly string[], paths: readonly string[],
 }
 
 // The entries whose name or folder holds every word of `text`, any case, as a
-// plain list in play order: numbered by place in the playlist, each with the
+// plain list in play order: numbered by place in the queue, each with the
 // folder it is in under `root` (empty at the top).
 export function filterRows(items: readonly string[], paths: readonly string[], root: string, text: string): TreeRow[] {
   const words = text.toLowerCase().split(/\s+/).filter(Boolean)

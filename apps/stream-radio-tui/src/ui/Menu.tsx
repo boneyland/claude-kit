@@ -29,10 +29,10 @@ export const FILES_MENU: readonly MenuItem[] = [
 // a video's chapters: they play, but aren't queue entries to move or remove
 export const CHAPTER_MENU: readonly MenuItem[] = [{ label: 'Play', key: 'Enter', action: { kind: 'enter' } }]
 
-export const PLAYLIST_MENU: readonly MenuItem[] = [
+export const QUEUE_MENU: readonly MenuItem[] = [
   { label: 'Play', key: 'Enter', action: { kind: 'enter' } },
   { label: 'Move up', key: 'u', action: { kind: 'move', by: -1 } },
   { label: 'Move down', key: 'd', action: { kind: 'move', by: 1 } },
   { label: 'Remove', key: 'Del', action: { kind: 'remove' } },
-  { label: 'Clear playlist', key: 'C', action: { kind: 'clearPlaylist', isSure: true } },
+  { label: 'Clear queue', key: 'C', action: { kind: 'clearQueue', isSure: true } },
 ]
