@@ -2,8 +2,8 @@
 // favourite toggle, adding to and removing from a playlist, playing one, and
 // the history as text. Each answers with the line to show.
 import type { Host } from './host'
-import { FAVOURITES, addMissing, markOf, removeSongs, songsOf, toggle, whenPlayed, type Play, type Song } from './library'
-import { editPlaylist, listPlaylists, readHistory, readPlaylist } from './libraryFile'
+import { FAVOURITES, addMissing, markOf, removeSongs, songsOf, toggle, whenPlayed, type Mark, type Play, type Song } from './library'
+import { editPlaylist, listMtime, listPlaylists, readHistory, readPlaylist } from './libraryFile'
 import { baseName } from './nowplaying'
 import { playEntries, type PlayerConfig } from './player'
 import { played, type QueueEntry } from './stored'
@@ -103,4 +103,36 @@ export async function playList(h: Host, config: PlayerConfig, list: string, star
 export function historyText(plays: readonly Play[], now: number, n = 20): string {
   if (plays.length === 0) return 'Nothing played yet.'
   return plays.slice(0, n).map(p => `${whenPlayed(p.at, now)}  ${p.title || baseName(p.path)}`).join('\n')
+}
+
+// A row of Add to playlist's checklist: a playlist, and how many of the songs
+// acted on are in it.
+export type ChecklistRow = { name: string; mark: Mark }
+
+// How a checklist row draws its mark: every song in it, some, none.
+export const MARK_GLYPH: Record<Mark, string> = { all: '✓', some: '–', none: ' ' }
+
+export const GONE = 'That playlist is gone.'
+
+// Favourites, then the saved playlists by name, each marked from its file as it is now.
+export async function checklistRows(h: Host, songs: readonly Song[]): Promise<ChecklistRow[]> {
+  const home = await h.home().catch(() => '')
+  const lists = await listPlaylists(h)
+  return Promise.all(lists.map(async l => ({ name: l.name, mark: markOf(await readPlaylist(h, l.name), songs, home) })))
+}
+
+// A checklist row chosen: blank or – adds the songs missing, ✓ takes them all
+// out. Resolves to what to say; a saved playlist no longer there says so and is left gone.
+export async function toggleIn(h: Host, name: string, songs: readonly Song[]): Promise<string> {
+  if (name === FAVOURITES) return toggleFavourite(h, songs)
+  // deleted or renamed elsewhere since the checklist read it: not made again
+  if ((await listMtime(h, name)) === 0) return GONE
+  const home = await h.home().catch(() => '')
+  let isAdding = false
+  const done = await editPlaylist(h, name, f => {
+    isAdding = markOf(f, songs, home) !== 'all'
+    return toggle(f, songs, home)
+  })
+  if (done === 'busy') return 'The playlists are busy; try again.'
+  return isAdding ? `Added to ${name}.` : `Removed from ${name}.`
 }

@@ -51,6 +51,7 @@ import { readHistory } from '../core/libraryFile'
 import type { Host, PlayerKeys, StateStore } from '../core/host'
 import { migrateFromStore } from '../core/saved'
 import { hostOf } from './host-claude'
+import { libraryParts, resetLibrary, stopLibraryPoll } from './libraryPanel'
 
 // The panel reads these two through $.state for their versions.
 const QUEUE = { plugin: 'stream-radio', key: 'queue' } as const
@@ -183,6 +184,8 @@ async function togglePane($: EngineInterface): Promise<'opened' | 'closed'> {
     await $.ui.close({ id: PANE })
     return 'closed'
   }
+  // the list shown starts at the queue each time
+  await resetLibrary($)
   await $.ui.open({ id: PANE, title: TITLE })
   return 'opened'
 }
@@ -281,6 +284,7 @@ export const register: Register = (on, options) => {
     detach()
     stopPoller()
     stopScroller()
+    stopLibraryPoll()
     await releaseLock(hostFor($, config))
 
     return next(e)
@@ -369,6 +373,13 @@ export const register: Register = (on, options) => {
     }
   })
 
+  // The panel closed, by the person or here: its lists are no longer looked at.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const done = await next(e)
+    await resetLibrary($).catch(() => undefined)
+    return done
+  })
+
   // The track at the right of the prompt footer after the engine's own labels;
   // pressing it pauses and resumes.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
@@ -437,7 +448,8 @@ export const register: Register = (on, options) => {
   // The panel: what plays, its controls, the queue or chapters to pick from,
   // and a URL field. Each action's reply shows in it: a button has no reply line.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button, Input } = ui
     const width = Math.max(20, e.props.bodyColumns)
     // Every value read here redraws the whole panel when it changes, so it reads
     // none that change by the second: no time (the footer has it), and the
@@ -485,6 +497,16 @@ export const register: Register = (on, options) => {
         )
         .catch(() => undefined)
     const play = (url: string) => act(async () => (later(playSource(hostFor($, config), config, url)), ''))
+    const library = await libraryParts($, ui, {
+      host: () => hostFor($, config),
+      pane: PANE,
+      hasQueue: q.kind !== 'none',
+      title,
+      width,
+      act,
+      later,
+      playEntries: (h, entries, source, start) => playEntries(h, config, entries, source, start),
+    })
     const state = [
       paused ? 'paused' : '',
       q.kind !== 'none' && q.current >= 0 ? `${q.current + 1} of ${q.items.length}` : '',
@@ -536,6 +558,8 @@ export const register: Register = (on, options) => {
         ) : (
           <Text dimColor>Nothing playing.</Text>
         )}
+        {/* Outside the playing-only block: stopped, they act on the queue's song. */}
+        {library.controls}
         {/* Play last (or Resume) only while idle: playing, it is what plays. */}
         {(last && !title) || (defaultUrl && defaultUrl !== last) ? (
           <Box flexDirection="row" gap={1}>
@@ -567,7 +591,9 @@ export const register: Register = (on, options) => {
           }}
         />
         {said !== '' && <Text dimColor>{said}</Text>}
-        {q.kind !== 'none' ? (
+        {library.picker}
+        {library.list ?? null}
+        {library.list === undefined && q.kind !== 'none' ? (
           <Box flexDirection="column">
             <Text dimColor>
               {filter

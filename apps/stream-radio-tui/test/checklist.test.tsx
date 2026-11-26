@@ -9,7 +9,7 @@ import type { Host } from '@core/host'
 import { FAVOURITES } from '@core/library'
 import { memoryStore, nodeHost } from '../src/host-node'
 import { Checklist, NEW_PLAYLIST } from '../src/ui/Checklist'
-import { checklistRows, toggleIn } from '../src/library/checklist'
+import { checklistRows, toggleIn } from '@core/library-actions'
 import { useFavourites, type Favourites } from '../src/library/useFavourites'
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-check-'))

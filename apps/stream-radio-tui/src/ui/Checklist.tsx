@@ -3,12 +3,11 @@ import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 import { textWidth } from '@core/nowplaying'
 import type { Mark } from '@core/library'
+import { MARK_GLYPH as GLYPH } from '@core/library-actions'
 import { firstRow } from './List'
 
 export const NEW_PLAYLIST = '+ New playlist…'
 const TITLE = 'Add to playlist'
-
-const GLYPH: Record<Mark, string> = { all: '✓', some: '–', none: ' ' }
 
 // Add to playlist's checklist, drawn over the list at (x, y) from its top
 // left: each playlist marked ✓ (every song acted on is in it), – (some are)

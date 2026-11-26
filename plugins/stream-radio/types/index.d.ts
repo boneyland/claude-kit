@@ -11,6 +11,14 @@ export type Queue = { kind: 'playlist' | 'chapters' | 'none'; items: string[]; c
 // into it (-1 for a live stream) and the song or chapter title.
 export type Resume = { url: string; index: number; seconds: number; title: string }
 
+// A song the checklist acts on.
+export type ChecklistSong = { path: string; title?: string }
+
+// The list the panel shows instead of the queue: its view (fav, history or
+// list:<name>), its name, its file ('' for the history), its songs (with when
+// each played, for the history) and whether it was deleted elsewhere.
+export type ShownList = { view: string; name: string; source: string; songs: { path: string; title?: string; at?: number }[]; isGone: boolean }
+
 declare module 'claude-code' {
   interface PluginState {
     'stream-radio': {
@@ -40,6 +48,16 @@ declare module 'claude-code' {
       volume: number
       // Where the last URL got to, kept across a reload.
       resumeAt: Resume
+      // What the panel lists: queue, fav, history or list:<name>.
+      listView: string
+      // That list as last read; unused while the queue is shown.
+      shownList: ShownList
+      // The saved playlists by name, Favourites aside, for the picker.
+      listNames: string[]
+      // Whether the queue's song is in Favourites: the panel's ★ filled.
+      isFavourite: boolean
+      // Add to playlist's checklist: the songs it opened on (none: closed) and each list's mark.
+      checklist: { songs: ChecklistSong[]; rows: { name: string; mark: 'all' | 'some' | 'none' }[] }
     }
   }
 }

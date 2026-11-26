@@ -35,7 +35,9 @@ export type FakeOptions = {
   onCommand?: (command: unknown[]) => { data: unknown } | undefined
   // what `$.fs.exists` / `$.fs.stat` answer outside the data folder
   exists?: (path: string) => boolean
-  stat?: (path: string) => { kind: 'file' | 'dir' | 'other' }
+  stat?: (path: string) => { kind: 'file' | 'dir' | 'other'; mtimeMs?: number }
+  // the mtime `$.fs.stat` answers for a file the fake holds (default 0)
+  mtime?: (path: string) => number | undefined
   // what `$.fs.list` answers for a folder
   list?: (path: string) => { name: string; kind: 'file' | 'dir' | 'other' }[]
   // the time a lock file is stamped with
@@ -289,7 +291,7 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
       if (sockMtime === undefined) throw new Error('ENOENT')
       return { value: { kind: 'other', size: 0, mtimeMs: sockMtime, isLink: false } } as never
     }
-    if (e.path in world.files) return { value: { kind: 'file', size: 0, mtimeMs: lockTimes[e.path] ?? 0, isLink: false } } as never
+    if (e.path in world.files) return { value: { kind: 'file', size: 0, mtimeMs: lockTimes[e.path] ?? options.mtime?.(e.path) ?? 0, isLink: false } } as never
     const kind = options.stat?.(e.path)
     if (!kind) throw new Error(`ENOENT: ${e.path}`)
     return { value: { size: 0, mtimeMs: 0, isLink: false, ...kind } } as never
