@@ -122,7 +122,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     [o, sort, book, tagsSeen],
   )
   // tags are read for a sort by them, and for a filter (which matches artists)
-  const needKey = o && ((sort && sort.field !== 'folder') || filter) ? o.songs.map(song => song.path).join('\n') : ''
+  const needsAll = !!o && ((!!sort && sort.field !== 'folder') || !!filter)
+  const needKey = useMemo(() => (needsAll && o ? o.songs.map(song => song.path).join('\n') : ''), [needsAll, o])
   useEffect(() => book.need(needKey ? needKey.split('\n') : []), [book, needKey])
   const view = useMemo(() => ({ tags: book.get, home }), [book, home, tagsSeen])
   const rows = useMemo(() => libraryRows(lib, filter, order, view), [lib.lists, lib.isLoaded, lib.open, filter, order, view])

@@ -3,7 +3,7 @@ import { Box } from 'ink'
 import { Text } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
-import type { FlatRow } from '../queue/rows'
+import { extraOf, type FlatRow } from '../queue/rows'
 
 type Props = {
   heading: string
@@ -39,7 +39,7 @@ export function QueueView({ heading, rows, selected, picked, dropAt, current, is
         const at = first + i
         const isPlaying = row.index === current
         const isPicked = !!picked?.has(at)
-        const extra = [row.artist, row.where].filter(Boolean).join(' · ')
+        const extra = extraOf(row.artist, row.where)
         return (
           <Clickable key={`row-${row.index}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)} onDrag={p => onRowDrag?.(at, p.y)} onRelease={() => onRowRelease?.()}>
             <Box flexGrow={1}>

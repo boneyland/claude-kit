@@ -40,3 +40,6 @@ export function filterFlat(rows: readonly FlatRow[], text: string): FlatRow[] {
     return words.every(w => hay.includes(w))
   })
 }
+
+// The dimmed part after a title: the artist, where it is, and any `more`, joined as ' · '; '' when none.
+export const extraOf = (...parts: string[]): string => parts.filter(Boolean).join(' · ')

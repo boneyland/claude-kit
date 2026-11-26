@@ -6,6 +6,7 @@ import { RowFill } from './RowFill'
 import { textWidth } from '@core/nowplaying'
 import { whenPlayed, type Song } from '@core/library'
 import { type LibraryRow } from '../library/useLibrary'
+import { extraOf } from '../queue/rows'
 import { shown, type Line } from './lineEdit'
 
 type Props = {
@@ -33,7 +34,7 @@ type Props = {
 
 // After a song's title, dimmed: its artist and folder as the Queue shows them, and when it played.
 const songExtra = (row: Extract<LibraryRow, { kind: 'song' }>, now: number): string => {
-  const extra = [row.artist, row.where, row.at === undefined ? '' : whenPlayed(row.at, now)].filter(Boolean).join(' · ')
+  const extra = extraOf(row.artist, row.where, row.at === undefined ? '' : whenPlayed(row.at, now))
   return extra ? ` · ${extra}` : ''
 }
 

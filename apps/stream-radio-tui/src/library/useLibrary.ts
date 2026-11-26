@@ -46,6 +46,18 @@ export const songTitle = (s: Song) => s.title || baseName(s.path)
 // those with every word of it in their title or where they are). order: the
 // songs' places in the list in the order to show them (a sort); none: as in the file.
 // view: the tags read so far and the home folder, for each song's artist and folder.
+// where a song is, by path: tags arriving redraw the rows, but a song stays where it is
+const wheres = new Map<string, string>()
+const whereCached = (path: string, home: string): string => {
+  const k = `${home}\0${path}`
+  let w = wheres.get(k)
+  if (w === undefined) {
+    if (wheres.size >= 5000) wheres.clear()
+    w = whereOf(path, home)
+    wheres.set(k, w)
+  }
+  return w
+}
 export type SongView = { tags(path: string): Tags | undefined; home: string }
 export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, filter: string, order?: readonly number[], view?: SongView): LibraryRow[] {
   const { open } = lib
@@ -60,9 +72,11 @@ export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, f
     const song = open.songs[index]
     if (!song) return []
     const t = view?.tags(song.path)
-    const shown = { title: t?.title || songTitle(song), artist: t?.artist ?? '', where: whereOf(song.path, view?.home ?? '') }
-    const hay = `${shown.title} ${shown.artist} ${shown.where}`.toLowerCase()
-    if (!words.every(w => hay.includes(w))) return []
+    const shown = { title: t?.title || songTitle(song), artist: t?.artist ?? '', where: whereCached(song.path, view?.home ?? '') }
+    if (words.length) {
+      const hay = `${shown.title} ${shown.artist} ${shown.where}`.toLowerCase()
+      if (!words.every(w => hay.includes(w))) return []
+    }
     const at = open.plays?.[index]?.at
     return [at === undefined ? { kind: 'song' as const, song, index, ...shown } : { kind: 'song' as const, song, index, at, ...shown }]
   })
