@@ -108,3 +108,37 @@ test('whenPlayed boundaries', () => {
   expect(whenPlayed(s(new Date(2026, 10, 23, 9, 5)), now)).toBe('Mon 09:05')
   expect(whenPlayed(s(new Date(2026, 10, 16, 9, 5)), now)).toBe('2026-11-16')
 })
+
+test('only youtube hosts key by video id', () => {
+  const a = songKey('https://example.com/watch?v=1', '/h')
+  const b = songKey('https://radio.example.org/s?v=1', '/h')
+  expect(a).not.toBe(b)
+  expect([a, b]).not.toContain('yt:1')
+  expect(songKey('https://m.youtube.com/watch?v=1', '/h')).toBe('yt:1')
+})
+
+test('parseList: indented comments, stray EXTINF and header case', () => {
+  const f = parseList('  # note\n#EXTINF:-1,Lonely\n#EXTINF:-1,B\n/m/b\n#EXTINF:-1,End\n', '/m')
+  expect(songsOf(f)).toEqual([song('/m/b', 'B')])
+  expect(f.lines.filter(l => l.kind === 'other').map(l => (l as { text: string }).text)).toEqual([
+    '  # note',
+    '#EXTINF:-1,Lonely',
+    '#EXTINF:-1,End',
+  ])
+  const g = parseList('\n#extm3u\n/m/a\n', '/m')
+  expect(listText(g)).toBe('\n#extm3u\n/m/a\n')
+  expect(listText(moveSongs(g, [0]))).toBe('\n#extm3u\n/m/a\n')
+})
+
+test('moveSongs never loses or duplicates songs', () => {
+  const f = listOf('/m/a', '/m/b', '/m/c')
+  const paths = (o: number[]) => songsOf(moveSongs(f, o)).map(s => s.path.slice(3))
+  expect(paths([2, 2, 9, -1, 0])).toEqual(['c', 'a', 'b'])
+  expect(paths([])).toEqual(['a', 'b', 'c'])
+})
+
+test('checkName refuses names over 200 bytes', () => {
+  expect(checkName('a'.repeat(200), [])).toBe('')
+  expect(checkName('a'.repeat(201), [])).toBe('That name is too long.')
+  expect(checkName('★'.repeat(67), [])).toBe('That name is too long.')
+})

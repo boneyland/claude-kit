@@ -26,6 +26,25 @@ function tidy(path: string): string {
   return '/' + out.join('/')
 }
 
+// Only YouTube's own hosts carry a video id in ?v=.
+function isYoutube(url: string): boolean {
+  try {
+    const h = new URL(url).hostname
+    return /(^|\.)youtube\.com$/i.test(h) || /^youtu\.be$/i.test(h)
+  } catch {
+    return false
+  }
+}
+
+const isHeader = (l: ListLine | undefined) => l?.kind === 'other' && l.text.trim().toUpperCase() === HEADER
+
+// How many lines up to and including the #EXTM3U header (the first non-blank
+// line), or 0 when the file has none.
+function headerEnd(lines: readonly ListLine[]): number {
+  const i = lines.findIndex(l => !(l.kind === 'other' && l.text.trim() === ''))
+  return i >= 0 && isHeader(lines[i]) ? i + 1 : 0
+}
+
 // What makes two entries the same song: the absolute local path, the YouTube
 // video (yt:<id>), or the URL as written.
 export function songKey(path: string, home: string): string {
@@ -37,7 +56,7 @@ export function songKey(path: string, home: string): string {
     }
   }
   if (isUrl(path)) {
-    const v = videoOf(path)
+    const v = isYoutube(path) ? videoOf(path) : ''
     return v ? `yt:${v}` : path
   }
   if (path === '~' || path.startsWith('~/')) return tidy(`${home}/${path.slice(1)}`)
@@ -49,29 +68,34 @@ export function songKey(path: string, home: string): string {
 export function parseList(text: string, dir: string): ListFile {
   const lines: ListLine[] = []
   let title: string | undefined
+  let infoLine = ''
   const src = text.replace(/^﻿/, '').split(/\r\n|\n|\r/)
   if (src[src.length - 1] === '') src.pop()
   for (const raw of src) {
     const info = /^#EXTINF:[^,]*,(.*)$/i.exec(raw)
     if (info) {
+      // a title with no song after it is kept as it was
+      if (infoLine) lines.push({ kind: 'other', text: infoLine })
+      infoLine = raw
       title = info[1]!.trim() || undefined
-    } else if (raw.trim() === '' || raw.startsWith('#')) {
+    } else if (raw.trim() === '' || raw.trim().startsWith('#')) {
       lines.push({ kind: 'other', text: raw })
     } else {
       const p = raw.trim()
       const path = isUrl(p) || p.startsWith('/') ? p : tidy(`${dir}/${p}`)
       lines.push({ kind: 'song', song: title === undefined ? { path } : { path, title } })
       title = undefined
+      infoLine = ''
     }
   }
+  if (infoLine) lines.push({ kind: 'other', text: infoLine })
   return { lines }
 }
 
 // The file's text: #EXTM3U first, \n endings, a title line before titled songs.
 export function listText(f: ListFile): string {
   const out: string[] = []
-  const first = f.lines[0]
-  if (!(first?.kind === 'other' && first.text.trim() === HEADER)) out.push(HEADER)
+  if (headerEnd(f.lines) === 0) out.push(HEADER)
   for (const l of f.lines) {
     if (l.kind === 'other') out.push(l.text)
     else {
@@ -126,10 +150,9 @@ export function toggle(f: ListFile, songs: readonly Song[], home: string): ListF
 // The songs in `order` (old song indexes). Comment and unknown lines travel
 // with the song after them; the #EXTM3U header and lines after the last song stay put.
 export function moveSongs(f: ListFile, order: readonly number[]): ListFile {
-  const head: ListLine[] = []
-  const rest = [...f.lines]
-  const first = rest[0]
-  if (first?.kind === 'other' && first.text.trim() === HEADER) head.push(rest.shift()!)
+  const n = headerEnd(f.lines)
+  const head = f.lines.slice(0, n)
+  const rest = f.lines.slice(n)
   const groups: ListLine[][] = []
   let pending: ListLine[] = []
   for (const l of rest) {
@@ -139,7 +162,11 @@ export function moveSongs(f: ListFile, order: readonly number[]): ListFile {
       pending = []
     }
   }
-  return { lines: [...head, ...order.flatMap(i => groups[i] ?? []), ...pending] }
+  // anything not named in `order` keeps its place at the end; repeats are ignored
+  const used = new Set<number>()
+  const names = order.filter(i => Number.isInteger(i) && i >= 0 && i < groups.length && !used.has(i) && used.add(i))
+  const missing = groups.map((_, i) => i).filter(i => !used.has(i))
+  return { lines: [...head, ...[...names, ...missing].flatMap(i => groups[i]!), ...pending] }
 }
 
 // '' when `name` can be used for a new playlist, else what to tell the user.
@@ -147,6 +174,7 @@ export function checkName(name: string, existing: readonly string[]): string {
   if (name.trim() === '') return 'A playlist needs a name.'
   if (name.includes('/')) return 'A playlist name can\'t contain "/".'
   if (/[\u0000-\u001f\u007f]/.test(name)) return 'A playlist name can\'t contain control characters.'
+  if (new TextEncoder().encode(name).length > 200) return 'That name is too long.'
   if (name.startsWith('.')) return 'A playlist name can\'t start with ".".'
   const low = name.toLowerCase()
   if ([FAVOURITES, 'fav', 'history'].some(r => r.toLowerCase() === low)) return `"${name}" is a reserved name.`
