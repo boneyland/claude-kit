@@ -46,6 +46,7 @@ export const FILES_KEY_HELP: [string, string][] = [
   ['o, click heading', 'edit the location: ← → Home End Ctrl-A/E/W/U/K/D, Enter goes'],
   ['a', 'add to queue: the picked rows, or this one'],
   ['A', 'play next: the same, after the song playing'],
+  ['R', 'sort the other way round'],
 ]
 
 export const PLAYLISTS_KEY_HELP: [string, string][] = [
@@ -72,7 +73,7 @@ export const MOUSE_HELP: [string, string][] = [
   ['drag', 'Queue, or the songs of a playlist in custom order: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
   ['sort: …', 'sort by the next field'],
-  ['↓  ↑ after it', 'Queue, or an open playlist: sort the other way round'],
+  ['↓  ↑ after it', 'Files, Queue, or an open playlist: sort the other way round'],
   ['Files heading', 'edit the location there; Esc leaves it'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
   ['★  ☆', 'by the title playing: take it out of Favourites, or put it in'],

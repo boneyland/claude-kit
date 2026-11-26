@@ -24,7 +24,10 @@ export type Files = {
   top: number | undefined
   setTop(top: number | undefined): void
   sort: FilesSort
+  // a new field sorts it the right way round again
   setSort(sort: FilesSort): void
+  isReversed: boolean
+  sortReverse(): void
   // the tree's top folder; remembered for the next run
   setRoot(path: string): void
   goUp(): void
@@ -53,7 +56,8 @@ export function useFiles(h: Host, book: TagBook): Files {
   const [openRef, setOpenSet] = useRefState<ReadonlySet<string>>(new Set())
   const [selRef, setSel] = useRefState<Held>(NO_SELECTION)
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
-  const [sortRef, setSort] = useRefState<FilesSort>('name')
+  const [sortRef, setSortField] = useRefState<FilesSort>('name')
+  const [reversedRef, setReversed] = useRefState(false)
   // videos listed from URLs, by URL; the playlists' videos, by playlist URL
   const videos = useRef(new Map<string, Video>()).current
   const playlists = useRef(new Map<string, { title: string; videos: Video[] }>()).current
@@ -117,10 +121,10 @@ export function useFiles(h: Host, book: TagBook): Files {
   // The playlists and videos change only along with the listings.
   const tagsSeen = book.version()
   const rows = useMemo(
-    () => (rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys())) : []),
+    () => (rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys()), reversedRef.current) : []),
     // tags is read through the listings and the book's version
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootRef.current, listingsRef.current, openRef.current, sortRef.current, tagsSeen],
+    [rootRef.current, listingsRef.current, openRef.current, sortRef.current, reversedRef.current, tagsSeen],
   )
   const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
   // Its folder read (or not readable) without it: the reveal is given up, so
@@ -162,7 +166,12 @@ export function useFiles(h: Host, book: TagBook): Files {
     top: topRef.current,
     setTop,
     sort: sortRef.current,
-    setSort,
+    setSort: sort => {
+      setSortField(sort)
+      setReversed(false)
+    },
+    isReversed: reversedRef.current,
+    sortReverse: () => setReversed(!reversedRef.current),
     setRoot,
     goUp: () => {
       const root = rootRef.current

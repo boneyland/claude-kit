@@ -483,7 +483,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         if (!isQueueTab()) return files.setSort(FILES_SORTS[(FILES_SORTS.indexOf(files.sort) + 1) % FILES_SORTS.length])
         return queueTab.sortNext()
       case 'sortReverse':
-        return isQueueTab() ? queueTab.sortReverse() : undefined
+        return isQueueTab() ? queueTab.sortReverse() : files.sortReverse()
       case 'enter':
         if (isQueueTab()) return row ? act(() => pick(h, session.config, row.index)) : undefined
         if (fileRow?.kind === 'up') return files.goUp()
@@ -518,6 +518,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           // mod's ▶ does (l resumes mid-song)
           const [playing, queue] = await Promise.all([h.vars.read('playing'), h.vars.read('queue')])
           if (!playing && queue.kind !== 'none') return playQueue(h, session.config, session.config.defaultUrl)
+          if (!playing) return 'Queue is empty, nothing to play.'
           return (await togglePause(h)) ? '' : 'The player is not ready yet.'
         })
       case 'next':
@@ -772,7 +773,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
                 ? pl.sortLabel
                 : undefined
         }
-        isReversed={tab === 'queue' && q.kind === 'playlist' ? (queueTab.sort.field ? queueTab.sort.isReversed : undefined) : tab === 'playlists' ? pl.isReversed : undefined}
+        isReversed={tab === 'files' ? files.isReversed : tab === 'queue' && q.kind === 'playlist' ? (queueTab.sort.field ? queueTab.sort.isReversed : undefined) : tab === 'playlists' ? pl.isReversed : undefined}
         onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
         onReverse={() => dismissMenu() || handle({ kind: 'sortReverse' })}
       />

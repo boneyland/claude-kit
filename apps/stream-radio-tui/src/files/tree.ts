@@ -27,8 +27,9 @@ function fileOrder(sort: FilesSort, tags: (path: string) => Tags | undefined) {
 }
 
 // The Files tab's rows: ../ first, then the root's folders (by name) and
-// files (by `sort`), each open folder's rows under it. The files of a folder
-// in `ordered` (a YouTube playlist) keep the order they were listed in.
+// files (by `sort`), each open folder's rows under it; `isReversed` turns the
+// files round, and the folders too when by name. The files of a folder in
+// `ordered` (a YouTube playlist) keep the order they were listed in.
 export function fileRows(
   root: string,
   listings: ReadonlyMap<string, Listing>,
@@ -36,14 +37,18 @@ export function fileRows(
   sort: FilesSort,
   tags: (path: string) => Tags | undefined,
   ordered: ReadonlySet<string> = new Set(),
+  isReversed = false,
 ): FileRow[] {
   const rows: FileRow[] = [{ kind: 'up' }]
-  const order = fileOrder(sort, tags)
+  const sign = isReversed ? -1 : 1
+  const forward = fileOrder(sort, tags)
+  const order = (a: FileEntry, b: FileEntry) => sign * forward(a, b)
+  const dirSign = isReversed && sort === 'name' ? -1 : 1
   const walk = (folder: string, depth: number) => {
     const listing = listings.get(folder) ?? 'loading'
     if (listing === 'loading') return void rows.push({ kind: 'note', text: 'loading…', depth })
     if (!Array.isArray(listing)) return void rows.push({ kind: 'note', text: listing.error, depth })
-    const dirs = listing.filter(e => e.kind === 'dir').sort((a, b) => byName(a.name, b.name))
+    const dirs = listing.filter(e => e.kind === 'dir').sort((a, b) => dirSign * byName(a.name, b.name))
     const files = listing.filter(e => e.kind === 'file')
     if (!ordered.has(folder)) files.sort(order)
     for (const d of dirs) {

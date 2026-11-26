@@ -45,7 +45,7 @@ export function QueueView({ heading, rows, selected, picked, dropAt, current, is
             <Box flexGrow={1}>
             <RowFill on={at === selected} width={width} />
             <Text inverse={at === selected} bold={isPlaying} color={isPicked ? 'cyan' : undefined} underline={dropAt === at + 1 && dropAt !== undefined} wrap="truncate-end">
-              {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${row.title}${isFavourite?.(row.index) ? ' ★' : ''}`}
+              {`${dropAt === at ? '⤵' : isPlaying ? '▶' : ' '}${isPicked ? '+' : ' '}${row.number}. ${isFavourite?.(row.index) ? '★ ' : ''}${row.title}`}
               {/* dim on the highlight would be hard to read: full strength there */}
               {extra ? <Text dimColor={at !== selected}>{` · ${extra}`}</Text> : null}
             </Text>

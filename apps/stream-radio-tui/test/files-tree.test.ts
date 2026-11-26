@@ -31,6 +31,12 @@ describe('fileRows', () => {
     const listings = new Map<string, Listing>([['/m', [file('/m/old.mp3', 1), dir('/m/B', 9), file('/m/new.mp3', 5), dir('/m/A', 1)]]])
     expect(fileRows('/m', listings, new Set(), 'modified', none).map(r => ('name' in r ? r.name : r.kind))).toEqual(['up', 'A', 'B', 'new.mp3', 'old.mp3'])
   })
+  test('reversed: files the other way round; folders too only by name', () => {
+    const listings = new Map<string, Listing>([['/m', [file('/m/old.mp3', 1), dir('/m/B'), file('/m/new.mp3', 5), dir('/m/A')]]])
+    const names = (sort: 'name' | 'modified') => fileRows('/m', listings, new Set(), sort, none, new Set(), true).map(r => ('name' in r ? r.name : r.kind))
+    expect(names('modified')).toEqual(['up', 'A', 'B', 'old.mp3', 'new.mp3'])
+    expect(names('name')).toEqual(['up', 'B', 'A', 'old.mp3', 'new.mp3'])
+  })
   test('artist: by tag, untagged last, then by name', () => {
     const listings = new Map<string, Listing>([['/m', [file('/m/a.mp3'), file('/m/b.mp3'), file('/m/c.mp3')]]])
     const tags = (p: string) => (p === '/m/c.mp3' ? { title: '', artist: 'Abba', albumArtist: '', album: '' } : undefined)

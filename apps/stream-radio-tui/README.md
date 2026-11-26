@@ -46,7 +46,7 @@ The list has three tabs: **Files**, a folder browser to pick songs from, **Queue
 | `space` | pause or resume; while stopped, play the queue from the start of the song it stopped on (`l` resumes mid-song); while any row is picked, pick or unpick the cursor's row instead |
 | `Esc` | clear the pick |
 | `m` | the row's menu (also a right-click, or the `⋯` at the end of the cursor's row) |
-| `*` | favourite or unfavourite the picked songs, or the cursor's (a folder: every song in it, through subfolders); with no rows, the song playing. Favourites show `★` |
+| `*` | favourite or unfavourite the picked songs, or the cursor's (a folder: every song in it, through subfolders); with no rows, the song playing. Favourites show `★` before the title |
 | `P` | add to playlist: a checklist of the playlists, `✓` when every song is in one, `–` when some are; `Enter` adds the missing songs or takes them all out and the checklist stays open; `+ New playlist…` makes one with the songs; `Esc` closes |
 | `S` | sort by the next field; after the last, back to `as queued` (also the `sort:` control on the tab row) |
 | `n` `p` | next or previous song |
@@ -65,7 +65,7 @@ Actions take the picked rows, or the cursor's row when none is picked. Adding or
 
 ### Files
 
-Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. The heading shows where you are; `../` is always the first row.
+Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. A folder shows `🢒`, `🢓` when open. The heading shows where you are; `../` is always the first row.
 
 Click the heading's location to edit it in place, the cursor where you clicked. `o` does the same from an empty line. While editing: `←` `→` or a click move the cursor, `Home` `End` or `Ctrl-A` `Ctrl-E` jump to the start or end, Backspace and `Ctrl-D` erase before or after it, `Ctrl-W` takes off a folder, `Ctrl-U` `Ctrl-K` erase to the start or end. `Enter` goes there; `Esc`, or a click on a row, leaves it as it was.
 
@@ -77,6 +77,7 @@ Click the heading's location to edit it in place, the cursor where you clicked. 
 | `a` | add to the queue |
 | `A` | play next: add after the song playing |
 | `S` | sort files by name, date modified, artist or album artist (folders stay first, by name) |
+| `R` | the same sort the other way round, folders too when by name (also the `↓` / `↑` after `sort:` on the tab row) |
 
 Files never starts, stops or skips music while something plays. Adding while nothing plays starts the queue. A folder adds every song in it, through its subfolders.
 
@@ -128,7 +129,7 @@ Everything the keys do, the mouse can do too:
 
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
 - **Drag:** in the Queue, or in a playlist's custom order, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
-- **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In the Queue or an open playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
+- **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In Files, and in the Queue or an open playlist once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.

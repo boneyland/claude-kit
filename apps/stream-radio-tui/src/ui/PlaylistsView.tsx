@@ -66,7 +66,7 @@ export function PlaylistsView({ heading, rows, selected, picked, dropAt, height,
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         const isPicked = !!picked?.has(at)
-        const name = nameOf(row) + (row.kind === 'song' && isFavourite?.(row.song) ? ' ★' : '')
+        const name = (row.kind === 'song' && isFavourite?.(row.song) ? '★ ' : '') + nameOf(row)
         const extra = row.kind === 'list' ? `${' '.repeat(Math.max(0, nameCells - textWidth(name)))} · ${row.info.count}` : row.kind === 'song' ? songExtra(row, now) : ''
         const hasMenu = row.kind === 'list' || row.kind === 'history' || row.kind === 'song'
         return (

@@ -507,6 +507,14 @@ describe('keys', () => {
     expect(player.togglePause).toHaveBeenCalledWith(host)
   })
 
+  test('space while stopped with nothing queued says the queue is empty', async () => {
+    const { press, ui } = await show(100, { ...PLAYING, playing: '', elapsed: -1, queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } })
+    await press(' ')
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('Queue is empty, nothing to play.'))
+    expect(player.togglePause).not.toHaveBeenCalled()
+    expect(player.playQueue).not.toHaveBeenCalled()
+  })
+
   test("space while stopped with a queue plays it from its song's start, as ▶ does", async () => {
     const { press, host, session, ui } = await show(100, { ...PLAYING, playing: '', elapsed: -1 })
     await press(' ')
@@ -923,7 +931,7 @@ describe('files', () => {
     await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))
     await click(where('Album/').x, where('Album/').y)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
-    expect(lines().join('\n')).toContain('▾ 📁 Album/')
+    expect(lines().join('\n')).toContain('🢓 📁 Album/')
     await press(ENTER)
     expect(lines().join('\n')).not.toContain('01 One.flac')
   })
@@ -1018,6 +1026,20 @@ describe('files', () => {
     await press('S')
     expect(lines().join('\n')).toContain('sort: modified')
   })
+
+  test('R sorts the files the other way round, the tab row shows ↑, and S puts it back the right way', async () => {
+    const tree = { ...TREE, '/h/Music': [{ name: 'Album', kind: 'dir' as const }, { name: 'Bands', kind: 'dir' as const }, { name: 'a.mp3', kind: 'file' as const }, { name: 'b.mp3', kind: 'file' as const }] }
+    const { lines, press } = await showFiles({}, tree)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('b.mp3'))
+    expect(lines().join('\n')).toContain('sort: name ▾ ↓')
+    const order = () => ['Album/', 'Bands/', 'a.mp3', 'b.mp3'].map(t => [t, lineOf(lines(), new RegExp(t))] as const).sort((x, y) => x[1] - y[1]).map(([t]) => t)
+    expect(order()).toEqual(['Album/', 'Bands/', 'a.mp3', 'b.mp3'])
+    await press('R')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('sort: name ▾ ↑'))
+    expect(order()).toEqual(['Bands/', 'Album/', 'b.mp3', 'a.mp3'])
+    await press('S')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('sort: modified ▾ ↓'))
+  })
 })
 
 describe('files actions', () => {
@@ -1049,7 +1071,7 @@ describe('files actions', () => {
     await dblclick(where('Album/').x, where('Album/').y)
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/Album' }], 'end')
     await settled()
-    expect(lines().join('\n')).toContain('▸ 📁 Album/')
+    expect(lines().join('\n')).toContain('🢒 📁 Album/')
     expect(lines().join('\n')).not.toContain('01 One.flac')
   })
 
@@ -1085,10 +1107,12 @@ describe('files actions', () => {
   test('Space with no pick pauses; with a pick it picks', async () => {
     const { lines, press } = await sp()
     await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    // stopped with nothing queued: the pause key says so
     await press(' ')
-    expect(player.togglePause).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('Queue is empty, nothing to play.'))
     await press('j', '\x1b[1;2B', ' ')
-    expect(player.togglePause).toHaveBeenCalledTimes(1)
+    expect(player.togglePause).not.toHaveBeenCalled()
+    expect(player.playQueue).not.toHaveBeenCalled()
     expect(lines().join('\n')).toContain('1 picked')
   })
 
@@ -1118,7 +1142,7 @@ describe('youtube in files', () => {
     const { press, lines, host, session } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
     await press('o', LIST, ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
-    expect(lines().join('\n')).toContain('▾ 📁 Road Mix/')
+    expect(lines().join('\n')).toContain('🢓 📁 Road Mix/')
     expect(lines().join('\n')).toContain('Drive One · Chan')
     await press('j', 'a')
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [
@@ -2474,7 +2498,7 @@ describe('the Playlists tab', () => {
       const ui = await show(100, PLAYING, '', '', { library: lib })
       await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('▶ ★ Song three'))
       // and on its row in the Queue
-      expect(ui.lines()[lineOf(ui.lines(), /3\. Song three/)]).toContain('★')
+      expect(ui.lines()[lineOf(ui.lines(), /3\. ★ Song three/)]).toContain('★')
       nodeFs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 1, entries: PLAYING.queue!.paths.map((p, i) => ({ id: `1.${i}`, path: p, title: PLAYING.queue!.items[i] })), arrangement: { kind: 'none' }, root: ALBUM, source: '' }))
       nodeFs.writeFileSync(nodePath.join(STATE, 'queue-place.json'), JSON.stringify({ rev: 1, current: '1.2', seconds: 0 }))
       onTestFinished(() => nodeFs.rmSync(nodePath.join(STATE, 'queue-place.json'), { force: true }))
