@@ -33,7 +33,7 @@
       "name": "prompt-index",
       "source": "./plugins/prompt-index",
       "description": "Mod: pane listing this session's prompts; click one to jump there, filter and step through matches, see which are on screen. /prompts or the footer button toggles it. Slash commands Claude didn't answer (/plugin, /exit) are left out.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "category": "mod"
     },
     {

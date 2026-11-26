@@ -1,7 +1,7 @@
 import type { SessionMessage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { inView, isTyped, jumpTarget, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step } from './register'
+import { cut, forget, inView, isTyped, jumpTarget, matches, ownersOf, promptLine, promptsOf, sectionsOn, showing, showsText, step, withEarlier } from './register'
 
 const PANE = {
   plugin: 'prompt-index',
@@ -279,4 +279,49 @@ test('rows left behind by a jump are not on screen', () => {
   // Rows the order doesn't know yet are kept; with nothing known on screen, those alone.
   expect([...inView(ids, new Map([['new', r(0, 3, 4, 7)]]))]).toEqual(['new'])
   expect([...inView(ids, new Map())]).toEqual([])
+})
+
+test('a slash command keeps its arguments, whatever comes between its tags', () => {
+  const stored = (name: string, args: string) =>
+    `<command-message>${name.slice(1)}</command-message>\n<command-name>${name}</command-name>\n<command-args>${args}</command-args>`
+  expect(promptLine(stored('/superpowers:brainstorming', 'Write an audit skill'))).toBe('/superpowers:brainstorming Write an audit skill')
+  expect(promptLine('<command-name>/x</command-name>\n<command-message>x</command-message>\n<command-args>a b</command-args>')).toBe('/x a b')
+  expect(promptLine(stored('/plugin', ''))).toBe('/plugin')
+})
+
+test('prompts older than a cut read stay listed, in order, ahead of the read', () => {
+  const p = (id: string) => ({ id, text: id })
+  const rows = (...ids: string[]): SessionMessage[] => ids.map(uuid => ({ role: 'user', text: uuid, toolUses: [], uuid }))
+  const known = [p('p1'), p('p2'), p('p3')]
+  // The read reaches the session's start: it is the whole list.
+  expect(withEarlier(known, [p('p3'), p('p4')], rows('p3', 'p4'), false)).toEqual([p('p3'), p('p4')])
+  // Cut after p2: p1 and p2 fell out of the read but are still the session's.
+  expect(withEarlier(known, [p('p3'), p('p4')], rows('a2', 'p3', 'p4'), true)).toEqual([p('p1'), p('p2'), p('p3'), p('p4')])
+  // A known prompt inside the read that is no longer listed (a command found unanswered) stays out.
+  expect(withEarlier(known, [p('p3')], rows('p2', 'p3'), true)).toEqual([p('p1'), p('p3')])
+  // Nothing known is in the read: all of it is older.
+  expect(withEarlier(known, [p('p9')], rows('p9'), true)).toEqual([...known, p('p9')])
+})
+
+test('a prompt is cut to the pane by screen cells, never inside a character', () => {
+  expect(cut('abc', 3)).toBe('abc')
+  expect(cut('ab😀cd', 4)).toBe('ab…')
+  expect(cut('ab😀cd', 5)).toBe('ab😀…')
+  expect(cut('日本', 4)).toBe('日本')
+  expect(cut('日本語のテキスト', 7)).toBe('日本語…')
+  expect(cut('日本語', 4)).toBe('日…')
+})
+
+test('reports and marks for rows gone from the read are forgotten', () => {
+  type Report = { at: { first: number; last: number; of: number } | null; n: number }
+  const seen = new Map<string, Report>([
+    ['old-off', { at: null, n: 1 }],
+    ['kept-off', { at: null, n: 2 }],
+    ['new-on', { at: { first: 0, last: 3, of: 4 }, n: 3 }],
+  ])
+  const notTyped = new Set(['gone', 'kept-note'])
+  forget(seen, notTyped, ['kept-off'], new Set(['kept-off', 'kept-note']))
+  // Off screen and not in the read: nothing reads it again.
+  expect([...seen.keys()]).toEqual(['kept-off', 'new-on'])
+  expect([...notTyped]).toEqual(['kept-note'])
 })

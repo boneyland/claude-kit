@@ -36,8 +36,10 @@ let drawnSections = ''
 // What the row a compaction leaves is listed as; it is not a turn.
 const COMPACT = '/compact'
 
-// A slash command is stored as tags; show it as typed.
-const COMMAND = /<command-name>([^<]*)<\/command-name>[\s\S]*?(?:<command-args>([^<]*)<\/command-args>)?/
+// A slash command is stored as tags; show it as typed. Its name and arguments
+// are read apart: other tags and line breaks come between them.
+const COMMAND = /<command-name>([^<]*)<\/command-name>/
+const ARGS = /<command-args>([\s\S]*?)<\/command-args>/
 
 // The prompt as one line, or null for a user row that isn't a prompt
 // (tool results, interruptions, command output, notifications).
@@ -54,7 +56,8 @@ export const promptLine = (text: string): string | null => {
   if (trimmed.startsWith('<')) {
     const command = COMMAND.exec(trimmed)
     if (command === null) return null
-    return `${command[1]?.trim() ?? ''} ${command[2]?.trim() ?? ''}`.trim()
+    const args = ARGS.exec(trimmed)?.[1] ?? ''
+    return `${command[1]?.trim() ?? ''} ${args.replace(/\s+/g, ' ').trim()}`.trim()
   }
   return trimmed.replace(/\s+/g, ' ')
 }
@@ -188,6 +191,35 @@ export const inView = (
 
 const onScreenNow = () => inView(order, seen)
 
+// A read returns the newest 4096 rows at most. When it was cut (`isCut`), the
+// prompts listed before that are older than it, up to the first one the read
+// still holds, stay at the head of the list: they are still the session's.
+export const withEarlier = (
+  known: readonly Prompt[],
+  fresh: readonly Prompt[],
+  rows: readonly SessionMessage[],
+  isCut: boolean,
+): Prompt[] => {
+  if (!isCut) return [...fresh]
+  const read = new Set(rows.flatMap(row => (row.uuid === undefined ? [] : [row.uuid])))
+  const at = known.findIndex(p => read.has(p.id))
+  return [...(at === -1 ? known : known.slice(0, at)), ...fresh]
+}
+
+// After a read: drop what nothing will read again, so a long session's
+// reports don't pile up. A row off screen that the order doesn't hold counts
+// for nothing in inView; a mark on a row the read doesn't hold is never asked.
+export const forget = (
+  reports: Map<string, { at: At | null; n: number }>,
+  marks: Set<string>,
+  ids: readonly string[],
+  rowIds: ReadonlySet<string>,
+) => {
+  const ordered = new Set(ids)
+  for (const [id, r] of reports) if (r.at === null && !ordered.has(id)) reports.delete(id)
+  for (const id of marks) if (!rowIds.has(id)) marks.delete(id)
+}
+
 // The prompts whose sections have a row on screen, in list order. A row the
 // map doesn't know yet (one drawn since the last read, in the turn running
 // now) counts for the latest prompt when nothing known is on screen.
@@ -213,11 +245,16 @@ let isTurnRunning = false
 // Whether the session runs in the terminal (TUI); elsewhere the mod stays idle.
 let isActive = false
 
+// The most a read returns.
+const READ = 4096
+
 const readPrompts = async ($: EngineInterface) => {
-  const rows = await $.session.messages({ last: 4096 })
+  const rows = await $.session.messages({ last: READ })
   if ('deny' in rows) return
-  const list = promptsOf(rows, notTyped, isTurnRunning)
+  const fresh = promptsOf(rows, notTyped, isTurnRunning)
+  const list = withEarlier(await read($, prompts), fresh, rows, rows.length >= READ)
   ;({ map: owners, order } = ownersOf(rows, list))
+  forget(seen, notTyped, order, new Set(rows.flatMap(row => (row.uuid === undefined ? [] : [row.uuid]))))
   await update($, prompts, () => list)
 }
 
@@ -273,8 +310,28 @@ export const showing = (numbers: readonly number[], total: number) =>
       ? `showing ${numbers[0]} of ${total}`
       : `showing ${numbers[0]}-${numbers[numbers.length - 1]} of ${total}`
 
-const cut = (text: string, width: number) =>
-  text.length <= width ? text : `${text.slice(0, Math.max(1, width - 1))}…`
+// East Asian wide and fullwidth characters, and emoji drawn as emoji, take
+// two cells; everything else one.
+const WIDE =
+  /[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]|\p{Emoji_Presentation}|\uFE0F/u
+const graphemes = new Intl.Segmenter()
+const cellsOf = (grapheme: string) => (WIDE.test(grapheme) ? 2 : 1)
+
+// The text in `width` cells, ending in … when cut; never cut inside a
+// character.
+export const cut = (text: string, width: number) => {
+  const parts = [...graphemes.segment(text)].map(g => g.segment)
+  if (parts.reduce((n, g) => n + cellsOf(g), 0) <= width) return text
+  const room = Math.max(1, width - 1)
+  let used = 0
+  let kept = ''
+  for (const g of parts) {
+    used += cellsOf(g)
+    if (used > room) break
+    kept += g
+  }
+  return `${kept}…`
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
