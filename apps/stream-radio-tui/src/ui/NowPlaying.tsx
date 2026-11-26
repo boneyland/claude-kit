@@ -120,16 +120,21 @@ function Column({ view, duration, width, full, second, time, isFavourite, onActi
 
 // What plays, ▶ or ⏸ before it, then ★ when it is a favourite (a dim ☆ when
 // not): a click on either toggles it.
-function Title({ playing, isPaused, isFavourite, onAction }: { playing: string; isPaused: boolean; isFavourite?: boolean; onAction?(a: Action): void }) {
+export function Title({ playing, isPaused, isFavourite, onAction }: { playing: string; isPaused: boolean; isFavourite?: boolean; onAction?(a: Action): void }) {
   // the star is the third cell, after the ▶ and a space
   const onClick = (hit: Hit) => void (playing && hit.x === 2 && onAction?.({ kind: 'favourite', isPlaying: true }))
   return (
     <Clickable onClick={onClick}>
-      <Text bold wrap="truncate-end">
+      {/* Bold on each part, with plain spaces between: bold and dim end with
+          the same code, and a dim cell right beside a bold one keeps the
+          other's style (the name after a dim ☆ drew dim). */}
+      <Text wrap="truncate-end">
         {/* children as they are, not in a fragment: Text cleans only the strings it is given */}
-        {playing ? `${isPaused ? '⏸' : '▶'} ` : 'Nothing playing.'}
-        {playing ? isFavourite ? '★' : <Text dimColor>☆</Text> : null}
-        {playing ? ` ${playing}` : null}
+        <Text bold>{playing ? (isPaused ? '⏸' : '▶') : 'Nothing playing.'}</Text>
+        {playing ? ' ' : null}
+        {playing ? isFavourite ? <Text bold>★</Text> : <Text dimColor>☆</Text> : null}
+        {playing ? ' ' : null}
+        {playing ? <Text bold>{playing}</Text> : null}
       </Text>
     </Clickable>
   )
