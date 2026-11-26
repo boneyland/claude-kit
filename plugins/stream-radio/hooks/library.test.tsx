@@ -14,7 +14,7 @@ function engine(on: On) {
   return fakeMpv(on, {
     title: 'Song',
     props: { 'time-pos': 3, duration: true },
-    list: path => (path === LIB ? [{ name: 'Road trip.m3u', kind: 'file' }] : undefined) as never,
+    list: path => (path === LIB ? [{ name: 'Road trip.m3u', kind: 'file' }, { name: 'Empty.m3u', kind: 'file' }] : undefined) as never,
   })
 }
 
@@ -64,10 +64,12 @@ test('/stream play <list> plays a saved list; history plays newest first', async
   const clock = mock.clock(on)
   const world = engine(on)
   world.files[`${LIB}/Road trip.m3u`] = '#EXTM3U\n/home/me/Music/a.mp3\n/home/me/Music/b.mp3\n'
-  await $.command.run({ command: 'stream', args: 'play nope' } as never)
-  await clock.advance(10)
-  expect(world.toasts).toContain('No playlist called nope.')
-  await $.command.run({ command: 'stream', args: 'play road trip' } as never)
+  const nope = text(await $.command.run({ command: 'stream', args: 'play nope' } as never))
+  expect(nope).toContain('No playlist called nope.')
+  expect(nope).not.toContain('Playing')
+  world.files[`${LIB}/Empty.m3u`] = '#EXTM3U\n'
+  expect(text(await $.command.run({ command: 'stream', args: 'play empty' } as never))).toContain('Empty is empty.')
+  expect(text(await $.command.run({ command: 'stream', args: 'play road trip' } as never))).toContain('Playing Road trip.')
   await clock.advance(10)
   let q = JSON.parse(world.files[QUEUE_JSON]!) as { entries: { path: string }[]; source: string }
   expect(q.entries.map(e => e.path)).toEqual(['/home/me/Music/a.mp3', '/home/me/Music/b.mp3'])

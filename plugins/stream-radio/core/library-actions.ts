@@ -2,11 +2,11 @@
 // favourite toggle, adding to and removing from a playlist, playing one, and
 // the history as text. Each answers with the line to show.
 import type { Host } from './host'
-import { FAVOURITES, addMissing, markOf, removeSongs, toggle, whenPlayed, type Play, type Song } from './library'
+import { FAVOURITES, addMissing, markOf, removeSongs, songsOf, toggle, whenPlayed, type Play, type Song } from './library'
 import { editPlaylist, listPlaylists, readHistory, readPlaylist } from './libraryFile'
 import { baseName } from './nowplaying'
 import { playEntries, type PlayerConfig } from './player'
-import { played } from './stored'
+import { played, type QueueEntry } from './stored'
 import { readPlace, readStored } from './storedFile'
 
 const BUSY = 'The library is busy; try again.'
@@ -72,19 +72,31 @@ export async function removeFrom(h: Host, list: string, songs: readonly Song[]):
   return removed > 0 ? `Removed from ${target.name}.` : `Not in ${target.name}.`
 }
 
-// Plays a saved playlist, or the history (newest first), as the queue from
-// song `start`. Resolves to what to show, or '' when started.
-export async function playList(h: Host, config: PlayerConfig, list: string, start = 0): Promise<string> {
+export type PlayPlan = { entries: QueueEntry[]; source: string; name: string }
+
+const entryOf = (s: Song): QueueEntry => (s.title ? { path: s.path, title: s.title } : { path: s.path })
+
+// What playing a saved playlist, or the history (newest first), would start:
+// the entries, what the queue is called, and the name to show; or the message
+// to show when there is nothing to play.
+export async function planList(h: Host, list: string): Promise<PlayPlan | string> {
   if (list.trim().toLowerCase() === 'history') {
     const plays = await readHistory(h)
     if (plays.length === 0) return 'Nothing played yet.'
-    return playEntries(h, config, plays.map(p => (p.title ? { path: p.path, title: p.title } : { path: p.path })), '', start)
+    return { entries: plays.map(p => entryOf({ path: p.path, title: p.title })), source: '', name: 'history' }
   }
   const target = await resolve(h, list)
   if (!target) return `No playlist called ${list}.`
-  const songs = (await readPlaylist(h, target.name)).lines.flatMap(l => (l.kind === 'song' ? [l.song] : []))
+  const songs = songsOf(await readPlaylist(h, target.name))
   if (songs.length === 0) return `${target.name} is empty.`
-  return playEntries(h, config, songs.map(s => (s.title ? { path: s.path, title: s.title } : { path: s.path })), target.file, start)
+  return { entries: songs.map(entryOf), source: target.file, name: target.name }
+}
+
+// Plays a saved playlist, or the history, as the queue from song `start`.
+// Resolves to what to show, or '' when started.
+export async function playList(h: Host, config: PlayerConfig, list: string, start = 0): Promise<string> {
+  const plan = await planList(h, list)
+  return typeof plan === 'string' ? plan : playEntries(h, config, plan.entries, plan.source, start)
 }
 
 // The newest `n` plays, a line each; `now` in unix seconds.

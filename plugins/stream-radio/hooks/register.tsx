@@ -30,6 +30,7 @@ import {
   loadVolume,
   locate,
   pick,
+  playEntries,
   playQueue,
   playSource,
   refreshFromStored,
@@ -45,7 +46,7 @@ import {
   togglePause,
   toggleShuffle,
 } from '../core/player'
-import { addTo, historyText, playList, playingSong, removeFrom, toggleFavourite } from '../core/library-actions'
+import { addTo, historyText, planList, playingSong, removeFrom, toggleFavourite } from '../core/library-actions'
 import { readHistory } from '../core/libraryFile'
 import type { Host, PlayerKeys, StateStore } from '../core/host'
 import { migrateFromStore } from '../core/saved'
@@ -308,8 +309,10 @@ export const register: Register = (on, options) => {
       }
       if (parsed.kind === 'playList') {
         const h = hostFor($, config)
-        void playList(h, config, parsed.list).then(note => note && h.toast(note), error => h.toast(failedText(error)))
-        return { text: `Playing ${parsed.list}.` }
+        const plan = await planList(h, parsed.list)
+        if (typeof plan === 'string') return { text: plan }
+        void playEntries(h, config, plan.entries, plan.source, 0).then(note => note && h.toast(note), error => h.toast(failedText(error)))
+        return { text: `Playing ${plan.name}.` }
       }
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.
