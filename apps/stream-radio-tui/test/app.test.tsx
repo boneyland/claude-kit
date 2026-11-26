@@ -2504,6 +2504,22 @@ describe('the Playlists tab', () => {
         expect(status(ui.lines())).toContain(note)
       })
 
+      test('a list changed elsewhere while the checklist is open shows its new mark at the next poll', async () => {
+        const { press, lines, lib } = await openRoadTrip()
+        await press('P')
+        await vi.waitFor(() => expect(rowsText(lines())).toContain('Add to playlist'))
+        const row = (t: string) => lines()[lineOf(lines(), new RegExp(`[✓– ] ${t}`))] ?? ''
+        expect(row('Road trip')).toContain('✓ Road trip')
+        // let the first look record the files as they are
+        await new Promise(r => setTimeout(r, 100))
+        const file = lib.file('Road trip')
+        nodeFs.writeFileSync(file, m3u(['/m/r3.mp3', 'Road three']))
+        const later = new Date(Date.now() + 5000)
+        nodeFs.utimesSync(file, later, later)
+        lib.tick()
+        await vi.waitFor(() => expect(rowsText(lines())).not.toMatch(/[✓–] Road trip/))
+      })
+
       test('a list deleted elsewhere while the checklist is open is not made again', async () => {
         const { press, lines, lib } = await openRoadTrip()
         await press('P')

@@ -212,6 +212,29 @@ test('the panel polls its lists every 2 s while open, and starts at the queue ea
   await $.command.run({ command: 'stream', args: 'panel' } as never)
 })
 
+test('the panel reads the queue only when the song or favourites changed', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on)
+  await stopped($, world, clock)
+  await $.command.run({ command: 'stream', args: 'panel' } as never)
+  const pane = await $.ui.mount(PANE)
+  await clock.advance(2000)
+  await clock.advance(2000)
+  const reads = () => world.reads.filter(p => p === QUEUE_JSON).length
+  const before = reads()
+  await clock.advance(2000)
+  await clock.advance(2000)
+  expect(reads()).toBeLessThanOrEqual(before)
+  // the queue moves on to a: read again, and only then
+  world.files[PLACE] = JSON.stringify({ rev: 1, current: '1.0', seconds: 0 })
+  await clock.advance(2000)
+  expect(reads()).toBeGreaterThan(before)
+  const after = reads()
+  await clock.advance(2000)
+  expect(reads()).toBe(after)
+  await pane.unmount()
+})
+
 test('an open checklist shows a list edited in place within a poll', async ($, on) => {
   const clock = mock.clock(on)
   const world = engine(on)

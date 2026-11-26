@@ -3,13 +3,12 @@
 // the history as text. Each answers with the line to show.
 import type { Host } from './host'
 import { FAVOURITES, addMissing, markOf, removeSongs, songsOf, toggle, whenPlayed, type Mark, type Play, type Song } from './library'
-import { editPlaylist, listMtime, listPlaylists, readHistory, readPlaylist } from './libraryFile'
+import { BUSY, editPlaylist, listMtime, listPlaylists, readHistory, readPlaylist } from './libraryFile'
 import { baseName } from './nowplaying'
 import { playEntries, type PlayerConfig } from './player'
 import { played, type QueueEntry } from './stored'
 import { readPlace, readStored } from './storedFile'
 
-const BUSY = 'The library is busy; try again.'
 const NOTHING = 'Nothing playing.'
 
 // The queue's current entry (the first when the place has none), as a song;
@@ -133,6 +132,6 @@ export async function toggleIn(h: Host, name: string, songs: readonly Song[]): P
     isAdding = markOf(f, songs, home) !== 'all'
     return toggle(f, songs, home)
   })
-  if (done === 'busy') return 'The playlists are busy; try again.'
+  if (done === 'busy') return BUSY
   return isAdding ? `Added to ${name}.` : `Removed from ${name}.`
 }

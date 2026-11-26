@@ -78,6 +78,8 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     files: (options.saved ? { [STATE]: JSON.stringify({ version: 1, ...options.saved }) } : {}) as Record<string, string>,
     // what state.json holds now; undefined while there is none
     saved: () => (STATE in world.files ? (JSON.parse(world.files[STATE]!) as Record<string, unknown>) : undefined),
+    // the path of each fs.read
+    reads: [] as string[],
     isRunning: false,
     props: {} as Record<string, unknown>,
     toasts: [] as string[],
@@ -272,6 +274,7 @@ export function fakeMpv(on: On, options: FakeOptions = {}) {
     return { value: { code: 0, signal: null } } as never
   })
   on('fs.read', (_$, e) => {
+    world.reads.push(e.path)
     if (!(e.path in world.files)) throw new Error(`ENOENT: ${e.path}`)
     return { value: world.files[e.path] } as never
   })

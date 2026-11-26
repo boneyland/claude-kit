@@ -11,6 +11,7 @@ import { GONE, MARK_GLYPH, checklistRows, playingSong, toggleFavourite, toggleIn
 import { createPlaylist, listMtime, listPlaylists, readHistory, readPlaylist } from '../core/libraryFile'
 import { baseName, fit, textWidth } from '../core/nowplaying'
 import { paths } from '../core/paths'
+import { readPlace } from '../core/storedFile'
 import type { Host } from '../core/host'
 import type { QueueEntry } from '../core/stored'
 
@@ -39,7 +40,7 @@ type Ui = Pick<Elements['terminal'], 'Box' | 'Text' | 'Button' | 'Input' | 'Sele
 const nameOfView = (view: string) => (view === FAV_VIEW ? FAVOURITES : view.startsWith(LIST) ? view.slice(LIST.length) : '')
 
 // The mtimes the last look saw; -1: read again.
-const UNSEEN = { fav: -1, dir: -1, view: '', shown: -1 }
+const UNSEEN = { fav: -1, dir: -1, view: '', shown: -1, song: '' }
 let seen = { ...UNSEEN }
 let favKeys = new Set<string>()
 // Each checklist row's file mtime as last read: a list edited in place moves
@@ -107,7 +108,18 @@ async function look($: EngineInterface, h: Host) {
       await update($, checklist, c => (c.songs === open.songs || same(c.songs, open.songs) ? { ...c, rows } : c))
     }
   }
+  // The queue file is big: the song is looked up again only when Favourites, the
+  // title, the queue's place or the queue file itself changed.
+  const p = await paths(h)
+  const [place, queueMtime, title] = await Promise.all([
+    readPlace(h),
+    h.fs.stat(p.queueJson).then(x => x.mtimeMs, () => 0),
+    h.vars.read('playing').catch(() => ''),
+  ])
+  const key = JSON.stringify([favMtime, title, place.current, queueMtime])
+  if (key === seen.song) return
   const song = await playingSong(h)
+  seen.song = key
   const isFav = !!song && favKeys.has(songKey(song.path, home))
   if (isFav !== (await read($, isFavourite))) await update($, isFavourite, () => isFav)
 }

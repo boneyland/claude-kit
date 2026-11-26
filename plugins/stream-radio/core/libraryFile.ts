@@ -77,7 +77,7 @@ export async function editPlaylist(h: Host, name: string, fn: (f: ListFile) => L
   })
 }
 
-const BUSY = 'The playlists are busy; try again.'
+export const BUSY = 'The playlists are busy; try again.'
 
 // '' when done, else what to tell the person.
 export async function createPlaylist(h: Host, name: string, songs: readonly Song[]): Promise<string> {

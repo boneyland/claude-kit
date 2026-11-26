@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { HISTORY_LUA, installHistoryScript } from './history'
 import type { Host } from './host'
+import { MAX_SONGS } from './paths'
 import { entryName, paths, playEntries, resumeQueue, playQueue } from './player'
 
 // Only dataDir and run are used: the rest of the Host is never reached.
@@ -149,6 +150,16 @@ function launchHost(files: Record<string, string>, failWrite?: string) {
   })
   return { h, launched }
 }
+
+test('playEntries keeps at most MAX_SONGS and says it cut', async () => {
+  const files: Record<string, string> = {}
+  const { h } = launchHost(files)
+  const config = { volume: 60, player: 'mpv', androidClient: false }
+  const entries = Array.from({ length: MAX_SONGS + 5 }, (_, i) => ({ path: `/m/${i}.mp3` }))
+  const said = await playEntries(h, config, entries, 'Big', 0)
+  expect(JSON.parse(files['/data/queue.json']!).entries).toHaveLength(MAX_SONGS)
+  expect(said).toBe(`Played the first ${MAX_SONGS} songs.`)
+})
 
 const firstOf = <T>(p: Promise<T>) => Promise.race([p, new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 2000))])
 

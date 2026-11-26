@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Host } from '@core/host'
 import { FAVOURITES, moveSongs, removeSongs, songKey, songsOf, type Song } from '@core/library'
 import { GONE, planList, playList } from '@core/library-actions'
-import { clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
+import { BUSY, clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
 import { baseName } from '@core/nowplaying'
 import { addToQueue, playEntries } from '@core/player'
 import { moveBy, moveTo, type Moved } from '@core/queue'
@@ -20,7 +20,6 @@ import type { Turns } from '../ui/turns'
 import { loadSorts, saveSorts, sortOf, withSort, type PlaylistSort, type PlaylistSorts } from './remember'
 import { HISTORY, libraryRows, songTitle, useLibrary, type Library, type LibraryRow } from './useLibrary'
 
-const BUSY = 'The playlists are busy; try again.'
 const HISTORY_READ_ONLY = "Recently played can't be edited; Clear it from its menu."
 const PICK_INSIDE = 'Pick songs inside a playlist.'
 const whenSorted = (sort: PlaylistSort) => `sorted by ${SORT_LABEL[sort.field]} — S to custom order to move`

@@ -3,7 +3,7 @@ import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
 import { addToQueue, CONNECTING, expandEntries, LOADING, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
-import { createPlaylist } from '@core/libraryFile'
+import { createPlaylist, listMtime } from '@core/libraryFile'
 import { FAVOURITES, type Song } from '@core/library'
 import { checklistRows, playingSong, toggleFavourite, toggleIn, type ChecklistRow } from '@core/library-actions'
 import { keyAction, NO_KEY, type Action, type Keys, type LibraryOn, type Mode } from '../keys'
@@ -27,7 +27,7 @@ import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { stepTab, Tabs, type Tab } from './Tabs'
 import { NamePrompt, PlaylistsView } from './PlaylistsView'
 import { usePlaylistsTab } from '../library/libraryKeys'
-import { songTitle } from '../library/useLibrary'
+import { POLL_MS, songTitle } from '../library/useLibrary'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
 import { filterFlat, flatRows } from '../queue/rows'
@@ -335,6 +335,28 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const at = choice ? choice(rows) : c.choice
     setCheck({ ...c, rows, choice: Math.max(0, Math.min(at, rows.length)) })
   }
+  // While the checklist is open its lists' files are looked at every POLL_MS; the
+  // marks are read again when one moved (a list edited elsewhere).
+  const checkSongs = checkRef.current?.songs
+  useEffect(() => {
+    if (!checkSongs) return
+    let isLive = true
+    let times = new Map<string, number>()
+    const look = async (isBaseline: boolean) => {
+      const c = checkRef.current
+      if (!c || c.songs !== checkSongs) return
+      const now = new Map(await Promise.all(c.rows.map(async r => [r.name, await listMtime(h, r.name)] as const)))
+      const isMoved = [...now].some(([name, t]) => times.get(name) !== t)
+      times = now
+      if (isMoved && !isBaseline && isLive) await remark(checkSongs)
+    }
+    void look(true).catch(() => undefined)
+    const timer = h.every(POLL_MS, () => void look(false).catch(() => undefined))
+    return () => {
+      isLive = false
+      timer.cancel()
+    }
+  }, [checkSongs, h])
   const toggleRow = (i: number) => {
     const c = checkRef.current
     if (!c) return
