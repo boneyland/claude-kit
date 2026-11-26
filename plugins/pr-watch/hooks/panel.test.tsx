@@ -174,6 +174,26 @@ for (const surface of ['terminal'] as const) {
     await ui.unmount()
   })
 
+  test(`${surface}: a merged PR leaves the panel, its watch reply with it`, async ($, on) => {
+    const clock = mock.clock(on)
+    const world = engine(on)
+    on('command.register', () => ({ value: { command: 'pr-watch' } }) as never)
+    on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'watch-branch' })
+    await clock.settle()
+    expect(await ui.find({ type: 'Text', text: /^Watching #12/ })).toBeDefined()
+
+    world.reply = { ...world.reply, stdout: pr({ state: 'MERGED' }) }
+    await clock.advance(90_000)
+    expect(await ui.find({ type: 'Button', key: `stop-${URL}` })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^Watching/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /#12 is merged; no longer watched/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /No PRs watched/ })).toBeDefined()
+    await ui.unmount()
+  })
+
   test(`${surface}: Stop removes its own PR when numbers clash or the host isn't github.com`, async ($, on) => {
     const clock = mock.clock(on)
     const other = 'https://github.com/acme/lib/pull/12'

@@ -67,6 +67,9 @@ async function apply($: EngineInterface, config: Config, entry: Watched, status:
     await update($, watched, list => list.filter(w => w.url !== entry.url))
     const why = `pr-watch: #${entry.number} is ${reason}; no longer watched`
     $.ui.toast(why)
+    // In the panel, in place of the last reply (say "Watching #12 …", which
+    // would otherwise stay up with its row gone).
+    await update($, notice, () => `#${entry.number} is ${reason}; no longer watched.`)
     if (status.state === 'OPEN') $.ui.log(why)
 
     return
