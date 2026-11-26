@@ -21,16 +21,17 @@ Components:
 |---|---|
 | each plugin, by its folder name | `plugins/<name>/` (for `stream-radio`, excluding `core/`) |
 | `stream-radio-core` | `plugins/stream-radio/core/` |
-| `stream-radio-tui` | `apps/stream-radio-tui/` |
+| each app, by its folder name | `apps/<name>/` |
 | `all` | every component above |
 
 List them fresh each run (`ls plugins apps`) — never from memory, so a new
-plugin is covered without editing this file.
+plugin or app is covered without editing this file.
 
-Take the scope from the arguments. If there is none, or it names no
-component, **ask before reading any code**: list every component with its
-line count (step 2's command) and ask with AskUserQuestion which to audit, or
-`all`. Several named components are fine; audit those.
+Take the scope from the arguments. If there is none, or **any** name in it
+matches no component, **ask before reading any code**: list every component
+with its line count (step 2's command), say which name wasn't found, and ask
+with AskUserQuestion which to audit, or `all`. Several named components are
+fine; audit those.
 
 ## 2. Size
 
@@ -43,17 +44,23 @@ git ls-files -- <dir> | grep -v '\.test\.' | grep -Ev '\.(png|jpg|webp|lock)$|pa
 For `stream-radio`, add `':!plugins/stream-radio/core'` to the `git ls-files`
 pathspec.
 
-- **One component under 3000 lines:** audit it yourself, following
-  `worker-prompt.md` as your own brief, word for word.
+Fill `worker-prompt.md`'s placeholders the same way on both paths below:
+
+- `{{COMPONENT}}` — the directory
+- `{{PATHSPEC}}` — the directory; for `stream-radio`,
+  `plugins/stream-radio ':!plugins/stream-radio/core'`
+- `{{CHECKLISTS}}` — `/home/yh/projects/claude-kit/.claude/skills/audit/checklists`
+- `{{EXCLUDE}}` — for `stream-radio`, the line
+  `**Excluded:** plugins/stream-radio/core/ (audited as its own component)`;
+  otherwise remove the placeholder.
+
+Then:
+
+- **One component under 3000 lines:** audit it yourself, following the
+  filled brief as your own, word for word.
 - **Anything larger** (a bigger component, several, or `all`): one
   general-purpose subagent per component, all dispatched in one message so
-  they run in parallel. Each gets the full text of `worker-prompt.md` with
-  the placeholders filled:
-  - `{{COMPONENT}}` — the directory
-  - `{{CHECKLISTS}}` — `/home/yh/projects/claude-kit/.claude/skills/audit/checklists`
-  - `{{EXCLUDE}}` — for `stream-radio`, the line
-    `**Excluded:** plugins/stream-radio/core/ (audited as its own component)`;
-    otherwise remove the placeholder.
+  they run in parallel, each given the full filled brief.
 
   Don't set a model or effort; the subagents take the session's. They are
   read-only and run nothing heavy, as the brief says. Don't relax that: several
@@ -77,8 +84,22 @@ Whoever audited, check every finding yourself before it goes in the report:
 
 ## 4. Compare
 
-For each scope, find the newest earlier report in `docs/audits/` for the same
-scope (`ls docs/audits/*-<scope>*.md`). If there is one, mark each finding
+Find the newest earlier report for exactly this scope — the same `<scope>`
+as step 5's file name, so a `stream-radio` audit never compares against
+`stream-radio-core` or `stream-radio-tui`, and `all` compares only against
+`repo`:
+
+```bash
+ls docs/audits | awk -v s='<scope>' '
+  BEGIN { re = s; gsub(/\+/, "[+]", re) }
+  match($0, "^[0-9]{4}-[0-9]{2}-[0-9]{2}-" re "(-[0-9]+)?\\.md$") {
+    r = substr($0, 12 + length(s)); n = (r ~ /^-/) ? substr(r, 2) + 0 : 1
+    print substr($0, 1, 10), n, $0
+  }' | sort -k1,1 -k2,2n | tail -1 | cut -d' ' -f3
+```
+
+It prints the file with the newest date, then the highest `-N` suffix (the
+first report of a day counts as 1), or nothing. If there is one, mark each finding
 **repeat** (the same defect is in it, still unfixed) or **new**. With no
 earlier report, every finding is new.
 
@@ -130,7 +151,7 @@ or returned nothing usable.
 Commit the report to main (no push):
 
 ```bash
-git add docs/audits/<file> && git commit -m "audit: <scope>"
+git add docs/audits/<file> && git commit -m "audit: <scope>" -- docs/audits/<file>
 ```
 
 ## 6. Summary, then stop

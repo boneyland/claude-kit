@@ -26,7 +26,8 @@ This is an audit of the whole component as it stands, not of a diff.
 
 ## How to work
 
-1. List the component's files with `git ls-files -- {{COMPONENT}}`.
+1. List the component's files with `git ls-files -- {{PATHSPEC}}`. Audit
+   only those; code outside them is read only to follow a finding's path.
 2. Read `CLAUDE.md` at the repo root (for repo-rules), then every listed file
    in full. Read tests only to learn what the code is meant to do; tests are
    not themselves under audit except for docs-drift #6.
