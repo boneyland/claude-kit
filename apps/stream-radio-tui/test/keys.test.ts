@@ -196,6 +196,28 @@ describe('tabs and the Playlists tab', () => {
   })
 })
 
+describe('favourite and Add to playlist', () => {
+  test('* favourites and P adds to a playlist, in every tab', () => {
+    for (const tab of ['files', 'queue', 'playlists'] as const) {
+      const ctx = { tab, hasPick: false }
+      expect(keyAction('*', key({ shift: true }), 'list', ctx)).toEqual({ kind: 'favourite' })
+      expect(keyAction('P', key({ shift: true }), 'list', ctx)).toEqual({ kind: 'addToList' })
+      expect(keyAction('*', key({ shift: true }), 'list', { tab, hasPick: true })).toEqual({ kind: 'favourite' })
+    }
+    expect(keyAction('P', key({ meta: true, shift: true }), 'list')).toBeNull()
+  })
+  test('the checklist: arrows choose, Enter toggles, Esc, q and P close it', () => {
+    expect(keyAction('', key({ upArrow: true }), 'checklist')).toEqual({ kind: 'up' })
+    expect(keyAction('j', key(), 'checklist')).toEqual({ kind: 'down' })
+    expect(keyAction('\r', key({ return: true }), 'checklist')).toEqual({ kind: 'submit' })
+    expect(keyAction('', key({ escape: true }), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('q', key(), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('P', key({ shift: true }), 'checklist')).toEqual({ kind: 'cancel' })
+    expect(keyAction('*', key({ shift: true }), 'checklist')).toBeNull()
+    expect(keyAction('x', key(), 'checklist')).toBeNull()
+  })
+})
+
 describe('chords are not letters', () => {
   test('Ctrl or Alt with a, A, S or R does nothing', () => {
     const FILES = { tab: 'files' as const, hasPick: false }

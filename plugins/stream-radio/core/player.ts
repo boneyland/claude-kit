@@ -1323,8 +1323,9 @@ export type { QueueEntry }
 
 // Each entry as playing it expands it (expandSource: a folder's songs, a
 // playlist file's lines, a YouTube playlist's videos), MAX_SONGS in all; one
-// that stays itself keeps its title. note: what to say (a cap it hit).
-async function expand(h: Host, entries: readonly QueueEntry[]): Promise<{ songs: QueueEntry[]; note: string }> {
+// that stays itself keeps its title. note: what to say (a cap it hit). Add to
+// queue goes through it, and the TUI's favourite and Add to playlist on Files rows.
+export async function expandEntries(h: Host, entries: readonly QueueEntry[]): Promise<{ songs: QueueEntry[]; note: string }> {
   const songs: QueueEntry[] = []
   const notes: string[] = []
   for (const e of entries) {
@@ -1540,7 +1541,7 @@ async function loadAt(h: Host, songs: readonly QueueEntry[], at: number, count: 
 // the order given). Nothing queued and nothing playing: what is added becomes
 // the queue, and it plays. '' when done, else what to show.
 export async function addToQueue(h: Host, config: PlayerConfig, entries: readonly QueueEntry[], where: 'end' | 'next'): Promise<string> {
-  const { songs, note } = await expand(h, entries)
+  const { songs, note } = await expandEntries(h, entries)
   if (!songs.length) return note || 'Nothing to add.'
   const was = { isEmpty: false }
   const reply = await edit(h, (q, current) => {

@@ -21,6 +21,8 @@ type Props = {
   width: number
   first: number
   tags(path: string): Tags | undefined
+  // whether a file row is a favourite: marked ★
+  isFavourite?(row: FileRow): boolean
   onRow?(at: number, hit: Hit): void
   // a row's menu: right-click, or the ⋯ at the end of the cursor's row
   onMenu?(at: number): void
@@ -50,7 +52,7 @@ function label(row: FileRow): string {
 }
 
 // The Files tab: a tree from the root folder, ../ first.
-export function FilesView({ heading, editing, onHeading, rows, selected, picked, height, width, first, tags, onRow, onMenu, onWheel }: Props) {
+export function FilesView({ heading, editing, onHeading, rows, selected, picked, height, width, first, tags, isFavourite, onRow, onMenu, onWheel }: Props) {
   // how many times each path has been drawn so far, for keys
   const seen = new Map<string, number>()
   const copies = (path: string) => {
@@ -78,7 +80,7 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
             <Box flexGrow={1}>
               <RowFill on={at === selected} width={width} />
               <Text inverse={at === selected} dimColor={row.kind === 'note'} color={isPicked ? 'cyan' : undefined} wrap="truncate-end">
-                {` ${isPicked ? '+' : ' '}${label(row)}`}
+                {` ${isPicked ? '+' : ' '}${label(row)}${row.kind === 'file' && isFavourite?.(row) ? ' ★' : ''}`}
                 {/* dim on the highlight would be hard to read: full strength there */}
                 {artist ? <Text dimColor={at !== selected}>{` · ${artist}`}</Text> : null}
               </Text>

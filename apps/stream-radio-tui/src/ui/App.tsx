@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Box, useApp, useInput } from 'ink'
 import { Text } from './Text'
 import { nextRepeat, stepVolume } from '@core/nowplaying'
-import { addToQueue, CONNECTING, LOADING, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
-import { keyAction, NO_KEY, type Action, type Keys, type Mode } from '../keys'
+import { addToQueue, CONNECTING, expandEntries, LOADING, pick, playQueue, resumeQueue, seek, setRepeat, setVolume, step, stopPlaying, toggleShuffle, togglePause } from '@core/player'
+import { createPlaylist } from '@core/libraryFile'
+import { FAVOURITES, type Song } from '@core/library'
+import { playingSong, toggleFavourite } from '@core/library-actions'
+import { keyAction, NO_KEY, type Action, type Keys, type LibraryOn, type Mode } from '../keys'
 import type { Session } from '../session'
 import { Help, helpTop } from './Help'
 import { Hints } from './Hints'
@@ -16,7 +19,10 @@ import { firstRow } from './List'
 import { QueueView } from './QueueView'
 import { editCells, FilesView } from './FilesView'
 import { edit, indexAt, type Line } from './lineEdit'
-import { CHAPTER_MENU, FILES_MENU, Menu, QUEUE_MENU, type MenuItem } from './Menu'
+import { chapterMenu, filesMenu, Menu, queueMenu, type MenuItem } from './Menu'
+import { Checklist } from './Checklist'
+import { checklistRows, toggleIn, type ChecklistRow } from '../library/checklist'
+import { useFavourites } from '../library/useFavourites'
 import { useFiles } from '../files/useFiles'
 import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
 import { stepTab, Tabs, type Tab } from './Tabs'
@@ -41,6 +47,12 @@ const INTERRUPT_MS = 2000
 // Ink clears the whole screen at each frame that fills it.
 const FIXED_ROWS = 9
 const WIDE_COLUMNS = 80
+const PICK_INSIDE = 'Pick songs inside a playlist.'
+
+// What * and P act on, made when pressed (or when a menu opened): songs
+// (toExpand: Files rows, folders still to be expanded), or the song playing.
+type Target = { songs: readonly Song[]; toExpand?: boolean } | { isPlaying: true }
+const targetOf = (on: LibraryOn): Target | undefined => (on.isPlaying ? { isPlaying: true } : on.songs ? { songs: on.songs, ...(on.toExpand ? { toExpand: true } : {}) } : undefined)
 
 // media: the files and mpv the pane draws pictures from; graphics: where the
 // pictures go, when the terminal can show them. Neither in most tests.
@@ -72,7 +84,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [tabRef, setTabState] = useRefState<Tab>(view.queue.kind !== 'none' ? 'queue' : 'files')
   // Another tab leaves a line being typed: each tab's filter is its own.
   const setTab = (t: Tab) => {
-    if (t !== tabRef.current && ['filter', 'name', 'open'].includes(modeRef.current)) setMode('list')
+    if (t !== tabRef.current && ['filter', 'name', 'open'].includes(modeRef.current)) {
+      closeChecklist()
+      setMode('list')
+    }
     setTabState(t)
   }
   const tab = tabRef.current
@@ -85,6 +100,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
   // a row's menu, open: its items, the row (a place in the tab's rows), the item chosen
   const [menuRef, setMenu] = useRefState<{ items: readonly MenuItem[]; at: number; choice: number } | undefined>(undefined)
+  // Add to playlist's checklist, open (or under its name prompt, for + New
+  // playlist…): the songs it was opened on, its rows, the row chosen, and the
+  // list row it opened from (a place in the tab's rows)
+  const [checkRef, setCheck] = useRefState<{ songs: readonly Song[]; rows: ChecklistRow[]; choice: number; at: number } | undefined>(undefined)
+  // the checklist's new playlist's name, being typed (mode name)
+  const [newNameRef, setNewName] = useRefState<Line | undefined>(undefined)
   // a press on a picked row selects it only when let go without a drag
   const pendingSelect = useRef<number | undefined>(undefined)
   // the key list's first line shown
@@ -98,8 +119,25 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   useEffect(() => void (view.statusSeq > 0 && setNotice(view.status)), [view.statusSeq])
 
   const { act, inTurn } = useTurns(setNotice)
+  const favs = useFavourites(h, view.playing)
+  const allFavourite = (songs: readonly Song[]) => songs.length > 0 && songs.every(s => favs.has(s.path))
   const queueTab = useQueue(h, session.config, view, book, home, { act, inTurn })
   const q = view.queue
+  // a video's chapters: the video, which the view doesn't name, from the queue
+  const [chapterVideo, setChapterVideo] = useState('')
+  useEffect(() => {
+    if (q.kind !== 'chapters') return
+    let isLive = true
+    playingSong(h).then(
+      s => isLive && setChapterVideo(s?.path ?? ''),
+      () => undefined,
+    )
+    return () => {
+      isLive = false
+    }
+  }, [q.kind, view.playing, h])
+  // the file or URL playing, for its ★
+  const playingPath = !view.playing ? '' : q.kind === 'playlist' ? (q.paths[q.current] ?? '') : q.kind === 'chapters' ? chapterVideo : view.lastUrl
   const filter = view.filter.trim()
   const rows = queueTab.rows
   const fKey = useMemo(() => fRows.map(r => (r.kind === 'file' || r.kind === 'dir' ? r.path : r.kind)).join('\n'), [fRows])
@@ -112,7 +150,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMenu({ items, at, choice: 0 })
     setMode('menu')
   }
-  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice })
+  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice, allFavourite })
   // The tab showing: its selection, rows and scroll.
   const isQueueTab = () => tabRef.current === 'queue'
   const isPlaylistsTab = () => tabRef.current === 'playlists'
@@ -146,7 +184,27 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // The menu of row `at` of the tab showing; the cursor moves there unless it is picked.
   const openMenu = (at: number) => {
     const sel = curSel()
-    const items = isQueueTab() ? (rows[at] ? (isEditable() ? QUEUE_MENU : CHAPTER_MENU) : undefined) : isPlaylistsTab() ? pl.menuOf(at) : fRows[at]?.kind === 'file' || fRows[at]?.kind === 'dir' ? FILES_MENU : undefined
+    // the rows it acts on: the picked, when it opens on one of them
+    const on = sel.picked.includes(at) ? sel.picked : [at]
+    const items = isQueueTab()
+      ? rows[at]
+        ? isEditable()
+          ? (() => {
+              const songs = queueSongs(on)
+              return queueMenu({ songs, isFavourite: allFavourite(songs) })
+            })()
+          : chapterMenu(favs.has(playingPath))
+        : undefined
+      : isPlaylistsTab()
+        ? pl.menuOf(at)
+        : fRows[at]?.kind === 'file' || fRows[at]?.kind === 'dir'
+          ? (() => {
+              const songs = filesEntries(on)
+              // a folder's songs aren't known yet: it offers Favourite
+              const isFavourite = on.every(i => fRows[i]?.kind === 'file') && allFavourite(songs)
+              return filesMenu({ songs, toExpand: true, isFavourite })
+            })()
+          : undefined
     if (!items) return
     setCurSel(sel.picked.includes(at) ? { ...sel, cursor: at } : select(sel, at))
     showMenu(items, at)
@@ -155,11 +213,191 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMenu(undefined)
     setMode('list')
   }
-  // A click outside the open menu only closes it.
+  // A click outside the open menu, or the checklist, only closes it.
   const dismissMenu = () => {
+    if (modeRef.current === 'checklist') {
+      closeChecklist()
+      setMode('list')
+      return true
+    }
     if (modeRef.current !== 'menu') return false
     closeMenu()
     return true
+  }
+
+  // The Queue's songs at rows `at`: each one's file or URL, and its title.
+  const queueSongs = (at: readonly number[]): Song[] =>
+    at.flatMap(i => {
+      const r = rows[i]
+      const path = r ? q.paths[r.index] : undefined
+      return r && path ? [r.title ? { path, title: r.title } : { path }] : []
+    })
+  // The Files rows `at` as Add to queue takes them: a folder whole, still to expand.
+  const filesEntries = (at: readonly number[]): Song[] =>
+    at.flatMap(i => {
+      const r = fRows[i]
+      return r && (r.kind === 'file' || r.kind === 'dir') ? files.entriesOf(r) : []
+    })
+  // What * and P act on in the tab showing: the picked rows, else the
+  // cursor's; with no row to act on, the song playing. undefined: nothing
+  // (the cursor on ../); 'top': the Playlists tab's lists, not songs.
+  const keyTarget = (): Target | 'top' | undefined => {
+    const on = targets(curSel())
+    if (isQueueTab()) {
+      if (!rows.length || q.kind !== 'playlist') return { isPlaying: true }
+      const songs = queueSongs(on)
+      return songs.length ? { songs } : undefined
+    }
+    if (isPlaylistsTab()) {
+      const songs = pl.chosen()
+      if (!songs) return 'top'
+      if (songs.length) return { songs }
+      return pl.rows.some(r => r.kind === 'song') ? undefined : { isPlaying: true }
+    }
+    const entries = filesEntries(on)
+    if (entries.length) return { songs: entries, toExpand: true }
+    return fRows.some(r => r.kind === 'file' || r.kind === 'dir') ? undefined : { isPlaying: true }
+  }
+  // The songs a target means now: a folder's through its subfolders, as Add
+  // to queue has them; a chapter video whole.
+  const songsOf = async (t: Target): Promise<Song[]> => {
+    if ('isPlaying' in t) {
+      const s = await playingSong(h)
+      return s ? [s] : []
+    }
+    if (!t.toExpand) return [...t.songs]
+    return (await expandEntries(h, t.songs)).songs.map(e => (e.title ? { path: e.path, title: e.title } : { path: e.path }))
+  }
+  const noSongs = (t: Target) => ('isPlaying' in t ? 'Nothing playing.' : 'No songs there.')
+  // Favourites, or a list, changed from here: what shows it reads it again.
+  const libraryChanged = (name: string) => {
+    if (name === FAVOURITES) favs.refresh()
+    if (isPlaylistsTab()) pl.lib.refresh()
+  }
+  // The pick is spent, as Add to queue spends it, so the reply shows.
+  const spendPick = () => {
+    const sel = curSel()
+    if (sel.picked.length) setCurSel(clear(sel))
+  }
+  // From a key (on: {}) or a menu: the target, or why there is none.
+  const libraryTarget = (on: LibraryOn): Target | undefined => {
+    const given = targetOf(on)
+    if (given) return given
+    const t = keyTarget()
+    if (t === 'top') return void setNotice(PICK_INSIDE)
+    return t
+  }
+  const favourite = (on: LibraryOn) => {
+    const t = libraryTarget(on)
+    if (!t) return
+    spendPick()
+    act(() =>
+      inTurn(async () => {
+        const songs = await songsOf(t)
+        if (!songs.length) return noSongs(t)
+        const said = await toggleFavourite(h, songs)
+        libraryChanged(FAVOURITES)
+        return said
+      }),
+    )
+  }
+
+  // The checklist: opened on a target's songs, its marks read from the list files.
+  const openChecklist = (on: LibraryOn) => {
+    const t = libraryTarget(on)
+    if (!t) return
+    const at = curSel().cursor
+    spendPick()
+    act(() =>
+      inTurn(async () => {
+        const songs = await songsOf(t)
+        if (!songs.length) return noSongs(t)
+        const rows = await checklistRows(h, songs)
+        // a key pressed meanwhile (a filter, another menu) keeps its mode
+        if (modeRef.current !== 'list') return ''
+        setCheck({ songs, rows, choice: 0, at })
+        setMode('checklist')
+        return ''
+      }),
+    )
+  }
+  const closeChecklist = () => {
+    setCheck(undefined)
+    setNewName(undefined)
+  }
+  // The marks again, from the files as they are now; choice: the row to choose.
+  const remark = async (songs: readonly Song[], choice?: (rows: ChecklistRow[]) => number) => {
+    const rows = await checklistRows(h, songs)
+    const c = checkRef.current
+    if (!c || c.songs !== songs) return
+    const at = choice ? choice(rows) : c.choice
+    setCheck({ ...c, rows, choice: Math.max(0, Math.min(at, rows.length)) })
+  }
+  const toggleRow = (i: number) => {
+    const c = checkRef.current
+    if (!c) return
+    setCheck({ ...c, choice: i })
+    const row = c.rows[i]
+    if (!row) {
+      // + New playlist…
+      setNewName({ text: '', at: 0 })
+      return setMode('name')
+    }
+    act(() =>
+      inTurn(async () => {
+        const said = await toggleIn(h, row.name, c.songs)
+        libraryChanged(row.name)
+        await remark(c.songs)
+        return said
+      }),
+    )
+  }
+  const submitNewName = () => {
+    const c = checkRef.current
+    const name = newNameRef.current?.text ?? ''
+    setNewName(undefined)
+    setMode(c ? 'checklist' : 'list')
+    if (!c) return
+    act(() =>
+      inTurn(async () => {
+        const said = await createPlaylist(h, name, c.songs)
+        if (said) return said
+        libraryChanged(name)
+        await remark(c.songs, rows => rows.findIndex(r => r.name === name))
+        return `Made the playlist "${name}".`
+      }),
+    )
+  }
+  // The keys while the checklist, or its name prompt, is open; false for one it leaves.
+  const handleChecklist = (a: Action): boolean => {
+    const c = checkRef.current
+    if (!c) return false
+    if (modeRef.current === 'name') {
+      const line = newNameRef.current
+      if (!line) return false
+      if (a.kind === 'lineEdit') setNewName(edit(line, a.edit))
+      else if (a.kind === 'submit') submitNewName()
+      else if (a.kind === 'cancel') {
+        setNewName(undefined)
+        setMode('checklist')
+      } else return false
+      return true
+    }
+    const count = c.rows.length + 1
+    switch (a.kind) {
+      case 'up':
+      case 'down':
+        setCheck({ ...c, choice: (c.choice + (a.kind === 'up' ? -1 : 1) + count) % count })
+        return true
+      case 'submit':
+        toggleRow(c.choice)
+        return true
+      case 'cancel':
+        closeChecklist()
+        setMode('list')
+        return true
+    }
+    return false
   }
   const pickMenu = (i: number) => {
     const item = menuRef.current?.items[i]
@@ -173,7 +411,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const fileRow = fRows[at]
     const mode = modeRef.current
     const inRange = (n: number) => Math.max(0, Math.min(n, curCount() - 1))
-    if (isPlaylistsTab() && mode !== 'menu' && mode !== 'help' && pl.handle(a)) return
+    if ((mode === 'checklist' || mode === 'name') && handleChecklist(a)) return
+    if (isPlaylistsTab() && mode !== 'menu' && mode !== 'help' && mode !== 'checklist' && pl.handle(a)) return
     switch (a.kind) {
       case 'up':
       case 'down':
@@ -231,6 +470,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return isQueueTab() ? undefined : addFiles(a.where)
       case 'menu':
         return openMenu(at)
+      case 'favourite':
+        return favourite(a)
+      case 'addToList':
+        return openChecklist(a)
       case 'folderUp':
         return isQueueTab() ? undefined : files.goUp()
       case 'goPlaying': {
@@ -350,8 +593,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         ? 'Chapters'
         : 'No queue or chapters.'
   const shownFilter = tab === 'playlists' ? pl.filter : view.filter
+  const newName = newNameRef.current
   const textLine =
-    mode === 'name' && pl.prompt ? (
+    mode === 'name' && newName ? (
+      <NamePrompt label="New playlist name: " line={newName} width={columns} />
+    ) : mode === 'name' && pl.prompt ? (
       <NamePrompt label={pl.prompt.label} line={pl.prompt.line} width={columns} />
     ) : mode === 'filter' ? (
       `/ filter: ${shownFilter}_`
@@ -427,6 +673,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // A click outside the location being edited only leaves it, as Esc does.
   const leaveEdit = () => {
     if (modeRef.current !== 'open' && modeRef.current !== 'name') return false
+    closeChecklist()
     setMode('list')
     return true
   }
@@ -470,6 +717,15 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     // below the row, or above it when that would run past the list
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
   })()
+  const check = checkRef.current
+  const checkTop = (() => {
+    if (!check) return 0
+    const rowY = 2 + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
+    // title, rows, + New playlist… and the frame
+    const height = check.rows.length + 4
+    // below the row, or above it when that would run past the list; at the top when neither fits
+    return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
+  })()
   const list = (
     <Box flexDirection="column" width={listWidth}>
       <Tabs
@@ -497,6 +753,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           picked={new Set(picked)}
           dropAt={dragRef.current?.to}
           current={q.current}
+          isFavourite={i => favs.has(q.paths[i] ?? '')}
           height={listHeight}
           width={listWidth}
           first={first}
@@ -516,6 +773,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           width={listWidth}
           first={plFirst}
           now={pl.lib.now}
+          isFavourite={song => favs.has(song.path)}
           onRow={onPlRow}
           onMenu={openMenu}
           onWheel={onPlWheel}
@@ -532,6 +790,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           width={listWidth}
           first={fFirst}
           tags={files.tags}
+          isFavourite={r => favs.has(files.entriesOf(r)[0]?.path ?? '')}
           onRow={onFileRow}
           onMenu={openMenu}
           onWheel={onFilesWheel}
@@ -539,6 +798,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       )}
       {/* last, so it is drawn over the rows */}
       {menu && mode === 'menu' ? <Menu items={menu.items} selected={menu.choice} x={4} y={menuTop} onPick={pickMenu} /> : null}
+      {check && mode === 'checklist' ? <Checklist rows={check.rows} selected={check.choice} x={4} y={checkTop} onToggle={toggleRow} onNew={() => toggleRow(check.rows.length)} onClose={() => dismissMenu()} /> : null}
     </Box>
   )
 
@@ -559,13 +819,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           <Box flexDirection="row" height={listHeight + 2}>
             {list}
             <Box borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} paddingLeft={1} width={sideWidth}>
-              <NowPlaying view={view} duration={duration} width={sideWidth - 2} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 2, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
+              <NowPlaying view={view} duration={duration} width={sideWidth - 2} isFavourite={favs.has(playingPath)} onAction={handle} onVolume={onVolume} onSeek={onSeek} full={{ height: listHeight + 2, tags, peaks, pixels: graphics ? { graphics, art } : undefined }} />
             </Box>
           </Box>
         ) : (
           <Box flexDirection="column">
             <Box marginBottom={1}>
-              <NowPlaying view={view} duration={duration} width={columns} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
+              <NowPlaying view={view} duration={duration} width={columns} isFavourite={favs.has(playingPath)} onAction={handle} onVolume={onVolume} onSeek={onSeek} />
             </Box>
             <Box height={listHeight + 2}>{list}</Box>
           </Box>

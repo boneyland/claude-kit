@@ -4,7 +4,7 @@ import { Text } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
 import { textWidth } from '@core/nowplaying'
-import { whenPlayed } from '@core/library'
+import { whenPlayed, type Song } from '@core/library'
 import { songTitle, type LibraryRow } from '../library/useLibrary'
 import { shown, type Line } from './lineEdit'
 
@@ -18,6 +18,8 @@ type Props = {
   first: number
   // now, in unix seconds: when Recently played's songs played is shown from it
   now: number
+  // whether a song is a favourite: marked ★
+  isFavourite?(song: Song): boolean
   onRow?(at: number, hit: Hit): void
   // a row's menu: right-click, or the ⋯ at the end of the cursor's row
   onMenu?(at: number): void
@@ -41,7 +43,7 @@ const nameOf = (row: LibraryRow): string => {
 
 // The Playlists tab: Favourites, Recently played, the saved lists with their
 // song counts in a column, and + New playlist…; or an open list, ../ first.
-export function PlaylistsView({ heading, rows, selected, picked, height, width, first, now, onRow, onMenu, onWheel }: Props) {
+export function PlaylistsView({ heading, rows, selected, picked, height, width, first, now, isFavourite, onRow, onMenu, onWheel }: Props) {
   // the counts line up after the longest name, leaving room for them
   const nameCells = Math.min(Math.max(0, width - 12), Math.max(0, ...rows.map(r => (r.kind === 'list' ? textWidth(r.info.name) : 0))))
   return (
@@ -52,7 +54,7 @@ export function PlaylistsView({ heading, rows, selected, picked, height, width, 
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         const isPicked = !!picked?.has(at)
-        const name = nameOf(row)
+        const name = nameOf(row) + (row.kind === 'song' && isFavourite?.(row.song) ? ' ★' : '')
         const extra = row.kind === 'list' ? `${' '.repeat(Math.max(0, nameCells - textWidth(name)))} · ${row.info.count}` : row.kind === 'song' && row.at !== undefined ? ` · ${whenPlayed(row.at, now)}` : ''
         const hasMenu = row.kind === 'list' || row.kind === 'history' || row.kind === 'song'
         return (

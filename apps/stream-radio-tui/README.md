@@ -46,6 +46,8 @@ The list has two tabs: **Files**, a folder browser to pick songs from, and **Que
 | `space` | pause or resume; while stopped, play the queue from the start of the song it stopped on (`l` resumes mid-song); while any row is picked, pick or unpick the cursor's row instead |
 | `Esc` | clear the pick |
 | `m` | the row's menu (also a right-click, or the `⋯` at the end of the cursor's row) |
+| `*` | favourite or unfavourite the picked songs, or the cursor's (a folder: every song in it, through subfolders); with no rows, the song playing. Favourites show `★` |
+| `P` | add to playlist: a checklist of the playlists, `✓` when every song is in one, `–` when some are; `Enter` adds the missing songs or takes them all out and the checklist stays open; `+ New playlist…` makes one with the songs; `Esc` closes |
 | `S` | sort by the next field; after the last, back to `as queued` (also the `sort:` control on the tab row) |
 | `n` `p` | next or previous song |
 | `b` `f` | jump 10 seconds back or ahead (not in a live stream) |

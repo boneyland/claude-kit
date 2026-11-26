@@ -6,8 +6,9 @@ import type { Edit } from './ui/lineEdit'
 // list: keys are commands; filter, open and name: keys edit a line of text
 // (open's with a cursor, in the Files heading; name's a playlist's name, new or
 // renamed, with a cursor); help: the key list shows, and keys scroll or close
-// it; menu: a row's menu is open, and keys choose from it.
-export type Mode = 'list' | 'filter' | 'open' | 'name' | 'help' | 'menu'
+// it; menu: a row's menu is open, and keys choose from it; checklist: Add to
+// playlist's checklist is open, and keys choose and toggle its rows.
+export type Mode = 'list' | 'filter' | 'open' | 'name' | 'help' | 'menu' | 'checklist'
 
 export type Action =
   | { kind: 'up' }
@@ -76,6 +77,16 @@ export type Action =
   | { kind: 'rename'; name: string }
   | { kind: 'deleteList'; name: string; isSure?: boolean }
   | { kind: 'clearHistory'; isSure?: boolean }
+  // * and P: the picked rows' songs (or the cursor's; with no row, the song
+  // playing) in or out of Favourites, or the checklist of playlists for them.
+  // From a menu, `songs`: what it was opened on (toExpand: Files rows, a
+  // folder still to be expanded into its songs); `isPlaying`: the song
+  // playing, whatever the rows
+  | ({ kind: 'favourite' } & LibraryOn)
+  | ({ kind: 'addToList' } & LibraryOn)
+
+// What favourite and addToList act on; neither field: the rows, as the keys do.
+export type LibraryOn = { songs?: readonly Song[]; toExpand?: boolean; isPlaying?: boolean }
 
 // How far b and f jump, as the mod's panel does.
 export const SEEK_SECONDS = 10
@@ -169,8 +180,8 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
     if (key.downArrow || input === 'j') return { kind: 'down' }
     return jumpOf(key)
   }
-  if (mode === 'menu') {
-    if (key.escape || input === 'm' || input === 'q') return { kind: 'cancel' }
+  if (mode === 'menu' || mode === 'checklist') {
+    if (key.escape || input === 'q' || (mode === 'menu' ? input === 'm' : input === 'P')) return { kind: 'cancel' }
     if (key.upArrow || input === 'k') return { kind: 'up' }
     if (key.downArrow || input === 'j') return { kind: 'down' }
     if (key.return) return { kind: 'submit' }
@@ -204,6 +215,8 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   const isPlain = !key.ctrl && !key.meta
   if (isPlain && !isQueue && (input === 'a' || input === 'A')) return { kind: 'add', where: input === 'a' ? 'end' : 'next' }
   if (isPlain && input === 'm') return { kind: 'menu' }
+  if (isPlain && input === '*') return { kind: 'favourite' }
+  if (isPlain && input === 'P') return { kind: 'addToList' }
   if (isPlain && !isQueue && input === 'U') return { kind: 'folderUp' }
   if (isPlain && input === 'G') return { kind: 'goPlaying' }
   if (isPlain && input === 'S') return { kind: 'sortNext' }

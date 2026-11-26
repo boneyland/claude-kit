@@ -1902,7 +1902,8 @@ describe('the Playlists tab', () => {
 
   test('a list changed on disk shows within one 2 s poll', async () => {
     const { press, lines, lib } = await open()
-    expect([...lib.timers].map(t => t.ms)).toEqual([2000])
+    // the tab's poll, and the favourites' (the whole time)
+    expect([...lib.timers].map(t => t.ms)).toEqual([2000, 2000])
     await press('j', 'j', 'j', ENTER)
     await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
     const file = lib.file('Road trip')
@@ -2049,8 +2050,183 @@ describe('the Playlists tab', () => {
 
   test('the poll runs only while the tab shows', async () => {
     const { press, lib } = await open()
-    expect(lib.timers.size).toBe(1)
+    // the favourites' poll stays
+    expect(lib.timers.size).toBe(2)
     await press('\t')
-    await vi.waitFor(() => expect(lib.timers.size).toBe(0))
+    await vi.waitFor(() => expect(lib.timers.size).toBe(1))
+  })
+
+  describe('favourite and Add to playlist', () => {
+    const favText = (lib: ReturnType<typeof library>) => (nodeFs.existsSync(lib.file(FAV)) ? nodeFs.readFileSync(lib.file(FAV), 'utf8') : '')
+    const openRoadTrip = async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      return ui
+    }
+    const QUEUE_JSON = nodePath.join(STATE, 'queue.json')
+    afterEach(() => nodeFs.rmSync(QUEUE_JSON, { force: true }))
+
+    test('* on a song toggles it in Favourites, says so, and marks its row ★', async () => {
+      const { press, lines, lib } = await openRoadTrip()
+      await press('*')
+      await vi.waitFor(() => expect(favText(lib)).toContain('/m/r1.mp3'))
+      await vi.waitFor(() => expect(status(lines())).toContain('Added to ★ Favourites.'))
+      await vi.waitFor(() => expect(lines()[lineOf(lines(), /Road one/)]).toContain('★'))
+      expect(lines()[lineOf(lines(), /Road two/)]).not.toContain('★')
+      await press('*')
+      await vi.waitFor(() => expect(favText(lib)).not.toContain('/m/r1.mp3'))
+      await vi.waitFor(() => expect(status(lines())).toContain('Removed from ★ Favourites.'))
+      await vi.waitFor(() => expect(lines()[lineOf(lines(), /Road one/)]).not.toContain('★'))
+    })
+
+    test('at the top level * and P say to pick songs inside a playlist', async () => {
+      const { press, lines, lib } = await open()
+      const was = favText(lib)
+      await press('j', 'j', 'j', '*')
+      await vi.waitFor(() => expect(status(lines())).toContain('Pick songs inside a playlist.'))
+      await press('j', 'P')
+      // time for a checklist to open, were it to
+      await new Promise(r => setTimeout(r, 100))
+      expect(rowsText(lines())).not.toContain('Add to playlist')
+      expect(status(lines())).toContain('Pick songs inside a playlist.')
+      expect(favText(lib)).toBe(was)
+    })
+
+    test('P opens the checklist; Enter toggles a row and it stays open, the marks updated; Esc closes', async () => {
+      const { press, lines, lib } = await openRoadTrip()
+      await press('\x1b[1;2B', 'P')
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('Add to playlist'))
+      const row = (t: string) => lines()[lineOf(lines(), new RegExp(`[✓– ] ${t}`))] ?? ''
+      expect(row('Road trip')).toContain('✓ Road trip')
+      expect(row('Late night')).not.toMatch(/[✓–] Late night/)
+      expect(rowsText(lines())).toContain('+ New playlist…')
+      // Late night: blank, so both songs go in
+      await press('j', ENTER)
+      await vi.waitFor(() => expect(nodeFs.readFileSync(lib.file('Late night'), 'utf8')).toContain('/m/r2.mp3'))
+      expect(nodeFs.readFileSync(lib.file('Late night'), 'utf8')).toContain('/m/r1.mp3')
+      await vi.waitFor(() => expect(row('Late night')).toContain('✓ Late night'))
+      expect(rowsText(lines())).toContain('Add to playlist')
+      // and out again: ✓ takes them all out
+      await press(ENTER)
+      await vi.waitFor(() => expect(nodeFs.readFileSync(lib.file('Late night'), 'utf8')).not.toContain('/m/r1.mp3'))
+      expect(nodeFs.readFileSync(lib.file('Late night'), 'utf8')).toContain('/m/l1.mp3')
+      await press(ESC)
+      expect(rowsText(lines())).not.toContain('Add to playlist')
+    })
+
+    test('a song in some of a list shows –, and Enter adds the rest', async () => {
+      const { press, lines, lib } = await openRoadTrip()
+      nodeFs.writeFileSync(lib.file(FAV), m3u(['/m/r1.mp3', 'Road one']))
+      await press('\x1b[1;2B', 'P')
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/– ★ Favourites/))
+      await press(ENTER)
+      await vi.waitFor(() => expect(favText(lib)).toContain('/m/r2.mp3'))
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/✓ ★ Favourites/))
+    })
+
+    test('+ New playlist… in the checklist asks a name and makes the list with the songs', async () => {
+      const { press, lines, lib } = await openRoadTrip()
+      await press('P')
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('Add to playlist'))
+      await press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/New playlist name/))
+      await press('Gym', ENTER)
+      await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Gym'))).toBe(true))
+      expect(nodeFs.readFileSync(lib.file('Gym'), 'utf8')).toContain('/m/r1.mp3')
+      // back in the checklist, the new list ticked
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/✓ Gym/))
+    })
+
+    test("a song's menu has Favourite (Unfavourite once it is one) and Add to playlist…", async () => {
+      nodeFs.rmSync(HISTORY, { force: true })
+      const { press, lines, lib } = await openRoadTrip()
+      await press('m')
+      expect(rowsText(lines())).toContain('Favourite')
+      expect(rowsText(lines())).toContain('Add to playlist…')
+      const items = lines().join('\n')
+      expect(items).not.toContain('Unfavourite')
+      // Favourite is the fifth item: Play from here, Add to queue, Play next, Remove, Favourite
+      await press('j', 'j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(favText(lib)).toContain('/m/r1.mp3'))
+      await vi.waitFor(() => expect(lines()[lineOf(lines(), /Road one/)]).toContain('★'))
+      await press('m')
+      expect(rowsText(lines())).toContain('Unfavourite')
+    })
+
+    test('Recently played songs can be favourited', async () => {
+      nodeFs.writeFileSync(HISTORY, JSON.stringify({ at: Math.floor(Date.now() / 1000) - 60, path: '/m/h.mp3', title: 'Heard' }) + '\n')
+      const { press, lines, lib } = await open()
+      await press('j', ENTER)
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('Heard'))
+      await press('*')
+      await vi.waitFor(() => expect(favText(lib)).toContain('/m/h.mp3'))
+    })
+
+    test('★ shows in now playing when the song playing is a favourite; a click on it toggles', async () => {
+      const lib = library({ [FAV]: m3u([`${ALBUM}/Disc 1/03.mp3`, 'Song three']) })
+      const ui = await show(100, PLAYING, '', '', { library: lib })
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('▶ ★ Song three'))
+      // and on its row in the Queue
+      expect(ui.lines()[lineOf(ui.lines(), /3\. Song three/)]).toContain('★')
+      nodeFs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 1, entries: PLAYING.queue!.paths.map((p, i) => ({ id: `1.${i}`, path: p, title: PLAYING.queue!.items[i] })), arrangement: { kind: 'none' }, root: ALBUM, source: '' }))
+      nodeFs.writeFileSync(nodePath.join(STATE, 'queue-place.json'), JSON.stringify({ rev: 1, current: '1.2', seconds: 0 }))
+      onTestFinished(() => nodeFs.rmSync(nodePath.join(STATE, 'queue-place.json'), { force: true }))
+      const star = ui.where('★ Song three')
+      await ui.click(star.x, star.y)
+      await vi.waitFor(() => expect(favText(lib)).not.toContain('03.mp3'))
+      await vi.waitFor(() => expect(rowsText(ui.lines())).not.toContain('▶ ★ Song three'))
+    })
+
+    test('* on a chapter row acts on the whole video; with an empty list, on the song playing', async () => {
+      const VIDEO = 'https://www.youtube.com/watch?v=abc123'
+      nodeFs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 1, entries: [{ id: '1.0', path: VIDEO, title: 'Long mix' }], arrangement: { kind: 'none' }, root: '', source: '' }))
+      const lib = library()
+      const chapters = { ...PLAYING, playing: 'Long mix', lastUrl: VIDEO, queue: { kind: 'chapters' as const, items: ['Part one', 'Part two'], paths: [], root: '', current: 0 } }
+      const ui = await show(100, chapters, '', '', { library: lib })
+      await ui.press('j', '*')
+      await vi.waitFor(() => expect(favText(lib)).toContain(VIDEO))
+      expect(favText(lib)).not.toContain('Part two')
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('▶ ★ Long mix'))
+      // nothing in the queue's list: the song playing
+      await ui.vars.change('queue', () => ({ kind: 'none', items: [], paths: [], root: '', current: -1 }))
+      await ui.settled()
+      await ui.press('*')
+      await vi.waitFor(() => expect(favText(lib)).not.toContain(VIDEO))
+    })
+
+    test('* on a picked folder in Files favourites every song in it, through its subfolders', async () => {
+      const music = nodeFs.mkdtempSync(nodePath.join(TMP, 'music-'))
+      nodeFs.mkdirSync(nodePath.join(music, 'Album', 'Disc 1'), { recursive: true })
+      for (const f of ['Album/b.mp3', 'Album/Disc 1/a.mp3', 'Album/Disc 1/c.mp3', 'loose.mp3']) nodeFs.writeFileSync(nodePath.join(music, f), '')
+      const lib = library()
+      const ui = await show(100, PLAYING, '', '', { library: lib })
+      await ui.press('o', music, ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Album/'))
+      await ui.press(HOME, 'j', '\x1b[1;2B', '\x1b[1;2A')
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('1 picked'))
+      await ui.press('*')
+      await vi.waitFor(() => expect(favText(lib)).toContain(`${music}/Album/Disc 1/c.mp3`))
+      const text = favText(lib)
+      expect(text).toContain(`${music}/Album/b.mp3`)
+      expect(text).toContain(`${music}/Album/Disc 1/a.mp3`)
+      expect(text).not.toContain('loose.mp3')
+      // the Files menu has the items too
+      await ui.press('m')
+      expect(rowsText(ui.lines())).toContain('Add to playlist…')
+      expect(rowsText(ui.lines())).toMatch(/Favourite/)
+    })
+
+    test("the Queue's menu has Favourite and Add to playlist…, acting on the songs it opened on", async () => {
+      const lib = library()
+      const ui = await show(100, PLAYING, '', '', { library: lib })
+      await ui.press(HOME, 'm')
+      expect(rowsText(ui.lines())).toContain('Add to playlist…')
+      const fav = lineOf(ui.lines(), / Favourite /)
+      expect(fav).toBeGreaterThan(0)
+      const at = ui.where('Favourite')
+      await ui.click(at.x, at.y)
+      await vi.waitFor(() => expect(favText(lib)).toContain(`${ALBUM}/Disc 1/01.mp3`))
+    })
   })
 })

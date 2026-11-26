@@ -18,6 +18,7 @@ import { HISTORY, libraryRows, useLibrary, type Library, type LibraryRow } from 
 const BUSY = 'The playlists are busy; try again.'
 const HISTORY_READ_ONLY = "Recently played can't be edited; Clear it from its menu."
 const GONE = 'That playlist is gone.'
+const PICK_INSIDE = 'Pick songs inside a playlist.'
 
 // What the tab needs of the App around it.
 export type PlaylistsUi = {
@@ -26,6 +27,8 @@ export type PlaylistsUi = {
   // a menu over row `at` of this tab
   showMenu(items: readonly MenuItem[], at: number): void
   say(text: string): void
+  // whether every one of `songs` is in Favourites, for a menu's label
+  allFavourite(songs: readonly Song[]): boolean
 }
 
 // The name being typed: for a new playlist, or a list's new name.
@@ -48,6 +51,9 @@ export type PlaylistsTab = {
   // ../ goes back, on + New playlist… asks a name; on a song it selects, and
   // a double-click plays the list from it. Ctrl picks, Shift or Alt a range.
   onRow(at: number, hit: Hit, first: number): void
+  // the songs * and P act on inside an open list: the picked, else the
+  // cursor's (none on ../); undefined at the top level, where they act on nothing
+  chosen(): Song[] | undefined
   // does what `a` means in this tab; false for an action it leaves to the App
   handle(a: Action): boolean
 }
@@ -305,6 +311,12 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       case 'deleteList':
       case 'clearHistory':
         return handleList(a)
+      // a list's row isn't songs: * and P act on songs inside one (the App does that)
+      case 'favourite':
+      case 'addToList':
+        if (lib.open || a.songs || a.isPlaying) return false
+        ui.say(PICK_INSIDE)
+        return true
       // sorting and moving inside a playlist come later; nothing to clear here
       case 'sortNext':
       case 'sortReverse':
@@ -338,7 +350,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         const s = sel()
         const chosen = s.picked.includes(at) ? s.picked : [at]
         const songs = chosen.flatMap(i => (rows[i]?.kind === 'song' ? [(rows[i] as Extract<LibraryRow, { kind: 'song' }>).song] : []))
-        return songMenu({ all: o.songs, source: o.file ?? '', index: row.index, songs, ...(o.kind === 'history' ? {} : { list: o.name }) })
+        return songMenu({ all: o.songs, source: o.file ?? '', index: row.index, songs, isFavourite: ui.allFavourite(songs), ...(o.kind === 'history' ? {} : { list: o.name }) })
       }
       if (row?.kind === 'history') return historyMenu(HISTORY)
       if (row?.kind === 'list') return row.info.name === FAVOURITES ? favouritesMenu(FAVOURITES) : listMenu(row.info.name)
@@ -357,6 +369,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       hasOpened.current = row?.kind === 'up' || row?.kind === 'list' || row?.kind === 'history'
       enter(at)
     },
+    chosen: () => (o ? chosenSongs().map(r => r.song) : undefined),
     handle,
   }
 }
