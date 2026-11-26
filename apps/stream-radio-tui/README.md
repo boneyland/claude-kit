@@ -32,9 +32,9 @@ stream-radio-tui ~/Music/Album       # a folder, file, .m3u/.pls or YouTube play
 
 With no argument it attaches to the player that is already running, or shows the queue as it was left, ready to play with `l` (from where it got to) or `space` (from the start of its song). A YouTube link to a video in a playlist (`watch?v=…&list=…`) queues the playlist and starts at that video; while yt-dlp or curl reads a playlist, the title shows `loading…`.
 
-The list has two tabs: **Files**, a folder browser to pick songs from, and **Queue**, what plays. It opens on the Queue when something is queued, else on Files. `Tab` or a click on a tab's name switches; each tab keeps its own cursor, picked rows and scroll.
+The list has three tabs: **Files**, a folder browser to pick songs from, **Queue**, what plays, and **Playlists**, your saved lists (★ Favourites and the ones you made) and Recently played. It opens on the Queue when something is queued, else on Files. `Tab` or a click on a tab's name switches; each tab keeps its own cursor, picked rows and scroll.
 
-### Both tabs
+### Every tab
 
 | Key | |
 | --- | --- |
@@ -124,9 +124,10 @@ Everything the keys do, the mouse can do too:
 
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
 - **Drag:** in the Queue, or in a playlist's custom order, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
-- **Tabs:** a click on `Files` or `Queue` switches; a click on `sort: …` sorts by the next field. In the Queue or an open playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
+- **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In the Queue or an open playlist, once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
+- **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
 

@@ -360,6 +360,9 @@ export const register: Register = (on, options) => {
         return { text: where ? `Resuming ${where}.` : `Starting ${again}.` }
       }
 
+      // Every other kind is answered above; this narrows the type to a URL or path.
+      if (parsed.kind !== 'play') return { text: 'Nothing to play.' }
+
       // In the background, as a start always was: a hook that takes long is
       // reported as unanswered. What the expansion says shows as a toast.
       const h = hostFor($, config)
