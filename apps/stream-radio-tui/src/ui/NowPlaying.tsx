@@ -44,7 +44,7 @@ const MIN_ART_ROWS = 4
 
 // onAction: a control clicked, as its key; onVolume: the volume bar clicked.
 // onSeek: the waveform or the bar clicked, at this share of the song.
-// isFavourite: the song playing is in Favourites (★ by its title).
+// isFavourite: the song playing is in Favourites (★ by its title, else ☆).
 type Props = { view: View; duration: number; width: number; full?: Full; isFavourite?: boolean; onAction?(a: Action): void; onVolume?(level: number): void; onSeek?(share: number): void }
 
 // What plays, how far it is, and the volume, repeat and shuffle. Narrow, in
@@ -118,16 +118,18 @@ function Column({ view, duration, width, full, second, time, isFavourite, onActi
   )
 }
 
-// What plays, ▶ or ⏸ before it, and ★ when it is a favourite: a click on
-// the ★ toggles it (takes it out of Favourites).
+// What plays, ▶ or ⏸ before it, then ★ when it is a favourite (a dim ☆ when
+// not): a click on either toggles it.
 function Title({ playing, isPaused, isFavourite, onAction }: { playing: string; isPaused: boolean; isFavourite?: boolean; onAction?(a: Action): void }) {
-  const star = playing && isFavourite
-  // the ★ is the third cell, after the ▶ and a space
-  const onClick = (hit: Hit) => void (star && hit.x === 2 && onAction?.({ kind: 'favourite', isPlaying: true }))
+  // the star is the third cell, after the ▶ and a space
+  const onClick = (hit: Hit) => void (playing && hit.x === 2 && onAction?.({ kind: 'favourite', isPlaying: true }))
   return (
     <Clickable onClick={onClick}>
       <Text bold wrap="truncate-end">
-        {playing ? `${isPaused ? '⏸' : '▶'} ${star ? '★ ' : ''}${playing}` : 'Nothing playing.'}
+        {/* children as they are, not in a fragment: Text cleans only the strings it is given */}
+        {playing ? `${isPaused ? '⏸' : '▶'} ` : 'Nothing playing.'}
+        {playing ? isFavourite ? '★' : <Text dimColor>☆</Text> : null}
+        {playing ? ` ${playing}` : null}
       </Text>
     </Clickable>
   )

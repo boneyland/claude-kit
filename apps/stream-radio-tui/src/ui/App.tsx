@@ -259,15 +259,17 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     return fRows.some(r => r.kind === 'file' || r.kind === 'dir') ? undefined : { isPlaying: true }
   }
   // The songs a target means now: a folder's through its subfolders, as Add
-  // to queue has them; a chapter video whole.
-  const songsOf = async (t: Target): Promise<Song[]> => {
+  // to queue has them (note: its word on a cap it hit); a chapter video whole.
+  const songsOf = async (t: Target): Promise<{ songs: Song[]; note: string }> => {
     if ('isPlaying' in t) {
       const s = await playingSong(h)
-      return s ? [s] : []
+      return { songs: s ? [s] : [], note: '' }
     }
-    if (!t.toExpand) return [...t.songs]
-    return (await expandEntries(h, t.songs)).songs.map(e => (e.title ? { path: e.path, title: e.title } : { path: e.path }))
+    if (!t.toExpand) return { songs: [...t.songs], note: '' }
+    const x = await expandEntries(h, t.songs)
+    return { songs: x.songs.map(e => (e.title ? { path: e.path, title: e.title } : { path: e.path })), note: x.note }
   }
+  const withNote = (said: string, note: string) => [said, note].filter(Boolean).join(' ')
   const noSongs = (t: Target) => ('isPlaying' in t ? 'Nothing playing.' : 'No songs there.')
   // Favourites, or a list, changed from here: what shows it reads it again.
   const libraryChanged = (name: string) => {
@@ -293,11 +295,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     spendPick()
     act(() =>
       inTurn(async () => {
-        const songs = await songsOf(t)
-        if (!songs.length) return noSongs(t)
+        const { songs, note } = await songsOf(t)
+        if (!songs.length) return note || noSongs(t)
         const said = await toggleFavourite(h, songs)
         libraryChanged(FAVOURITES)
-        return said
+        return withNote(said, note)
       }),
     )
   }
@@ -310,14 +312,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     spendPick()
     act(() =>
       inTurn(async () => {
-        const songs = await songsOf(t)
-        if (!songs.length) return noSongs(t)
+        const { songs, note } = await songsOf(t)
+        if (!songs.length) return note || noSongs(t)
         const rows = await checklistRows(h, songs)
         // a key pressed meanwhile (a filter, another menu) keeps its mode
-        if (modeRef.current !== 'list') return ''
+        if (modeRef.current !== 'list') return note
         setCheck({ songs, rows, choice: 0, at })
         setMode('checklist')
-        return ''
+        return note
       }),
     )
   }
@@ -718,11 +720,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
   })()
   const check = checkRef.current
+  // the checklist's rows (+ New playlist… among them) that fit in the list's box, with its title and frame
+  const checkRows = Math.max(1, listHeight - 1)
   const checkTop = (() => {
     if (!check) return 0
     const rowY = 2 + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
-    // title, rows, + New playlist… and the frame
-    const height = check.rows.length + 4
+    // title, the rows shown and the frame
+    const height = Math.min(check.rows.length + 1, checkRows) + 3
     // below the row, or above it when that would run past the list; at the top when neither fits
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
   })()
@@ -798,7 +802,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       )}
       {/* last, so it is drawn over the rows */}
       {menu && mode === 'menu' ? <Menu items={menu.items} selected={menu.choice} x={4} y={menuTop} onPick={pickMenu} /> : null}
-      {check && mode === 'checklist' ? <Checklist rows={check.rows} selected={check.choice} x={4} y={checkTop} onToggle={toggleRow} onNew={() => toggleRow(check.rows.length)} onClose={() => dismissMenu()} /> : null}
+      {check && mode === 'checklist' ? <Checklist rows={check.rows} selected={check.choice} x={4} y={checkTop} height={checkRows} onToggle={toggleRow} onNew={() => toggleRow(check.rows.length)} onClose={() => dismissMenu()} /> : null}
     </Box>
   )
 

@@ -72,7 +72,7 @@ export const MOUSE_HELP: [string, string][] = [
   ['↓  ↑ after it', 'Queue: sort the other way round'],
   ['Files heading', 'edit the location there; Esc leaves it'],
   [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
-  ['★', 'by the title playing: take it out of Favourites'],
+  ['★  ☆', 'by the title playing: take it out of Favourites, or put it in'],
   ['volume bar', 'set the volume there'],
   ['repeat, shuffle', 'switch them'],
   ['waveform, bar', 'seek there'],

@@ -59,6 +59,8 @@ vi.mock('@core/player', async original => {
     removeFromQueue: vi.fn(async () => ''),
     addToQueue: vi.fn(async () => ''),
     playEntries: vi.fn(async () => ''),
+    // the real expansion, unless a test says otherwise
+    expandEntries: vi.fn(real.expandEntries),
   }
 })
 
@@ -223,7 +225,7 @@ describe('drawing', () => {
     expect(all.some(l => /^\s*2\. Song two/.test(l.trimStart()) && !l.includes('▶ '))).toBe(true)
     // now playing sits on the same line as the list's heading
     const heading = lineOf(all, /Queue/)
-    expect(all[heading]).toMatch(/Queue.*▶ Song three/)
+    expect(stripAnsi(all[heading])).toMatch(/Queue.*▶ ☆ Song three/)
     expect(all.join('\n')).toMatch(/2:41 ━+─* 4:05/)
     expect(all.join('\n')).toContain('vol 60%')
     expect(all.join('\n')).toContain('repeat all')
@@ -236,7 +238,7 @@ describe('drawing', () => {
   test('under 80 columns now playing stacks above the list', async () => {
     const { lines } = await show(60)
     const all = lines()
-    const title = lineOf(all, /▶ Song three/)
+    const title = all.findIndex(l => stripAnsi(l).includes('▶ ☆ Song three'))
     const heading = lineOf(all, /Queue/)
     expect(title).toBeGreaterThan(-1)
     expect(heading).toBeGreaterThan(title)
@@ -377,7 +379,7 @@ describe('pixels', () => {
     const artRows = [...Array(9).keys()].map(i => all.findIndex(l => l.includes(sgr(1 + i) + P.repeat(33))))
     expect(artRows.every(r => r > 0)).toBe(true)
     expect(all.findIndex(l => l.includes(sgr(10)))).toBe(-1)
-    const title = all.findIndex(l => l.includes('▶ Song three'))
+    const title = all.findIndex(l => stripAnsi(l).includes('▶ ☆ Song three'))
     expect(title).toBe(artRows[8] + 1)
     // sent from an effect, just after the rows are drawn
     await vi.waitFor(() => expect(screen.sent()).toContain(placed(9)))
@@ -409,7 +411,7 @@ describe('pixels', () => {
     // still drawn, nothing deleted, the title still under the art
     expect(lines().some(l => l.includes(sgr(9)))).toBe(true)
     expect(screen.sent()).not.toContain(deleted(1))
-    expect(lines().findIndex(l => l.includes('▶ Song two'))).toBe(lines().findIndex(l => l.includes(sgr(9))) + 1)
+    expect(lines().findIndex(l => stripAnsi(l).includes('▶ ☆ Song two'))).toBe(lines().findIndex(l => l.includes(sgr(9))) + 1)
   })
 
   test('no art: a big ♪ drawn in pixels, square, at the top', async () => {
@@ -419,7 +421,7 @@ describe('pixels', () => {
     await vi.waitFor(() => expect(screen.sent()).toContain(placed(17)))
     expect(screen.sent()).not.toContain(placed(18))
     expect(lines().some(l => l.includes(sgr(1) + P.repeat(33)))).toBe(true)
-    expect(lines().findIndex(l => l.includes('▶ Song three'))).toBe(lines().findIndex(l => l.includes(sgr(17))) + 1)
+    expect(lines().findIndex(l => stripAnsi(l).includes('▶ ☆ Song three'))).toBe(lines().findIndex(l => l.includes(sgr(17))) + 1)
   })
 
   test('narrowing the pane refits the art and deletes the rows it no longer uses', async () => {
@@ -2227,6 +2229,72 @@ describe('the Playlists tab', () => {
       const at = ui.where('Favourite')
       await ui.click(at.x, at.y)
       await vi.waitFor(() => expect(favText(lib)).toContain(`${ALBUM}/Disc 1/01.mp3`))
+    })
+
+    describe('fix round 1', () => {
+      test('the checklist shows a window of rows that follows the choice, + New playlist… reachable', async () => {
+        const many = Object.fromEntries([...Array(40).keys()].map(i => [`List ${String(i + 1).padStart(2, '0')}`, m3u()]))
+        const lib = library(many)
+        const ui = await show(100, PLAYING, '', '', { library: lib, rows: 20 })
+        await ui.press('P')
+        await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Add to playlist'))
+        expect(rowsText(ui.lines())).toContain('List 01')
+        expect(rowsText(ui.lines())).not.toContain('List 40')
+        expect(ui.lines().length).toBeLessThanOrEqual(20)
+        for (let i = 0; i < 40; i++) ui.ui.stdin.write('j')
+        await ui.settled()
+        expect(rowsText(ui.lines())).toContain('List 40')
+        expect(rowsText(ui.lines())).not.toContain('List 01')
+        await ui.press('j')
+        expect(rowsText(ui.lines())).toContain('+ New playlist…')
+        expect(ui.lines().length).toBeLessThanOrEqual(20)
+        // and Enter on it is + New playlist…
+        await ui.press(ENTER)
+        await vi.waitFor(() => expect(rowsText(ui.lines())).toMatch(/New playlist name/))
+      })
+
+      test("a folder over the cap: the cap's note shows, as Add to queue says it", async () => {
+        const lib = library()
+        const ui = await show(100, PLAYING, '', '', { library: lib })
+        const note = 'Added the first 10000 songs.'
+        vi.mocked(player.expandEntries).mockResolvedValueOnce({ songs: [{ path: '/m/x.mp3' }], note })
+        const music = nodeFs.mkdtempSync(nodePath.join(TMP, 'music-'))
+        nodeFs.mkdirSync(nodePath.join(music, 'Big'))
+        await ui.press('o', music, ENTER)
+        await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Big/'))
+        await ui.press(HOME, 'j', '*')
+        await vi.waitFor(() => expect(status(ui.lines())).toContain(`Added to ★ Favourites. ${note}`))
+        expect(favText(lib)).toContain('/m/x.mp3')
+        vi.mocked(player.expandEntries).mockResolvedValueOnce({ songs: [{ path: '/m/x.mp3' }], note })
+        await ui.press('P')
+        await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Add to playlist'))
+        expect(status(ui.lines())).toContain(note)
+      })
+
+      test('a list deleted elsewhere while the checklist is open is not made again', async () => {
+        const { press, lines, lib } = await openRoadTrip()
+        await press('P')
+        await vi.waitFor(() => expect(rowsText(lines())).toContain('Add to playlist'))
+        nodeFs.rmSync(lib.file('Late night'))
+        await press('j', ENTER)
+        await vi.waitFor(() => expect(status(lines())).toContain('That playlist is gone.'))
+        expect(nodeFs.existsSync(lib.file('Late night'))).toBe(false)
+        await vi.waitFor(() => expect(rowsText(lines())).not.toContain('Late night'))
+        expect(rowsText(lines())).toContain('Add to playlist')
+      })
+
+      test('now playing shows a dim ☆ when the song is not a favourite; a click on it favourites it', async () => {
+        const lib = library()
+        const ui = await show(100, PLAYING, '', '', { library: lib })
+        expect(ui.lines().some(l => stripAnsi(l).includes('▶ ☆ Song three'))).toBe(true)
+        nodeFs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 1, entries: PLAYING.queue!.paths.map((p, i) => ({ id: `1.${i}`, path: p, title: PLAYING.queue!.items[i] })), arrangement: { kind: 'none' }, root: ALBUM, source: '' }))
+        nodeFs.writeFileSync(nodePath.join(STATE, 'queue-place.json'), JSON.stringify({ rev: 1, current: '1.2', seconds: 0 }))
+        onTestFinished(() => nodeFs.rmSync(nodePath.join(STATE, 'queue-place.json'), { force: true }))
+        const star = ui.where('☆')
+        await ui.click(star.x, star.y)
+        await vi.waitFor(() => expect(favText(lib)).toContain('03.mp3'))
+        await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('▶ ★ Song three'))
+      })
     })
   })
 })
