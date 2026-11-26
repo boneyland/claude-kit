@@ -62,7 +62,7 @@ async function fetchStatus($: EngineInterface, target: string): Promise<PrStatus
 // Records what a poll saw for one PR and acts on it: asks Claude for a fix, or
 // stops watching a merged or closed PR. A PR unwatched meanwhile stays unwatched.
 async function apply($: EngineInterface, config: Config, entry: Watched, status: PrStatus) {
-  const { next, problems, isGivingUp, isDone, reason } = decide(entry, status, config, await $.clock.now())
+  const { next, problems, isRepeat, isGivingUp, isDone, reason } = decide(entry, status, config, await $.clock.now())
   if (isDone) {
     await update($, watched, list => list.filter(w => w.url !== entry.url))
     const why = `pr-watch: #${entry.number} is ${reason}; no longer watched`
@@ -88,7 +88,7 @@ async function apply($: EngineInterface, config: Config, entry: Watched, status:
     const what = problems.map(p => (p === 'ci' ? 'failing CI' : 'a merge conflict')).join(' and ')
     $.ui.toast(`pr-watch: asking Claude to fix ${what} on #${status.number}`)
     // Starts a turn of its own once the session is idle; never folded into a running one.
-    $.prompt.submit({ text: buildPrompt(status, problems, config.allowPush) }).catch((error: unknown) => {
+    $.prompt.submit({ text: buildPrompt(status, problems, config.allowPush, isRepeat) }).catch((error: unknown) => {
       $.ui.log(`pr-watch: could not wake the session for #${status.number}: ${error instanceof Error ? error.message : String(error)}`)
     })
   }

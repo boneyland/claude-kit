@@ -46,7 +46,7 @@ Every 90 seconds (configurable) pr-watch runs one `gh pr view` per watched PR, o
 
 - **Failing CI**: once every check on the PR's head commit has finished and some failed, so the prompt lists all the failures with their run links. A check still pending after an hour (a runner that never came, a required check that never starts) stops holding the report back: the prompt names how many are stuck, and the row shows `⏳ N stuck over 1 h`. A queued check is timed from when pr-watch first saw that commit.
 - **Merge conflict**: as soon as GitHub reports the PR as conflicting. The prompt asks for a merge of the base branch (not a rebase), so no force-push is needed.
-- **Once per commit**: each problem is reported once per head commit. A fix pushes a new commit, which is checked again; the same broken commit never triggers a second prompt.
+- **Once per failure**: a conflict is reported once per head commit, and a CI failure once per set of failing runs. A fix pushes a new commit, which is checked again. A re-run of the same commit (for a failure that looked flaky or unrelated) that fails again is reported again, as a repeat: the prompt says the re-run already failed and has Claude dig into the cause instead of re-running once more. The same failed runs never trigger a second prompt.
 - **A cap**: after 3 fixes in a row (configurable) that still fail, pr-watch stops asking and tells you, until the PR is green again.
 - **Dropped** from the list: merged or closed PRs, a PR whose base branch has changed since you started watching it, and a PR with a `claude-pr-steward-…` or `claude-ship-…` label, which means a cloud Claude session is driving it. The last two are logged as well as toasted.
 
@@ -54,7 +54,7 @@ The prompt tells Claude which PR and branch, and Claude takes care of the checko
 
 When you watch a PR that is already failing, it is reported right away.
 
-Before changing code for red CI, the prompt has Claude rule out failures that aren't the PR's: a job that died before any test ran is re-run once (`gh run rerun --failed`) instead, and a check that fails the same way on the base branch is reported and left alone. Neither pushes a commit, so that head isn't asked about again.
+Before changing code for red CI, the prompt has Claude rule out failures that aren't the PR's: a job that died before any test ran is re-run once (`gh run rerun --failed`) instead, and a check that fails the same way on the base branch is reported and left alone. A check left alone isn't asked about again; a re-run that fails again is.
 
 The prompt also has Claude keep your checkout safe: never commit, stash or discard your uncommitted work, and commit its own files by name. If the branch on GitHub is ahead, it pulls with `--ff-only` first, and pushes nothing if the branch was rewritten. It runs the project's fast checks (tests, lint, types) before committing.
 
@@ -83,7 +83,7 @@ Claude Code has a built-in `/steward` that also watches a pull request from this
 | Which PRs | Any number at once, on any branch, from any repo (by number or URL) | One: your open PR for the branch checked out here, opened by your `gh` account |
 | What it handles | Failing CI and merge conflicts | Failing CI, conflicts, falling behind the base, and review comments: it answers them, resolves threads it fixed, re-requests reviews, and re-runs a flaky job once |
 | Comments it reads | None | Yours, people with write access, Claude's bot, and other bots you name with `+name` |
-| Checking | `gh pr view` every 90 s (30 s to 1 h, configurable); Claude is prompted once per broken commit, once the session is idle | Claude Code checks every 2 minutes and wakes Claude a few minutes after a change, at most once every 10 minutes; a quiet watch costs no turn |
+| Checking | `gh pr view` every 90 s (30 s to 1 h, configurable); Claude is prompted once per broken commit or failed re-run, once the session is idle | Claude Code checks every 2 minutes and wakes Claude a few minutes after a change, at most once every 10 minutes; a quiet watch costs no turn |
 | Limits on Claude | During its own turns, pr-watch refuses force-pushes, history rewrites, pushes to other branches, merging or closing the PR, stashing or discarding your work, skipping git hooks, and edits to Claude Code, MCP or git settings ([the fence](#the-fence)); everything else follows this session's permissions | A fence enforced by Claude Code: only listed `gh`/`git` commands, never merge or rewrite history, never edit settings or hook files, git hooks skipped. Comments, logs and code are treated as data, never as instructions |
 | Giving up | After 3 failed fixes in a row per PR (configurable), until the PR is green again | After 3 pushes for one cause |
 | Pushing | `allowPush` on: pushes fixes; off: commits and asks first | Pushes; holds the next push until the last one's checks have reported |

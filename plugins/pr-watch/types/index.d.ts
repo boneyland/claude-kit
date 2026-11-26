@@ -1,4 +1,9 @@
-export type Check = { name: string; url: string }
+export type Check = {
+  name: string
+  url: string
+  // when this run started, as GitHub gives it: a re-run has a later one
+  at?: string
+}
 
 // One pull request as gh reported it on the last poll.
 export type PrStatus = {
@@ -33,7 +38,8 @@ export type Watched = {
   status: PrStatus | null
   // the last gh error; empty when the last poll worked
   error: string
-  // the head commit each kind of fix was last asked for
+  // what each kind of fix was last asked for: the head commit for a conflict;
+  // for CI, the head commit and its failing runs (see ciKey), or a bare commit from before 0.8.0
   prompted: { ci: string; conflict: string }
   // fixes asked for since the PR was last healthy
   attempts: number

@@ -65,13 +65,15 @@ export function readStatus(json: string): PrStatus {
   for (const check of latest.values()) {
     if (check.__typename === 'StatusContext') {
       const state = check.state ?? ''
-      if (FAILED_STATUS.has(state)) failing.push({ name: check.context ?? '?', url: check.targetUrl ?? '' })
+      if (FAILED_STATUS.has(state)) {
+        failing.push({ name: check.context ?? '?', url: check.targetUrl ?? '', at: check.startedAt ?? '' })
+      }
       else if (PENDING_STATUS.has(state)) pendingStarts.push(startOf(check))
     } else if (check.status !== 'COMPLETED') {
       pendingStarts.push(startOf(check))
     } else if (FAILED_RUN.has(check.conclusion ?? '')) {
       const name = check.workflowName ? `${check.workflowName} / ${check.name}` : (check.name ?? '?')
-      failing.push({ name, url: check.detailsUrl ?? '' })
+      failing.push({ name, url: check.detailsUrl ?? '', at: check.startedAt ?? '' })
     }
   }
 
@@ -110,6 +112,22 @@ export function newWatched(status: PrStatus): Watched {
   }
 }
 
+// Which failure a CI prompt was for: the head commit and the failing runs. A re-run
+// of the same commit gets new runs (new job URLs, later start times), so if it
+// fails again its key differs and it is reported again.
+export function ciKey(status: PrStatus): string {
+  const runs = status.failing.map(c => `${c.name}\t${c.url}\t${c.at ?? ''}`).sort()
+  return [status.sha, ...runs].join('\n')
+}
+
+// Already asked about this CI failure. A key stored before 0.8.0 is the bare commit.
+function isCiPrompted(prompted: string, status: PrStatus): boolean {
+  return prompted === status.sha || prompted === ciKey(status)
+}
+
+// The commit a stored CI key was for.
+const shaOf = (key: string) => key.split('\n')[0]
+
 export type Rules = { fixCi: boolean; fixConflicts: boolean; maxAttempts: number }
 export type Problem = 'ci' | 'conflict'
 
@@ -117,6 +135,8 @@ export type Decision = {
   next: Watched
   // what to ask Claude to fix now; empty for nothing
   problems: Problem[]
+  // the CI failure is on a commit already reported once: a re-run failed again
+  isRepeat: boolean
   // the attempts ran out on this poll (reported once)
   isGivingUp: boolean
   // merged, closed, retargeted or taken over: stop watching it
@@ -127,8 +147,9 @@ export type Decision = {
 
 // What a poll's status means for a watched PR. CI is reported once every check
 // on the head commit has finished or stalled, so the prompt names all the failures;
-// a conflict as soon as GitHub reports one. Each is asked for once per head
-// commit: a fix pushes a new one. `now` ages the pending checks.
+// a conflict as soon as GitHub reports one. A conflict is asked for once per head
+// commit, a CI failure once per set of failing runs: a fix pushes a new commit,
+// and a re-run that fails again is reported again. `now` ages the pending checks.
 export function decide(watched: Watched, given: PrStatus, rules: Rules, now: number): Decision {
   const headSince = watched.headSince?.sha === given.sha ? watched.headSince : { sha: given.sha, at: now }
   // A queued check has no start of its own: it has waited since the head appeared.
@@ -138,7 +159,7 @@ export function decide(watched: Watched, given: PrStatus, rules: Rules, now: num
   const status: PrStatus = { ...given, pending: starts.length - stalled, stalled }
   const base = watched.base || status.base
   const seen: Watched = { ...watched, status, title: status.title, error: '', base, headSince }
-  const quiet = { problems: [] as Problem[], isGivingUp: false, isDone: false, reason: '' }
+  const quiet = { problems: [] as Problem[], isRepeat: false, isGivingUp: false, isDone: false, reason: '' }
   const stop = (reason: string) => ({ ...quiet, next: seen, isDone: true, reason })
   if (status.state !== 'OPEN') return stop(status.state.toLowerCase())
   if (status.base !== base) return stop(`now aimed at \`${status.base}\`, not \`${base}\``)
@@ -149,7 +170,7 @@ export function decide(watched: Watched, given: PrStatus, rules: Rules, now: num
   if (isHealthy) return { ...quiet, next: { ...seen, attempts: 0, hasGivenUp: false } }
 
   const ciDue =
-    rules.fixCi && status.pending === 0 && status.failing.length > 0 && watched.prompted.ci !== status.sha
+    rules.fixCi && status.pending === 0 && status.failing.length > 0 && !isCiPrompted(watched.prompted.ci, status)
   const conflictDue = rules.fixConflicts && status.isConflicting && watched.prompted.conflict !== status.sha
   const problems: Problem[] = []
   if (conflictDue) problems.push('conflict')
@@ -161,15 +182,17 @@ export function decide(watched: Watched, given: PrStatus, rules: Rules, now: num
   }
 
   const prompted = {
-    ci: ciDue ? status.sha : watched.prompted.ci,
+    ci: ciDue ? ciKey(status) : watched.prompted.ci,
     conflict: conflictDue ? status.sha : watched.prompted.conflict,
   }
 
-  return { ...quiet, next: { ...seen, prompted, attempts: watched.attempts + 1 }, problems }
+  const isRepeat = ciDue && watched.prompted.ci !== '' && shaOf(watched.prompted.ci) === status.sha
+
+  return { ...quiet, next: { ...seen, prompted, attempts: watched.attempts + 1 }, problems, isRepeat }
 }
 
 // The prompt that wakes the session to fix a PR.
-export function buildPrompt(status: PrStatus, problems: Problem[], allowPush: boolean): string {
+export function buildPrompt(status: PrStatus, problems: Problem[], allowPush: boolean, isRepeat = false): string {
   const lines = [
     `pr-watch: PR #${status.number} in ${status.repo} needs a fix.`,
     status.url,
@@ -183,16 +206,28 @@ export function buildPrompt(status: PrStatus, problems: Problem[], allowPush: bo
     )
   }
   if (problems.includes('ci')) {
-    lines.push('- CI failed:')
+    lines.push(isRepeat ? '- CI failed again on the same commit, after a re-run:' : '- CI failed:')
     for (const check of status.failing) lines.push(`  - ${JSON.stringify(check.name)}${check.url ? ` (${check.url})` : ''}`)
     const stalled = status.stalled ?? 0
     if (stalled > 0) {
       lines.push(`  ${stalled} other check${stalled === 1 ? ' has' : 's have'} been pending for over an hour and may never finish; they are not part of this report.`)
     }
+    if (isRepeat) {
+      lines.push(
+        '  This commit was reported before and its checks were re-run without a new commit; they failed again, so this is not a one-off.',
+        "  Don't re-run them again. Compare this run's logs with the earlier attempt's (`gh run view <run-id> --attempt <n> --log-failed`) and find the cause; if it is outside this PR, show the evidence instead of guessing.",
+      )
+    }
     lines.push(
       '  Read the failing logs (`gh run view <run-id> --log-failed`, the run id is in the URL), reproduce locally where you can, and fix the cause.',
       "  Before changing code, rule out failures that aren't this PR's:",
-      '  - A job that died before any test ran (runner lost, timeout, network, install): re-run it once with `gh run rerun <run-id> --failed` instead, and change nothing.',
+    )
+    if (!isRepeat) {
+      lines.push(
+        '  - A job that died before any test ran (runner lost, timeout, network, install): re-run it once with `gh run rerun <run-id> --failed` instead, and change nothing.',
+      )
+    }
+    lines.push(
       `  - A check that fails the same way on \`${status.base}\` (\`gh run list --branch ${status.base} --limit 5\`): not this PR's to fix. Say so and change nothing.`,
     )
   }
@@ -222,7 +257,8 @@ export function label(watched: Watched): { text: string; tone: Tone } {
   const pr = `#${watched.number}`
   if (watched.error) return { text: `${pr} ? ${watched.error.slice(0, 40)}`, tone: 'warning' }
   if (!s) return { text: `${pr} …`, tone: 'subtle' }
-  const fixing = (kind: Problem) => (watched.prompted[kind] === s.sha && !watched.hasGivenUp ? ' · fixing' : '')
+  const isFixing = { ci: isCiPrompted(watched.prompted.ci, s), conflict: watched.prompted.conflict === s.sha }
+  const fixing = (kind: Problem) => (isFixing[kind] && !watched.hasGivenUp ? ' · fixing' : '')
   const parts: string[] = []
   if (s.isConflicting) parts.push(`conflict${fixing('conflict')}`)
   if (s.failing.length > 0) {

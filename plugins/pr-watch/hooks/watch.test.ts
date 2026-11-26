@@ -50,8 +50,8 @@ test('reads failing, pending and conflicting from gh', () => {
   expect(s.repo).toBe('acme/app')
   expect(s.isConflicting).toBe(true)
   expect(s.failing).toEqual([
-    { name: 'CI / lint', url: 'https://github.com/acme/app/actions/runs/1/job/lint' },
-    { name: 'ci/legacy', url: 'https://x/1' },
+    { name: 'CI / lint', url: 'https://github.com/acme/app/actions/runs/1/job/lint', at: '2026-01-01T00:00:00Z' },
+    { name: 'ci/legacy', url: 'https://x/1', at: '' },
   ])
   expect(s.pending).toBe(1)
   expect(s.total).toBe(4)
@@ -72,7 +72,7 @@ test('a re-run check counts by its latest run; UNKNOWN is no conflict', () => {
   expect(() => readStatus('{"message":"no"}')).toThrow()
 })
 
-test('CI is reported once all checks finished, once per head commit', () => {
+test('CI is reported once all checks finished, once per head commit and failure', () => {
   const w = newWatched(status())
   const failed = { name: 'CI / lint', url: '' }
 
@@ -270,4 +270,42 @@ test('parseInterval reads seconds or minutes, 30 s to 60 min', () => {
   expect(parseInterval('10')).toMatch(/30 s to 60 min/)
   expect(parseInterval('2h')).toMatch(/isn't a number/)
   expect(parseInterval('')).toMatch(/isn't a number/)
+})
+
+test('a re-run that fails again on the same commit is reported again, as a repeat', () => {
+  const first = readStatus(gh({ statusCheckRollup: [{ ...run('test', 'COMPLETED', 'FAILURE'), detailsUrl: 'https://x/job/1' }] }))
+  const d1 = decide(newWatched(first), first, RULES, T0)
+  expect(d1.problems).toEqual(['ci'])
+  expect(d1.isRepeat).toBe(false)
+  expect(buildPrompt(first, d1.problems, true, d1.isRepeat)).toContain('gh run rerun <run-id> --failed')
+  // The same poll again: nothing new.
+  expect(decide(d1.next, first, RULES, T0 + 1).problems).toEqual([])
+  expect(label(d1.next).text).toBe('#12 ✗ 1 failed · fixing')
+  // Re-run: pending, then failed again with a new job and start time.
+  const rerunning = readStatus(gh({ statusCheckRollup: [run('test', 'IN_PROGRESS', '', '2026-01-01T00:10:00Z')] }))
+  const d2 = decide(d1.next, rerunning, RULES, T0 + 2)
+  expect(d2.problems).toEqual([])
+  const again = readStatus(
+    gh({ statusCheckRollup: [{ ...run('test', 'COMPLETED', 'FAILURE', '2026-01-01T00:10:00Z'), detailsUrl: 'https://x/job/2' }] }),
+  )
+  const d3 = decide(d2.next, again, RULES, T0 + 3)
+  expect(d3.problems).toEqual(['ci'])
+  expect(d3.isRepeat).toBe(true)
+  expect(d3.next.attempts).toBe(2)
+  const text = buildPrompt(again, d3.problems, true, d3.isRepeat)
+  expect(text).toContain('CI failed again on the same commit')
+  expect(text).toContain("Don't re-run them again")
+  expect(text).not.toContain('gh run rerun <run-id> --failed')
+  // A new commit is a first report, not a repeat.
+  const pushed = { ...first, sha: 'bbbbbbb2222' }
+  const d4 = decide({ ...d3.next, attempts: 0 }, pushed, RULES, T0 + 4)
+  expect(d4.problems).toEqual(['ci'])
+  expect(d4.isRepeat).toBe(false)
+})
+
+test('a CI prompt stored as a bare commit (before 0.8.0) still counts as asked', () => {
+  const s = readStatus(gh({ statusCheckRollup: [run('test', 'COMPLETED', 'FAILURE')] }))
+  const old = { ...newWatched(s), prompted: { ci: s.sha, conflict: '' }, attempts: 1 }
+  expect(decide(old, s, RULES, T0).problems).toEqual([])
+  expect(label(old).text).toBe('#12 ✗ 1 failed · fixing')
 })
