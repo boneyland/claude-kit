@@ -78,7 +78,7 @@ const listName = (r: LibraryRow | undefined) => (r?.kind === 'list' ? r.info.nam
 // The Playlists tab: the library, its rows, cursor, pick, scroll and filter,
 // and what its keys do.
 // playing: what plays; a list showing is checked again when it changes.
-export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, playing: string, { act, inTurn }: Turns, ui: PlaylistsUi, book: TagBook): PlaylistsTab {
+export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, playing: string, { act, inTurn }: Turns, ui: PlaylistsUi, book: TagBook, home = ''): PlaylistsTab {
   const lib = useLibrary(h, isShown, () => {
     setFilterState('')
     if (ui.mode() === 'filter') ui.setMode('list')
@@ -121,10 +121,11 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         : undefined,
     [o, sort, book, tagsSeen],
   )
-  // tags are read for a sort by them
-  const needKey = o && sort && sort.field !== 'folder' ? o.songs.map(song => song.path).join('\n') : ''
+  // tags are read for a sort by them, and for a filter (which matches artists)
+  const needKey = o && ((sort && sort.field !== 'folder') || filter) ? o.songs.map(song => song.path).join('\n') : ''
   useEffect(() => book.need(needKey ? needKey.split('\n') : []), [book, needKey])
-  const rows = useMemo(() => libraryRows(lib, filter, order), [lib.lists, lib.isLoaded, lib.open, filter, order])
+  const view = useMemo(() => ({ tags: book.get, home }), [book, home, tagsSeen])
+  const rows = useMemo(() => libraryRows(lib, filter, order, view), [lib.lists, lib.isLoaded, lib.open, filter, order, view])
   const key = useMemo(() => rows.map(rowKey).join('\n'), [rows])
 
   const sel = (): Selection => clamp(current(selRef.current, key) ?? NO_SELECTION, rows.length)
@@ -406,7 +407,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         case 'submit': {
           ui.setMode('list')
           // the filter as typed: keys in one go may not have redrawn the rows yet
-          const first = libraryRows(lib, filterRef.current.trim(), order).find(r => r.kind === 'song')
+          const first = libraryRows(lib, filterRef.current.trim(), order, view).find(r => r.kind === 'song')
           if (first?.kind === 'song') playFrom(first.index)
           else ui.say('Nothing matches.')
           return true

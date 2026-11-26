@@ -150,7 +150,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMenu({ items, at, choice: 0 })
     setMode('menu')
   }
-  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice, allFavourite }, book)
+  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice, allFavourite }, book, home)
   // The tab showing: its selection, rows and scroll.
   const isQueueTab = () => tabRef.current === 'queue'
   const isPlaylistsTab = () => tabRef.current === 'playlists'
@@ -718,6 +718,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const plFirst = firstRow(plSel.cursor, pl.rows.length, listHeight, pl.top)
   const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, listHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const onPlRow = (index: number, hit: Hit) => dismissMenu() || leaveEdit() || pl.onRow(index, hit, plFirst)
+  // the shown songs' tags, for their artist (the newest asked is read first)
+  const plShownKey = tab === 'playlists' ? pl.rows.slice(plFirst, plFirst + listHeight).flatMap(r => (r.kind === 'song' ? [r.song.path] : [])).join('\n') : ''
+  useEffect(() => book.need(plShownKey ? plShownKey.split('\n') : []), [book, plShownKey])
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
   // every file's tags when sorting by them; the shown ones' first

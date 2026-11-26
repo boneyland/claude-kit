@@ -6,6 +6,7 @@ import { baseName } from '@core/nowplaying'
 import { paths } from '@core/paths'
 import { useRefState } from '../ui/hooks'
 import { whereOf } from '../queue/rows'
+import type { Tags } from '../media/tags'
 
 // What openList takes for Recently played (no saved list can have the name).
 export const HISTORY = 'history'
@@ -18,8 +19,9 @@ const EXT = '.m3u'
 export type OpenList = { name: string; kind: 'playlist' | 'favourites' | 'history'; songs: Song[]; plays?: Play[]; file?: string }
 
 // A row of the Playlists tab. song: index is its place in the open list's
-// songs (not in the rows, which a filter narrows); at: when it played (unix seconds).
-export type LibraryRow = { kind: 'up' } | { kind: 'list'; info: ListInfo } | { kind: 'history' } | { kind: 'new' } | { kind: 'song'; song: Song; index: number; at?: number }
+// songs (not in the rows, which a filter narrows); at: when it played (unix seconds);
+// title, artist and where as the Queue shows them (the tags' title, else the list's, else the file name).
+export type LibraryRow = { kind: 'up' } | { kind: 'list'; info: ListInfo } | { kind: 'history' } | { kind: 'new' } | { kind: 'song'; song: Song; index: number; at?: number; title: string; artist: string; where: string }
 
 export type Library = {
   // Favourites first, then the saved lists by name; empty until first read
@@ -43,7 +45,9 @@ export const songTitle = (s: Song) => s.title || baseName(s.path)
 // The rows: the top level, or the open list's songs after ../ (with `filter`,
 // those with every word of it in their title or where they are). order: the
 // songs' places in the list in the order to show them (a sort); none: as in the file.
-export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, filter: string, order?: readonly number[]): LibraryRow[] {
+// view: the tags read so far and the home folder, for each song's artist and folder.
+export type SongView = { tags(path: string): Tags | undefined; home: string }
+export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, filter: string, order?: readonly number[], view?: SongView): LibraryRow[] {
   const { open } = lib
   if (!open) {
     if (!lib.isLoaded) return []
@@ -55,10 +59,12 @@ export function libraryRows(lib: Pick<Library, 'lists' | 'isLoaded' | 'open'>, f
   const songs: LibraryRow[] = places.flatMap(index => {
     const song = open.songs[index]
     if (!song) return []
-    const hay = `${songTitle(song)} ${whereOf(song.path, '')}`.toLowerCase()
+    const t = view?.tags(song.path)
+    const shown = { title: t?.title || songTitle(song), artist: t?.artist ?? '', where: whereOf(song.path, view?.home ?? '') }
+    const hay = `${shown.title} ${shown.artist} ${shown.where}`.toLowerCase()
     if (!words.every(w => hay.includes(w))) return []
     const at = open.plays?.[index]?.at
-    return [at === undefined ? { kind: 'song' as const, song, index } : { kind: 'song' as const, song, index, at }]
+    return [at === undefined ? { kind: 'song' as const, song, index, ...shown } : { kind: 'song' as const, song, index, at, ...shown }]
   })
   return [{ kind: 'up' }, ...songs]
 }

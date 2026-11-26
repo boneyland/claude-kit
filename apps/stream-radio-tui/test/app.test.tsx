@@ -2050,6 +2050,70 @@ describe('the Playlists tab', () => {
     })
   })
 
+  describe('song rows like the Queue', () => {
+    const songsIn = () => {
+      const dir = nodeFs.mkdtempSync(nodePath.join(TMP, 'songs-'))
+      const song = (n: string) => nodePath.join(dir, `${n}.mp3`)
+      for (const n of ['a', 'b']) nodeFs.writeFileSync(song(n), '')
+      return { song }
+    }
+    async function mix(tags: ReturnType<typeof tagReader>, extra: (song: (n: string) => string) => Record<string, string> = () => ({})) {
+      const { song } = songsIn()
+      const lib = library({ Mix: m3u([song('a'), 'Listed A'], [song('b'), 'Listed B'], ['https://www.youtube.com/watch?v=abc', 'Tube title']), ...extra(song) })
+      const ui = await show(100, PLAYING, '', '', { library: lib, tags })
+      await ui.press('\t')
+      await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+      await ui.press('j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Tube title'))
+      return { ...ui, song }
+    }
+    const tagged = (m: Record<string, { title: string; artist: string }>) => tagReader(async p => ({ title: m[nodePath.basename(p)]?.title ?? '', artist: m[nodePath.basename(p)]?.artist ?? '', albumArtist: '', album: '' }))
+
+    test('a tagged song shows its tag title and artist, an untagged one its list title and folder, a YouTube one its site', async () => {
+      const { lines, song } = await mix(tagged({ 'a.mp3': { title: 'Tag A', artist: 'Tag Band' } }))
+      const dir = nodePath.dirname(song('a'))
+      await vi.waitFor(() => expect(lines()[lineOf(lines(), /Tag A/)]).toMatch(new RegExp(`Tag A · Tag Band · ${dir}`)))
+      expect(rowsText(lines())).not.toContain('Listed A')
+      expect(lines()[lineOf(lines(), /Listed B/)]).toContain(`Listed B · ${dir}`)
+      expect(lines()[lineOf(lines(), /Tube title/)]).toContain('Tube title · youtube.com')
+    })
+
+    test('tags that arrive later redraw the row', async () => {
+      let release: () => void = () => undefined
+      const gate = new Promise<void>(r => (release = r))
+      const tags = tagReader(async () => {
+        await gate
+        return { title: 'Late Title', artist: 'Late Artist', albumArtist: '', album: '' }
+      })
+      const { lines } = await mix(tags)
+      expect(rowsText(lines())).toContain('Listed A')
+      release()
+      await vi.waitFor(() => expect(rowsText(lines())).toMatch(/Late Title · Late Artist/))
+    })
+
+    test('the filter matches the artist', async () => {
+      const { press, lines } = await mix(tagged({ 'a.mp3': { title: 'Tag A', artist: 'Zebra Band' } }))
+      await vi.waitFor(() => expect(rowsText(lines())).toContain('Zebra Band'))
+      await press('/', 'z', 'e', 'b')
+      await vi.waitFor(() => {
+        expect(rowsText(lines())).toContain('Tag A')
+        expect(rowsText(lines())).not.toContain('Listed B')
+      })
+    })
+
+    test('a Recently played row shows its artist and when it played', async () => {
+      const { song } = songsIn()
+      const now = Math.floor(Date.now() / 1000)
+      nodeFs.writeFileSync(HISTORY, JSON.stringify({ at: now - 180, path: song('a'), title: 'Played A' }) + '\n')
+      const lib = library({})
+      const ui = await show(200, PLAYING, '', '', { library: lib, tags: tagged({ 'a.mp3': { title: '', artist: 'Hist Band' } }) })
+      await ui.press('\t')
+      await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+      await ui.press('j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toMatch(/Played A · Hist Band · .* · 3 min ago/))
+    })
+  })
+
   test("Recently played: when each played, dimmed after the title; Delete doesn't edit it", async () => {
     const now = Math.floor(Date.now() / 1000)
     nodeFs.writeFileSync(HISTORY, [{ at: now - 3600 * 30, path: '/m/old.mp3', title: 'Old song' }, { at: now - 180, path: '/m/new.mp3', title: 'New song' }].map(j => JSON.stringify(j)).join('\n') + '\n')
@@ -2059,7 +2123,7 @@ describe('the Playlists tab', () => {
     await vi.waitFor(() => expect(rowsText(lines())).toContain('New song'))
     const all = lines()
     expect(lineOf(all, /New song/)).toBeLessThan(lineOf(all, /Old song/))
-    expect(all[lineOf(all, /New song/)]).toMatch(/New song · 3 min ago/)
+    expect(all[lineOf(all, /New song/)]).toMatch(/New song · \/m · 3 min ago/)
     await press(DEL)
     await vi.waitFor(() => expect(status(lines())).toContain("Recently played can't be edited; Clear it from its menu."))
     expect(nodeFs.readFileSync(HISTORY, 'utf8')).toBe(was)

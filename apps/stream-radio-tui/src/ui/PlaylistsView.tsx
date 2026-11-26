@@ -5,7 +5,7 @@ import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
 import { textWidth } from '@core/nowplaying'
 import { whenPlayed, type Song } from '@core/library'
-import { songTitle, type LibraryRow } from '../library/useLibrary'
+import { type LibraryRow } from '../library/useLibrary'
 import { shown, type Line } from './lineEdit'
 
 type Props = {
@@ -31,6 +31,12 @@ type Props = {
   onWheel?(dir: 'up' | 'down'): void
 }
 
+// After a song's title, dimmed: its artist and folder as the Queue shows them, and when it played.
+const songExtra = (row: Extract<LibraryRow, { kind: 'song' }>, now: number): string => {
+  const extra = [row.artist, row.where, row.at === undefined ? '' : whenPlayed(row.at, now)].filter(Boolean).join(' · ')
+  return extra ? ` · ${extra}` : ''
+}
+
 const nameOf = (row: LibraryRow): string => {
   switch (row.kind) {
     case 'up':
@@ -42,7 +48,7 @@ const nameOf = (row: LibraryRow): string => {
     case 'new':
       return '+ New playlist…'
     case 'song':
-      return songTitle(row.song)
+      return row.title
   }
 }
 
@@ -60,7 +66,7 @@ export function PlaylistsView({ heading, rows, selected, picked, dropAt, height,
         const at = first + i
         const isPicked = !!picked?.has(at)
         const name = nameOf(row) + (row.kind === 'song' && isFavourite?.(row.song) ? ' ★' : '')
-        const extra = row.kind === 'list' ? `${' '.repeat(Math.max(0, nameCells - textWidth(name)))} · ${row.info.count}` : row.kind === 'song' && row.at !== undefined ? ` · ${whenPlayed(row.at, now)}` : ''
+        const extra = row.kind === 'list' ? `${' '.repeat(Math.max(0, nameCells - textWidth(name)))} · ${row.info.count}` : row.kind === 'song' ? songExtra(row, now) : ''
         const hasMenu = row.kind === 'list' || row.kind === 'history' || row.kind === 'song'
         return (
           <Clickable key={`${row.kind}-${row.kind === 'list' ? row.info.name : row.kind === 'song' ? row.index : ''}`} onClick={hit => onRow?.(at, hit)} onRightClick={() => onMenu?.(at)} onDrag={p => onRowDrag?.(at, p.y)} onRelease={() => onRowRelease?.()}>

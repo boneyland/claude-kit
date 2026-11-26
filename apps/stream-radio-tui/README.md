@@ -118,6 +118,8 @@ A sort reorders what plays: it plays in that order afterwards, and songs added l
 
 Playlists are `.m3u` files in `$XDG_DATA_HOME/stream-radio/playlists`, else `~/.local/share/stream-radio/playlists`. Recently played is recorded by the player itself, not by the TUI: see [Playlists and history](../../plugins/stream-radio/README.md#playlists-and-history) in the mod's README for `history.lua` and `history.jsonl`. The menu on a list row (`m`, or a right click) has **Rename** and **Delete playlist** on a playlist, and **Clear** on Recently played.
 
+Song rows show the same columns as the Queue: the title (from the file's tags, else the title in the list, else the file name), then dimmed the artist (when tagged) and the folder or site; Recently played adds when it played. `/` matches the title, artist and folder.
+
 A sort is only a view: the file keeps the custom order you made, the sort is remembered for each playlist (in `tui-playlists.json` beside the TUI's other state; a rename carries it, a delete drops it), and a sorted playlist plays in the order shown. To move songs, go back to `custom order` with `S`; moving while sorted says so and changes nothing. Recently played is always newest first and has no sort or move.
 
 ## Mouse
