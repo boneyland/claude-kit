@@ -9,6 +9,8 @@ export type TagBook = {
   get(path: string): Tags | undefined
   // read the tags of these local files, if not yet read
   need(paths: readonly string[]): void
+  // like need(), and resolves once these files' tags are in (or `timeoutMs` has passed)
+  ready(paths: readonly string[], timeoutMs?: number): Promise<void>
   // the file's modification time, as a listing found it: saves a stat
   know(path: string, mtimeMs: number): void
   // goes up each time more tags arrive: for memos that read get()
@@ -66,10 +68,16 @@ export function useTagBook(h: Host, reader?: TagReader): TagBook {
           })
       }
     }
-    return {
+    const api: TagBook = {
       get: path => {
         const m = mtimes.get(path)
         return m === undefined ? undefined : r.get(path, m)
+      },
+      ready: async (paths, timeoutMs = 5000) => {
+        const local = paths.filter(p => p.startsWith('/'))
+        api.need(local)
+        const end = Date.now() + timeoutMs
+        while (Date.now() < end && local.some(p => !notFiles.has(p) && api.get(p) === undefined)) await new Promise(r => setTimeout(r, 25))
       },
       know: (path, mtimeMs) => remember(path, mtimeMs),
       version: () => versionRef.current,
@@ -83,5 +91,6 @@ export function useTagBook(h: Host, reader?: TagReader): TagBook {
         pump()
       },
     }
+    return api
   }, [h, r, mtimes, statting, notFiles, waiting, found])
 }

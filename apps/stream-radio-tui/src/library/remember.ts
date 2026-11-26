@@ -5,6 +5,12 @@ import type { SortField } from '../queue/sort'
 export type PlaylistSort = { field: SortField; isReversed: boolean }
 export type PlaylistSorts = Record<string, PlaylistSort>
 
+// Names are the user's: `constructor` or `__proto__` must not reach the prototype chain.
+export const sortOf = (sorts: PlaylistSorts, name: string): PlaylistSort | undefined => (Object.hasOwn(sorts, name) ? sorts[name] : undefined)
+// `sorts` with `name`'s sort set, or dropped when none (as an own key, whatever the name).
+export const withSort = (sorts: PlaylistSorts, name: string, sort?: PlaylistSort): PlaylistSorts =>
+  Object.fromEntries([...Object.entries(sorts).filter(([n]) => n !== name), ...(sort ? [[name, sort] as const] : [])])
+
 const FIELDS: readonly string[] = ['title', 'artist', 'albumArtist', 'album', 'folder']
 
 // The TUI's own file beside the player's: each playlist's remembered sort.
@@ -19,13 +25,13 @@ export async function loadSorts(h: Host): Promise<PlaylistSorts> {
     const file = await fileOf(h)
     if (!file) return {}
     const raw = JSON.parse(await h.fs.read(file))?.sorts
-    const sorts: PlaylistSorts = {}
+    const entries: [string, PlaylistSort][] = []
     if (raw && typeof raw === 'object') {
       for (const [name, s] of Object.entries(raw as Record<string, { field?: unknown; isReversed?: unknown }>)) {
-        if (s && typeof s.field === 'string' && FIELDS.includes(s.field)) sorts[name] = { field: s.field as SortField, isReversed: s.isReversed === true }
+        if (s && typeof s.field === 'string' && FIELDS.includes(s.field)) entries.push([name, { field: s.field as SortField, isReversed: s.isReversed === true }])
       }
     }
-    return sorts
+    return Object.fromEntries(entries)
   } catch {
     return {}
   }

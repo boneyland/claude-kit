@@ -17,7 +17,7 @@ import { confirmMenu, favouritesMenu, historyMenu, listMenu, songMenu, type Menu
 import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, type Held, type Selection } from '../ui/selection'
 import type { TagBook } from '../ui/tagbook'
 import type { Turns } from '../ui/turns'
-import { loadSorts, saveSorts, type PlaylistSort, type PlaylistSorts } from './remember'
+import { loadSorts, saveSorts, sortOf, withSort, type PlaylistSort, type PlaylistSorts } from './remember'
 import { HISTORY, libraryRows, songTitle, useLibrary, type Library, type LibraryRow } from './useLibrary'
 
 const BUSY = 'The playlists are busy; try again.'
@@ -97,15 +97,17 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
   // a press on a picked row selects it only when let go without a drag
   const pendingSelect = useRef<number | undefined>(undefined)
+  // a drag refused (the list is sorted) and said so
+  const isRefused = useRef(false)
   // each playlist's sort, a view: the file keeps its own order
   const [sortsRef, setSorts] = useRefState<PlaylistSorts>({})
   const saving = useRef<Promise<void>>(Promise.resolve())
   useEffect(() => {
-    void loadSorts(h).then(was => setSorts({ ...was, ...sortsRef.current }))
+    void loadSorts(h).then(was => setSorts(Object.fromEntries([...Object.entries(was), ...Object.entries(sortsRef.current)])))
   }, [h])
   const filter = filterRef.current.trim()
   const o = lib.open
-  const sort = o && o.kind !== 'history' ? sortsRef.current[o.name] : undefined
+  const sort = o && o.kind !== 'history' ? sortOf(sortsRef.current, o.name) : undefined
   const tagsSeen = book.version()
   const order = useMemo(
     () =>
@@ -176,15 +178,15 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   }
   // `name` was renamed: its sort goes with it; or deleted: its sort goes
   const carrySort = (name: string, to?: string) => {
-    const { [name]: was, ...rest } = sortsRef.current
+    const was = sortOf(sortsRef.current, name)
     if (!was) return
-    setSortsSaved(to ? { ...rest, [to]: was } : rest)
+    const without = withSort(sortsRef.current, name)
+    setSortsSaved(to ? withSort(without, to, was) : without)
   }
   // No sort: the file's own order (custom order).
   const sortBy = (next: PlaylistSort | undefined) => {
     if (!o || o.kind === 'history') return
-    const { [o.name]: _was, ...rest } = sortsRef.current
-    setSortsSaved(next ? { ...rest, [o.name]: next } : rest)
+    setSortsSaved(withSort(sortsRef.current, o.name, next))
     setTop(undefined)
     // the rows change places: the cursor on the first song
     putCursor(1)
@@ -296,7 +298,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     switch (a.kind) {
       case 'playList': {
         const { name } = a
-        const by = sortsRef.current[name]
+        const by = sortOf(sortsRef.current, name)
         if (!by) act(() => playList(h, config, name, 0))
         else
           // a sorted list plays in the order it shows
@@ -304,6 +306,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
             const plan = await planList(h, name)
             if (typeof plan === 'string') return plan
             const entries = plan.entries
+            // the tags a tag sort goes by, read first: songs not yet read would sort last
+            if (by.field !== 'folder') await book.ready(entries.map(e => e.path))
             const shown = sortOrder(
               entries.map(e => {
                 const tags = book.get(e.path)
@@ -521,12 +525,18 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     onRowDrag: (at, dy) => {
       pendingSelect.current = undefined
       if (!o || o.kind === 'history' || rows[at]?.kind !== 'song') return
-      if (sort) return ui.say(whenSorted(sort))
+      if (sort) {
+        // said once per drag; the release ends it
+        if (!isRefused.current) ui.say(whenSorted(sort))
+        isRefused.current = true
+        return
+      }
       // not above ../
       setDrag({ from: at, to: Math.max(1, Math.min(at + dy, rows.length)) })
     },
     onRowRelease: () => {
       const drag = dragRef.current
+      isRefused.current = false
       setDrag(undefined)
       if (pendingSelect.current !== undefined) {
         setSel(select(sel(), pendingSelect.current))

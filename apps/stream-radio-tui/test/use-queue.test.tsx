@@ -14,7 +14,8 @@ const view = (elapsed: number, filter = ''): View =>
   ({ playing: 'Two', isPaused: false, elapsed, chapter: '', lastUrl: '/m', queue: QUEUE, openFolders: [], filter, resumeAt: { url: '', index: 0, seconds: 0, title: '' }, volume: 60, repeat: 'all', isShuffled: false, status: '', statusSeq: 0 }) as unknown as View
 
 let version = 0
-const book: TagBook = { get: () => undefined, need: () => undefined, know: () => undefined, version: () => version }
+const book: TagBook = { get: () => undefined, need: () => undefined,
+  ready: async () => undefined, know: () => undefined, version: () => version }
 const turns = { act: () => undefined, inTurn: async () => undefined }
 const seen: QueueTab[] = []
 

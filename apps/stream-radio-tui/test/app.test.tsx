@@ -1963,6 +1963,53 @@ describe('the Playlists tab', () => {
       await vi.waitFor(() => expect(saved()).toEqual({}))
     })
 
+    test('a playlist named like an Object property keeps its own sort', async () => {
+      const lib = library({ constructor: m3u(['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two']), toString: m3u(['/m/p1.mp3', 'P one']) })
+      const ui = await show(100, PLAYING, '', '', { library: lib })
+      await ui.press('\t')
+      await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+      // Favourites, Recently played, constructor, toString
+      await ui.press('j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      expect(rowsText(ui.lines())).toContain('sort: custom order')
+      await ui.press('S')
+      expect(rowsText(ui.lines())).toContain('sort: title')
+      expect(JSON.parse(nodeFs.readFileSync(REMEMBER, 'utf8')).sorts).toEqual({ constructor: { field: 'title', isReversed: false } })
+      await ui.press('\x1b[D', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('P one'))
+      expect(rowsText(ui.lines())).toContain('sort: custom order')
+    })
+
+    test('a move that changes nothing leaves the file alone', async () => {
+      const { press, lib } = await road()
+      const mtime = () => nodeFs.statSync(lib.file('Road trip')).mtimeMs
+      const old = new Date(Date.now() - 60_000)
+      nodeFs.utimesSync(lib.file('Road trip'), old, old)
+      const was = mtime()
+      // the top song up; the last song down
+      await press('u', 'j', 'j', 'd')
+      await new Promise(r => setTimeout(r, 100))
+      expect(mtime()).toBe(was)
+      expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3'])
+    })
+
+    test("the list menu's Play on a tag-sorted list reads the tags first", async () => {
+      const dir = nodeFs.mkdtempSync(nodePath.join(TMP, 'songs-'))
+      const song = (n: string) => nodePath.join(dir, `${n}.mp3`)
+      for (const n of ['a', 'b', 'c']) nodeFs.writeFileSync(song(n), '')
+      const artists: Record<string, string> = { [song('a')]: 'Zed', [song('b')]: 'Mid', [song('c')]: 'Amy' }
+      const tags = tagReader(async p => ({ title: '', artist: artists[p] ?? '', albumArtist: '', album: '' }))
+      const lib = library({ Mix: m3u([song('a'), 'Song A'], [song('b'), 'Song B'], [song('c'), 'Song C']) })
+      nodeFs.writeFileSync(REMEMBER, JSON.stringify({ sorts: { Mix: { field: 'artist', isReversed: false } } }))
+      const { press, host, session } = await show(100, PLAYING, '', '', { library: lib, tags })
+      await press('\t')
+      await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Mix'))).toBe(true))
+      // the list was never opened: no tags have been asked for
+      await press('j', 'j', 'm', ENTER)
+      const entries = [{ path: song('c'), title: 'Song C' }, { path: song('b'), title: 'Song B' }, { path: song('a'), title: 'Song A' }]
+      await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, entries, lib.file('Mix'), 0))
+    })
+
     test('Enter on a song of a sorted list plays in the shown order from that song', async () => {
       const { press, host, session, lib } = await road()
       await press('S', 'R')
