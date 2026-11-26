@@ -583,13 +583,26 @@ export const register: Register = (on, options) => {
         ) : null}
         <Input
           key="url"
-          placeholder="URL, or a file or folder path"
+          placeholder="URL, file or folder path, or play <playlist>"
           submitLabel="Enter to play"
           onSubmit={(value: string) => {
             return act(async () => {
-              const parsed = await locate(hostFor($, config), value.trim(), '')
-              if (parsed.kind === 'play') return (later(playSource(hostFor($, config), config, parsed.url)), '')
-              return parsed.kind === 'error' ? parsed.text : 'Type a URL or a path to a file or folder.'
+              const h = hostFor($, config)
+              const parsed = await locate(h, value.trim(), '')
+              if (parsed.kind === 'play') return (later(playSource(h, config, parsed.url)), '')
+              // `play <playlist>` and `history` play that list as the queue
+              if (parsed.kind === 'playList' || parsed.kind === 'history') {
+                const plan = await planList(h, parsed.kind === 'history' ? 'history' : parsed.list)
+                if (typeof plan === 'string') return plan
+                later(playEntries(h, config, plan.entries, plan.source, 0))
+                return `Playing ${plan.name}.`
+              }
+              if (parsed.kind === 'fav' || parsed.kind === 'listAdd' || parsed.kind === 'listRemove') {
+                const song = await playingSong(h)
+                if (!song) return 'Nothing playing.'
+                return parsed.kind === 'fav' ? toggleFavourite(h, [song]) : parsed.kind === 'listAdd' ? addTo(h, parsed.list, [song]) : removeFrom(h, parsed.list, [song])
+              }
+              return parsed.kind === 'error' ? parsed.text : 'Type a URL, a path to a file or folder, or play <playlist>.'
             })
           }}
         />

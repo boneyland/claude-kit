@@ -378,7 +378,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   }
   const submitNewName = () => {
     const c = checkRef.current
-    const name = newNameRef.current?.text ?? ''
+    const name = (newNameRef.current?.text ?? '').trim()
     setNewName(undefined)
     setMode(c ? 'checklist' : 'list')
     if (!c) return

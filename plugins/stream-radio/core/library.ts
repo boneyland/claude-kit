@@ -5,7 +5,10 @@
 import { videoOf } from './expand'
 
 export type Song = { path: string; title?: string }
-export type ListLine = { kind: 'song'; song: Song } | { kind: 'other'; text: string }
+// A song read from a file keeps the lines it was written as (`text`, and the
+// #EXTINF line before it as `info`), so a rewrite puts them back unchanged:
+// relative paths, empty titles and durations included.
+export type ListLine = { kind: 'song'; song: Song; text?: string; info?: string } | { kind: 'other'; text: string }
 export type ListFile = { lines: ListLine[] }
 export type Mark = 'all' | 'some' | 'none'
 export type Play = { at: number; path: string; title: string; artist?: string; duration?: number }
@@ -83,7 +86,9 @@ export function parseList(text: string, dir: string): ListFile {
     } else {
       const p = raw.trim()
       const path = isUrl(p) || p.startsWith('/') ? p : tidy(`${dir}/${p}`)
-      lines.push({ kind: 'song', song: title === undefined ? { path } : { path, title } })
+      const line: ListLine = { kind: 'song', song: title === undefined ? { path } : { path, title }, text: raw }
+      if (infoLine) line.info = infoLine
+      lines.push(line)
       title = undefined
       infoLine = ''
     }
@@ -98,7 +103,10 @@ export function listText(f: ListFile): string {
   if (headerEnd(f.lines) === 0) out.push(HEADER)
   for (const l of f.lines) {
     if (l.kind === 'other') out.push(l.text)
-    else {
+    else if (l.text !== undefined) {
+      if (l.info !== undefined) out.push(l.info)
+      out.push(l.text)
+    } else {
       if (l.song.title) out.push(`#EXTINF:-1,${l.song.title.replace(/[\r\n]+/g, ' ')}`)
       out.push(l.song.path)
     }
@@ -172,6 +180,7 @@ export function moveSongs(f: ListFile, order: readonly number[]): ListFile {
 // '' when `name` can be used for a new playlist, else what to tell the user.
 export function checkName(name: string, existing: readonly string[]): string {
   if (name.trim() === '') return 'A playlist needs a name.'
+  if (name !== name.trim()) return 'A playlist name can\'t start or end with a space.'
   if (name.includes('/')) return 'A playlist name can\'t contain "/".'
   if (/[\u0000-\u001f\u007f]/.test(name)) return 'A playlist name can\'t contain control characters.'
   if (new TextEncoder().encode(name).length > 200) return 'That name is too long.'

@@ -192,7 +192,8 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
     const name = arg.replace(/^(['"])(.*)\1$/, '$2').trim()
     if (name === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
     if (lists[1] === 'play') {
-      // a URL or a path plays as it would without `play`; a bare name is a playlist
+      // a URL or a path plays as it would without `play`; a bare name is a
+      // playlist here, and locate() plays it as a file when it is one
       return /[/~]|^\.|^[a-z][a-z0-9+.-]*:\/\//i.test(name) ? resolveTarget(arg, where) : { kind: 'playList', list: name }
     }
     return { kind: lists[1] === 'add' ? 'listAdd' : 'listRemove', list: name }

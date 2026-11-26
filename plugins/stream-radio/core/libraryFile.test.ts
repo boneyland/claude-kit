@@ -9,6 +9,8 @@ import {
   editPlaylist,
   listMtime,
   listPlaylists,
+  NO_LIBRARY,
+  GONE,
   readHistory,
   readPlaylist,
   renamePlaylist,
@@ -138,6 +140,47 @@ test('rename refuses an existing name', async () => {
   expect(await renamePlaylist(h, 'A', 'history')).toContain('reserved')
   expect(await renamePlaylist(h, 'Nope', 'C')).toContain('no playlist')
   expect(Object.keys(files).sort()).toEqual([`${LIB}/A.m3u`, `${LIB}/B.m3u`])
+})
+
+test('a rename that changes only case works where the file system ignores case', async () => {
+  const { h, files } = hostOf({ [`${LIB}/Rock.m3u`]: '#EXTM3U\n/a.mp3\n' })
+  // like macOS: mv -n onto a name that differs only in case does nothing and exits 0
+  const run = h.run.bind(h)
+  const insensitive = {
+    ...h,
+    run: async (argv: readonly string[], o?: unknown) => {
+      if (argv[0] === 'mv' && argv.includes('-n')) {
+        const to = argv.at(-1)!.toLowerCase()
+        if (Object.keys(files).some(f => f.toLowerCase() === to)) return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      return run(argv as string[], o as never)
+    },
+  } as Host
+  expect(await renamePlaylist(insensitive, 'Rock', 'rock')).toBe('')
+  expect(Object.keys(files)).toEqual([`${LIB}/rock.m3u`])
+})
+
+test('a rename mv quietly skips is reported, not taken as done', async () => {
+  const { h } = hostOf({ [`${LIB}/A.m3u`]: '#EXTM3U\n' })
+  const still = { ...h, run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) } as unknown as Host
+  expect(await renamePlaylist(still, 'A', 'B')).toMatch(/Could not rename/)
+})
+
+test('with no library folder nothing is written and edits say why', async () => {
+  const { h, ran } = hostOf()
+  const nowhere = { ...h, libraryDir: async () => '' } as Host
+  expect(await listPlaylists(nowhere)).toEqual([])
+  expect(await editPlaylist(nowhere, FAVOURITES, f => toggle(f, [song('/a.mp3')], ''))).toBe(NO_LIBRARY)
+  expect(await createPlaylist(nowhere, 'A', [])).toBe(NO_LIBRARY)
+  expect(await renamePlaylist(nowhere, 'A', 'B')).toBe(NO_LIBRARY)
+  expect(await deletePlaylist(nowhere, 'A')).toBe(NO_LIBRARY)
+  expect(ran).toEqual([])
+})
+
+test('an edit that must find the list does not make a deleted one again', async () => {
+  const { h, files } = hostOf({}, true)
+  expect(await editPlaylist(h, 'Road', f => toggle(f, [song('/a.mp3')], ''), { mustExist: true })).toBe(GONE)
+  expect(Object.keys(files).filter(f => f.endsWith('.m3u'))).toEqual([])
 })
 
 test('delete and rename refuse Favourites', async () => {

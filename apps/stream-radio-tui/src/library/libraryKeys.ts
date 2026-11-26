@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Host } from '@core/host'
 import { FAVOURITES, moveSongs, removeSongs, songKey, songsOf, type Song } from '@core/library'
 import { GONE, planList, playList } from '@core/library-actions'
-import { BUSY, clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
+import { clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
 import { baseName } from '@core/nowplaying'
 import { addToQueue, playEntries } from '@core/player'
 import { moveBy, moveTo, type Moved } from '@core/queue'
@@ -218,8 +218,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
           const keys = songsOf(f).map(s => keyOf(s))
           const from = keys.flatMap((k, i) => (wanted.has(k) ? [i] : []))
           return from.length ? moveSongs(f, make(keys, from, keyOf).order) : f
-        })
-        if (done === 'busy') return BUSY
+        }, { mustExist: o.name !== FAVOURITES })
+        if (typeof done === 'string') return done
         // the rows as they will be once the list is read again, the pick and cursor on the songs moved
         const after = libraryRows({ lists: lib.lists, isLoaded: lib.isLoaded, open: { ...o, songs: songsOf(done) } }, filterRef.current.trim())
         const placeOf = (key: string) => after.findIndex(r => r.kind === 'song' && keyOf(r.song) === key)
@@ -284,8 +284,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
           const r = removeSongs(f, songs, home)
           removed = r.removed
           return r.file
-        })
-        if (done === 'busy') return BUSY
+        }, { mustExist: name !== FAVOURITES })
+        if (typeof done === 'string') return done
         lib.refresh()
         return `Removed ${plural(removed, 'song')} from ${name}.`
       }),
@@ -357,7 +357,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     setPrompt(undefined)
     ui.setMode('list')
     if (!p) return
-    const name = p.line.text
+    const name = p.line.text.trim()
     act(() =>
       inTurn(async () => {
         if (p.for.kind === 'rename' && name === p.for.from) return ''

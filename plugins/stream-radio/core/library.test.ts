@@ -41,7 +41,16 @@ test('round-trips foreign lines', () => {
   expect(out).not.toContain('\r')
   expect(out.endsWith('/m/c.mp3\n')).toBe(true)
   expect(out.endsWith('#EXTINF:-1,\n/m/c.mp3\n')).toBe(false)
-  expect(out).toContain('#EXTINF:-1,A\n/m/a.mp3\n')
+  // songs read from the file are written back as they were
+  expect(out).toContain('#EXTINF:12,A\na.mp3\n')
+})
+
+test('a rewrite keeps relative paths, empty titles and durations as written', () => {
+  const text = '#EXTM3U\n#EXTINF:123,\nmusic/a.mp3\n#EXTINF:45,B\n../b.mp3\n'
+  const f = parseList(text, '/lib')
+  expect(songsOf(f)).toEqual([song('/lib/music/a.mp3'), song('/b.mp3', 'B')])
+  expect(listText(f)).toBe(text)
+  expect(listText(toggle(f, [song('/x/c.mp3')], ''))).toBe(text + '/x/c.mp3\n')
 })
 
 test('listText adds the header and titles only titled songs', () => {
@@ -135,6 +144,12 @@ test('moveSongs never loses or duplicates songs', () => {
   const paths = (o: number[]) => songsOf(moveSongs(f, o)).map(s => s.path.slice(3))
   expect(paths([2, 2, 9, -1, 0])).toEqual(['c', 'a', 'b'])
   expect(paths([])).toEqual(['a', 'b', 'c'])
+})
+
+test('checkName refuses leading and trailing spaces', () => {
+  expect(checkName('Rock ', [])).toMatch(/space/)
+  expect(checkName(' Rock', [])).toMatch(/space/)
+  expect(checkName('Rock', [])).toBe('')
 })
 
 test('checkName refuses names over 200 bytes', () => {

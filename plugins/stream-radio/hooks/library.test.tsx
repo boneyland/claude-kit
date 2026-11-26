@@ -95,3 +95,20 @@ test('/stream play fav goes through the alias', async ($, on) => {
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
+
+test('/stream play <file> and a folder named history play from the session folder', async ($, on) => {
+  const clock = mock.clock(on)
+  on('session.cwd', () => ({ value: '/repo' }) as never)
+  const world = engine(on)
+  world.files['/repo/song.mp3'] = 'x'
+  expect(text(await $.command.run({ command: 'stream', args: 'play song.mp3' } as never))).not.toContain('No playlist')
+  await clock.advance(10)
+  expect(world.urls[0]).toBe('/repo/song.mp3')
+  expect(text(await $.command.run({ command: 'stream', args: 'play gone.mp3' } as never))).toContain('No such file or folder: /repo/gone.mp3')
+  world.files['/repo/history'] = 'x'
+  expect(text(await $.command.run({ command: 'stream', args: 'history' } as never))).not.toContain('Nothing played yet.')
+  await clock.advance(10)
+  expect(world.urls.at(-1)).toBe('/repo/history')
+  await $.command.run({ command: 'stream', args: 'stop' } as never)
+  await clock.advance(10)
+})
