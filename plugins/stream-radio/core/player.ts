@@ -19,6 +19,7 @@ import {
   WATCHED,
 } from './nowplaying'
 import { expandSource, isListedUrl, isNetwork, MAX_SONGS, videoOf } from './expand'
+import { installHistoryScript } from './history'
 import { isPlayable, paths, type Paths } from './paths'
 import { moveSteps } from './queue'
 import { readSaved, updateSaved } from './saved'
@@ -898,6 +899,8 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
       }
 
       const loops = loopsFor(await h.vars.read('repeat'))
+      // the play history's recorder; without it (not written) mpv plays on
+      const script = await installHistoryScript(h)
       const argv = [
         player,
         '--no-video',
@@ -916,6 +919,9 @@ function launch(h: Host, config: PlayerConfig, q: StoredQueue, at: At, retryClie
         ...(client ? [`--ytdl-raw-options-append=extractor-args=youtube:player_client=${client}`] : []),
         `--volume=${await h.vars.read('volume')}`,
         '--msg-level=all=error',
+        // -append: --script-opts would drop any script-opts in your mpv.conf
+        // (ytdl_hook's among them), and it takes the path whole, commas and all
+        ...(script ? [`--script=${script}`, `--script-opts-append=stream_radio_history-file=${p.history}`] : []),
         // the songs of the playlist file are the playlist; it starts at this one
         `--playlist-start=${index}`,
         `--playlist=${p.queue}`,
