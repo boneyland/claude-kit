@@ -129,13 +129,20 @@ export type Command =
   | { kind: 'seek'; seconds: number; isRelative?: true }
   // url: an http(s) URL, or an absolute path when isLocal
   | { kind: 'play'; url: string; isLocal?: true }
+  // the song playing, in or out of Favourites
+  | { kind: 'fav' }
+  // list: a playlist's name as typed (fav for Favourites)
+  | { kind: 'listAdd' | 'listRemove'; list: string }
+  // list: a playlist's name as typed, fav, or history
+  | { kind: 'playList'; list: string }
+  | { kind: 'history' }
   | { kind: 'error'; text: string }
 
 // Where a local path is read from: the home folder for `~`, the session's folder
 // for a relative path.
 export type Where = { home: string; cwd: string }
 
-const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | seek [+|-]<m:ss> | shuffle | repeat [all | one | off] | panel | stop'
+const USAGE = 'Usage: /stream <url | file | folder> | last | pause | next | prev | vol [0-100 | up | down] | seek [+|-]<m:ss> | shuffle | repeat [all | one | off] | panel | stop | fav | add <playlist> | remove <playlist> | play <playlist> | history'
 
 // A URL, or a local file, folder or playlist as an absolute path: `~/…`,
 // `/…`, `file://…` or relative to the session's folder. Quotes around it go.
@@ -175,6 +182,18 @@ export function parseArgs(args: string, fallback: string, where: Where = { home:
   if (word === 'prev' || word === 'previous') return { kind: 'prev' }
   if (word === 'panel') return { kind: 'panel' }
   if (word === 'shuffle') return { kind: 'shuffle' }
+  if (word === 'fav') return { kind: 'fav' }
+  if (word === 'history') return { kind: 'history' }
+  const lists = /^(add|remove|play)(?:\s+(.*))?$/.exec(word)
+  if (lists) {
+    const arg = (lists[2] ?? '').trim()
+    if (arg === '') return { kind: 'error', text: `Usage: /stream ${lists[1]} <playlist>` }
+    if (lists[1] === 'play') {
+      // a URL or a path plays as it would without `play`; a bare name is a playlist
+      return /^(['"]|\.{1,2}\/|\/|~|[a-z][a-z0-9+.-]*:\/\/)/i.test(arg) ? resolveTarget(arg, where) : { kind: 'playList', list: arg }
+    }
+    return { kind: lists[1] === 'add' ? 'listAdd' : 'listRemove', list: arg }
+  }
   const rep = /^repeat(?:\s+(.*))?$/.exec(word)
   if (rep) {
     const mode = (rep[1] ?? '').trim()

@@ -193,3 +193,17 @@ test('the filter keeps entries whose name or folder holds every word', () => {
   expect(filterRows(NAMES, PATHS, ROOT, 'END').map(r => r.kind === 'item' && r.index)).toEqual([4])
   expect(filterRows(['Nocturne', 'Arabesque'], [], '', 'noc')).toHaveLength(1)
 })
+
+test('library commands', () => {
+  const where = { home: '/home/me', cwd: '/home/me/Music' }
+  expect(parseArgs('fav', '')).toEqual({ kind: 'fav' })
+  expect(parseArgs('history', '')).toEqual({ kind: 'history' })
+  expect(parseArgs('add Road trip', '')).toEqual({ kind: 'listAdd', list: 'Road trip' })
+  expect(parseArgs('remove fav', '')).toEqual({ kind: 'listRemove', list: 'fav' })
+  expect(parseArgs('play Road trip', '')).toEqual({ kind: 'playList', list: 'Road trip' })
+  expect(parseArgs('play ./a.mp3', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/a.mp3', isLocal: true })
+  expect(parseArgs('play ~/x', '', where)).toEqual({ kind: 'play', url: '/home/me/x', isLocal: true })
+  expect(parseArgs('play https://a.b/c', '')).toEqual({ kind: 'play', url: 'https://a.b/c' })
+  expect(parseArgs('song.mp3', '', where)).toEqual({ kind: 'play', url: '/home/me/Music/song.mp3', isLocal: true })
+  for (const bad of ['add', 'remove ', 'play']) expect(parseArgs(bad, '').kind).toBe('error')
+})

@@ -45,6 +45,8 @@ import {
   togglePause,
   toggleShuffle,
 } from '../core/player'
+import { addTo, historyText, playList, playingSong, removeFrom, toggleFavourite } from '../core/library-actions'
+import { readHistory } from '../core/libraryFile'
 import type { Host, PlayerKeys, StateStore } from '../core/host'
 import { migrateFromStore } from '../core/saved'
 import { hostOf } from './host-claude'
@@ -294,6 +296,20 @@ export const register: Register = (on, options) => {
         return { text: 'Stopped.' }
       }
       if (parsed.kind === 'panel') return { text: `Radio panel ${await togglePane($)}.` }
+      if (parsed.kind === 'fav' || parsed.kind === 'listAdd' || parsed.kind === 'listRemove') {
+        const h = hostFor($, config)
+        const song = await playingSong(h)
+        if (!song) return { text: 'Nothing playing.' }
+        return { text: parsed.kind === 'fav' ? await toggleFavourite(h, [song]) : parsed.kind === 'listAdd' ? await addTo(h, parsed.list, [song]) : await removeFrom(h, parsed.list, [song]) }
+      }
+      if (parsed.kind === 'history') {
+        const h = hostFor($, config)
+        return { text: historyText(await readHistory(h), Math.floor((await h.now()) / 1000)) }
+      }
+      if (parsed.kind === 'playList') {
+        const h = hostFor($, config)
+        return { text: (await playList(h, config, parsed.list)) || `Playing ${parsed.list}.` }
+      }
       // A player another session started may not be followed yet (this session
       // just started): look before saying nothing plays.
       if (!isFollowing() && parsed.kind !== 'play' && parsed.kind !== 'last') await connect(hostFor($, config), config).catch(() => undefined)
