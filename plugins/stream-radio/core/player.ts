@@ -997,6 +997,14 @@ export async function playSource(h: Host, config: PlayerConfig, source: string):
   }
 }
 
+// Plays `entries` (a saved playlist, say) as the queue, starting at entry
+// `start`; `source` is what the queue is called. Like playSource after it has
+// expanded: a newer play or a stop wins. Resolves to what to show, or ''.
+export async function playEntries(h: Host, config: PlayerConfig, entries: QueueEntry[], source: string, start: number): Promise<string> {
+  const mine = ++asked
+  return playNew(h, config, entries, source, '', mine, start)
+}
+
 // `entries` replace the queue and entry `start` plays; '' when started (or
 // overtaken), else what to show. `mine`: what was asked that it answers;
 // dropped once something newer was asked.

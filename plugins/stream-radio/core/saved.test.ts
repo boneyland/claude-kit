@@ -17,6 +17,7 @@ function hostOf(program: 'mod' | 'tui', files: Record<string, string> = {}, isMo
   const h = {
     program,
     dataDir: async () => '/data',
+    libraryDir: async () => '/lib',
     log: (text: string) => void logged.push(text),
     run: async (argv: readonly string[]) => {
       ran.push([...argv])

@@ -71,6 +71,7 @@ const fakeHost = (tree: Record<string, { name: string; kind: 'file' | 'dir' | 'o
       exists: async (p: string) => p in files || p in tree,
     },
     dataDir: async () => '/state',
+    libraryDir: async () => '/lib',
   }) as unknown as Host
 
 describe('loadFolder', () => {

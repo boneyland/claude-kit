@@ -81,6 +81,8 @@ export interface Host {
   // The folder holding mpv.sock, player.json, reconnect.lock, mpv.log and
   // state.json.
   dataDir(): Promise<string>
+  // The folder of saved playlists; empty when unknown.
+  libraryDir(): Promise<string>
   vars: StateStore
   // shown to the person, or only in the debug log with to 'debug'
   log(text: string, to?: 'debug'): void

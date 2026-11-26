@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Host } from './host'
-import { entryName, paths, resumeQueue, playQueue } from './player'
+import { entryName, paths, playEntries, resumeQueue, playQueue } from './player'
 
 // Only dataDir and run are used: the rest of the Host is never reached.
 const ran: string[][] = []
@@ -22,6 +22,9 @@ test('a data folder not known yet is asked for again, not kept as the root', asy
     place: '/data/queue-place.json',
     prev: '/data/queue.prev.json',
     queueLock: '/data/queue.lock',
+    history: '/data/history.jsonl',
+    historyLua: '/data/history.lua',
+    libraryLock: '/data/library.lock',
   })
   // Once known it is kept, and made once.
   expect((await paths(hostIn('/elsewhere'))).sock).toBe('/data/mpv.sock')
@@ -44,6 +47,7 @@ function filesHost(files: Record<string, string>) {
     mtimes,
     h: {
       dataDir: async () => '/data',
+      libraryDir: async () => '/lib',
       now: async () => clock.now,
       sleep: async (ms: number) => void (clock.now += ms),
       log: () => undefined,
@@ -89,4 +93,17 @@ test('l and ▶ on an empty queue say the queue is busy, not play the default ov
     expect(await play(h, config, 'https://example.com/default')).toBe('The queue is busy; try again.')
     expect(JSON.parse(files['/data/queue.json']!).entries).toEqual([])
   }
+})
+
+test('playEntries starts at the given entry', async () => {
+  const files: Record<string, string> = {}
+  const { h } = filesHost(files)
+  const config = { volume: 60, player: 'mpv', androidClient: false }
+  const entries = [{ path: '/m/a.mp3' }, { path: '/m/b.mp3' }, { path: '/m/c.mp3' }]
+  await playEntries(h, config, entries, 'Road', 1).catch(() => undefined)
+  const q = JSON.parse(files['/data/queue.json']!)
+  expect(q.entries.map((e: { path: string }) => e.path)).toEqual(['/m/a.mp3', '/m/b.mp3', '/m/c.mp3'])
+  expect(q.source).toBe('Road')
+  const place = JSON.parse(files['/data/queue-place.json']!)
+  expect(place.current).toBe(q.entries[1].id)
 })
