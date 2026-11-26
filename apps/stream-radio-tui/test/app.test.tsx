@@ -1401,11 +1401,11 @@ describe('queue editing', () => {
   })
 
   test('l with nothing played yet still asks resumeQueue, and shows its reply', async () => {
-    vi.mocked(player.resumeQueue).mockResolvedValueOnce('Nothing has played yet, and there is no default stream.')
+    vi.mocked(player.resumeQueue).mockResolvedValueOnce('Queue is empty, nothing to play.')
     const { press, host, session, lines } = await show(100, { ...FIVE, playing: '', lastUrl: '' })
     await press('l')
     expect(player.resumeQueue).toHaveBeenCalledWith(host, session.config, '')
-    await vi.waitFor(() => expect(status(lines())).toContain('no default stream'))
+    await vi.waitFor(() => expect(status(lines())).toContain('Queue is empty, nothing to play.'))
   })
 
   test('S pressed again while a sort runs: only the last one asked runs after it', async () => {

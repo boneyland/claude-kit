@@ -1101,7 +1101,7 @@ async function startQueue(h: Host, config: PlayerConfig, fallback: string, isRes
     const back = await restorePrev(h)
     if (back === 'busy') return BUSY
     if (!back) {
-      if (!fallback) return 'Nothing has played yet, and there is no default stream.'
+      if (!fallback) return 'Queue is empty, nothing to play.'
       if (!later) return playSource(h, config, fallback)
       later(playSource(h, config, fallback))
       return `Starting ${fallback}.`
