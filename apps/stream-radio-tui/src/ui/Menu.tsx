@@ -2,6 +2,7 @@ import React from 'react'
 import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 import type { Action } from '../keys'
+import type { Song } from '@core/library'
 
 export type MenuItem = { label: string; key: string; action: Action }
 
@@ -53,13 +54,20 @@ export const listMenu = (name: string): readonly MenuItem[] => [
 export const favouritesMenu = (name: string): readonly MenuItem[] => listPlay(name)
 export const historyMenu = (name: string): readonly MenuItem[] => [...listPlay(name), { label: 'Clear', key: '', action: { kind: 'clearHistory' } }]
 
-// Playlists, on a song inside a list; Recently played's can't be removed.
-export const HISTORY_SONG_MENU: readonly MenuItem[] = [
-  { label: 'Play from here', key: 'Enter', action: { kind: 'enter' } },
-  { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end' } },
-  { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next' } },
-]
-export const LIST_SONG_MENU: readonly MenuItem[] = [...HISTORY_SONG_MENU, { label: 'Remove from playlist', key: 'Del', action: { kind: 'remove' } }]
+// Playlists, on songs inside a list, as it was when the menu opened: `all`
+// its songs, `source` its file, `index` the cursor's song, `songs` the ones
+// the menu acts on (the picked, or the cursor's). Each item carries them, so
+// a poll that changes the list meanwhile can't change what it plays or
+// removes. Recently played's (no `list`) can't be removed.
+export type SongMenuOf = { all: readonly Song[]; source: string; index: number; songs: readonly Song[]; list?: string }
+export function songMenu({ all, source, index, songs, list }: SongMenuOf): readonly MenuItem[] {
+  return [
+    { label: 'Play from here', key: 'Enter', action: { kind: 'enter', play: { songs: all, source, index } } },
+    { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end', songs } },
+    { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next', songs } },
+    ...(list === undefined ? [] : [{ label: 'Remove from playlist', key: 'Del', action: { kind: 'remove', from: { list, songs } } } as const]),
+  ]
+}
 
 // What Delete playlist and Clear ask before they act.
 export const confirmMenu = (label: string, action: Action): readonly MenuItem[] => [

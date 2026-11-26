@@ -1953,6 +1953,50 @@ describe('the Playlists tab', () => {
       await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(ui.host, ui.session.config, [{ path: '/m/z1.mp3', title: 'Zed one' }], ui.lib.file('Zebra'), 0))
     })
 
+    // a song sorting above Road two, written in the open list and seen by the next poll
+    const songAbove = async (ui: Awaited<ReturnType<typeof open>>) => {
+      const file = ui.lib.file('Road trip')
+      const was = nodeFs.statSync(file).mtimeMs
+      nodeFs.writeFileSync(file, m3u(['/m/r0.mp3', 'Road zero'], ['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two'], ['/m/r3.mp3', 'Road three']))
+      nodeFs.utimesSync(file, new Date(was + 5000), new Date(was + 5000))
+      ui.lib.tick()
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road zero'))
+    }
+
+    test("a song's menu removes the song it was opened on, though a poll moved the rows", async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      await ui.press('j', 'm')
+      await songAbove(ui)
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(nodeFs.readFileSync(ui.lib.file('Road trip'), 'utf8')).not.toContain('r2.mp3'))
+      const text = nodeFs.readFileSync(ui.lib.file('Road trip'), 'utf8')
+      expect(text).toContain('r0.mp3')
+      expect(text).toContain('r1.mp3')
+    })
+
+    test("a song's menu plays the list as it was, from the song it was opened on", async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      await ui.press('j', 'm')
+      await songAbove(ui)
+      await ui.press(ENTER)
+      const entries = [{ path: '/m/r1.mp3', title: 'Road one' }, { path: '/m/r2.mp3', title: 'Road two' }, { path: '/m/r3.mp3', title: 'Road three' }]
+      await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(ui.host, ui.session.config, entries, ui.lib.file('Road trip'), 1))
+    })
+
+    test("a song's menu adds the songs it was opened on", async () => {
+      const ui = await open()
+      await ui.press('j', 'j', 'j', ENTER)
+      await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
+      await ui.press('j', 'm')
+      await songAbove(ui)
+      await ui.press('j', 'j', ENTER)
+      await vi.waitFor(() => expect(player.addToQueue).toHaveBeenCalledWith(ui.host, ui.session.config, [{ path: '/m/r2.mp3', title: 'Road two' }], 'next'))
+    })
+
     test("a tab switch leaves filter mode; neither tab's filter writes the other's", async () => {
       const ui = await open()
       await ui.press('j', 'j', 'j', ENTER)

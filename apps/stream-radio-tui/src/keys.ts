@@ -1,4 +1,5 @@
 import type { Key } from 'ink'
+import type { Song } from '@core/library'
 import type { Tab } from './ui/Tabs'
 import type { Edit } from './ui/lineEdit'
 
@@ -13,8 +14,9 @@ export type Action =
   | { kind: 'down' }
   // PgUp, PgDn (by: page), Home, End (by: all): the cursor that far up (-1) or down
   | { kind: 'jump'; by: 'page' | 'all'; dir: 1 | -1 }
-  // play the selected song, or open or shut the selected folder
-  | { kind: 'enter' }
+  // play the selected song, or open or shut the selected folder; play: from a
+  // Playlists song's menu, the list as it was when the menu opened, and the song
+  | { kind: 'enter'; play?: { songs: readonly Song[]; source: string; index: number } }
   | { kind: 'shutFolder' }
   | { kind: 'openFolder' }
   | { kind: 'pause' }
@@ -46,7 +48,8 @@ export type Action =
   | { kind: 'tab'; dir: 1 | -1 }
   // the picked songs (or the cursor's) one place up (-1) or down
   | { kind: 'move'; by: 1 | -1 }
-  | { kind: 'remove' }
+  // from: a Playlists song's menu, the songs it was opened on and their list
+  | { kind: 'remove'; from?: { list: string; songs: readonly Song[] } }
   // the whole queue, stopping the player; from a key, only when pressed twice
   | { kind: 'clearQueue'; isSure?: boolean }
   // the cursor a row up or down, picking the rows from the anchor
@@ -58,7 +61,7 @@ export type Action =
   | { kind: 'sortReverse' }
   // Files: the picked rows (or the cursor's) to the queue's end, or to play
   // next; Playlists, from a list's menu: `list`, the list it was opened on
-  | { kind: 'add'; where: 'end' | 'next'; list?: string }
+  | { kind: 'add'; where: 'end' | 'next'; list?: string; songs?: readonly Song[] }
   // Files: the folder above
   | { kind: 'folderUp' }
   // Files, at the folder of the song playing

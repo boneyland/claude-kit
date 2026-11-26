@@ -10,7 +10,7 @@ import type { Action, Mode } from '../keys'
 import type { Hit } from '../mouse/Clickable'
 import { useRefState } from '../ui/hooks'
 import { edit, type Line } from '../ui/lineEdit'
-import { confirmMenu, favouritesMenu, historyMenu, HISTORY_SONG_MENU, listMenu, LIST_SONG_MENU, type MenuItem } from '../ui/Menu'
+import { confirmMenu, favouritesMenu, historyMenu, listMenu, songMenu, type MenuItem } from '../ui/Menu'
 import { clamp, clear, current, extend, NO_SELECTION, select, targets, toggle, type Held, type Selection } from '../ui/selection'
 import type { Turns } from '../ui/turns'
 import { HISTORY, libraryRows, useLibrary, type Library, type LibraryRow } from './useLibrary'
@@ -118,7 +118,8 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     act(() => playEntries(h, config, o.songs.map(entryOf), o.file ?? '', index))
   }
   // list: the one a menu named; else the cursor's at the top level, or the songs inside one
-  const add = (where: 'end' | 'next', list?: string) => {
+  // songs: the ones a song's menu was opened on
+  const add = (where: 'end' | 'next', list?: string, given?: readonly Song[]) => {
     const next = where === 'next' ? ' to play next' : ''
     const name = list ?? (lib.open ? undefined : listName(rows[sel().cursor]))
     if (name) {
@@ -130,14 +131,16 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         }),
       )
     }
-    const songs = chosenSongs()
+    const songs = given ?? chosenSongs().map(r => r.song)
     if (!songs.length) return
     setSel(clear(sel()))
-    act(() => inTurn(async () => (await addToQueue(h, config, songs.map(r => entryOf(r.song)), where)) || `Added ${plural(songs.length, 'song')}${next}.`))
+    act(() => inTurn(async () => (await addToQueue(h, config, songs.map(entryOf), where)) || `Added ${plural(songs.length, 'song')}${next}.`))
   }
-  const remove = () => {
+  // from: the songs a song's menu was opened on, and their list
+  const remove = (from?: { list: string; songs: readonly Song[] }) => {
     const o = lib.open
     const row = rows[sel().cursor]
+    if (from) return removeFrom(from.list, from.songs)
     if (!o) {
       // a list at the top level: Delete playlist, which asks first
       if (row?.kind === 'history') return ui.say(HISTORY_READ_ONLY)
@@ -145,21 +148,24 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       return
     }
     if (o.kind === 'history') return ui.say(HISTORY_READ_ONLY)
-    const songs = chosenSongs().map(r => r.song)
+    removeFrom(o.name, chosenSongs().map(r => r.song))
+  }
+  // Takes `songs` out of list `name`, by which songs they are (not where).
+  const removeFrom = (name: string, songs: readonly Song[]) => {
     if (!songs.length) return
     setSel(clear(sel()))
     act(() =>
       inTurn(async () => {
         const home = await h.home().catch(() => '')
         let removed = 0
-        const done = await editPlaylist(h, o.name, f => {
+        const done = await editPlaylist(h, name, f => {
           const r = removeSongs(f, songs, home)
           removed = r.removed
           return r.file
         })
         if (done === 'busy') return BUSY
         lib.refresh()
-        return `Removed ${plural(removed, 'song')} from ${o.name}.`
+        return `Removed ${plural(removed, 'song')} from ${name}.`
       }),
     )
   }
@@ -271,9 +277,12 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     }
     const at = sel().cursor
     switch (a.kind) {
-      case 'enter':
-        enter(at)
+      case 'enter': {
+        const play = a.play
+        if (play) act(() => playEntries(h, config, play.songs.map(entryOf), play.source, play.index))
+        else enter(at)
         return true
+      }
       case 'openFolder':
         if (!lib.open && listName(rows[at])) enter(at)
         return true
@@ -282,10 +291,10 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         if (lib.open) close()
         return true
       case 'add':
-        add(a.where, a.list)
+        add(a.where, a.list, a.songs)
         return true
       case 'remove':
-        remove()
+        remove(a.from)
         return true
       case 'filterMode':
         // the open list only
@@ -325,7 +334,12 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     prompt: p && { label: p.for.kind === 'new' ? 'New playlist name: ' : `Rename "${p.for.from}" to: `, line: p.line },
     menuOf: at => {
       const row = rows[at]
-      if (row?.kind === 'song') return o?.kind === 'history' ? HISTORY_SONG_MENU : LIST_SONG_MENU
+      if (row?.kind === 'song' && o) {
+        const s = sel()
+        const chosen = s.picked.includes(at) ? s.picked : [at]
+        const songs = chosen.flatMap(i => (rows[i]?.kind === 'song' ? [(rows[i] as Extract<LibraryRow, { kind: 'song' }>).song] : []))
+        return songMenu({ all: o.songs, source: o.file ?? '', index: row.index, songs, ...(o.kind === 'history' ? {} : { list: o.name }) })
+      }
       if (row?.kind === 'history') return historyMenu(HISTORY)
       if (row?.kind === 'list') return row.info.name === FAVOURITES ? favouritesMenu(FAVOURITES) : listMenu(row.info.name)
       return undefined
