@@ -23,6 +23,8 @@ const hasMpv = has('mpv')
 let dir = ''
 let wav = ''
 let long = ''
+let over = ''
+let short = ''
 let script = ''
 
 // `seconds` of silence as a WAV file: 8 kHz mono 16-bit, 16 kB a second.
@@ -123,6 +125,10 @@ describe.skipIf(!hasMpv)('history.lua in mpv', () => {
     writeFileSync(wav, silence(3))
     long = join(dir, 'long.wav')
     writeFileSync(long, silence(6))
+    over = join(dir, 'over.wav')
+    writeFileSync(over, silence(3.5))
+    short = join(dir, 'short.wav')
+    writeFileSync(short, silence(2))
   })
   afterAll(() => {
     if (dir) rmSync(dir, { recursive: true, force: true })
@@ -147,6 +153,25 @@ describe.skipIf(!hasMpv)('history.lua in mpv', () => {
     fresh()
     await play([], ['stream_radio_history-min=10'])
     expect(lines()).toHaveLength(1)
+  })
+
+  test('a song a little over min that plays to its end logs', { timeout: 25_000 }, async () => {
+    fresh()
+    // 3.5 s at min=3: the 1 s ticks count about 2.5 s of it, short of min
+    await play([], ['stream_radio_history-min=3'], undefined, over)
+    expect(lines()).toHaveLength(1)
+  })
+
+  test('repeat-one logs each loop of a song a little over min', { timeout: 25_000 }, async () => {
+    fresh()
+    await play(['--loop-file=2'], ['stream_radio_history-min=3'], undefined, over)
+    expect(lines()).toHaveLength(3)
+  })
+
+  test('repeat-one logs each loop of a song shorter than min', { timeout: 25_000 }, async () => {
+    fresh()
+    await play(['--loop-file=2'], ['stream_radio_history-min=5'], undefined, short)
+    expect(lines()).toHaveLength(3)
   })
 
   test('repeat-one logs each loop', { timeout: 25_000 }, async () => {

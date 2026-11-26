@@ -7,7 +7,7 @@ import { paths } from './paths'
 import { writeWhole } from './storedFile'
 
 // A play counts once `min` seconds have played (paused time and seeks don't
-// count), or at its end for a song shorter than that. A loop under Repeat one
+// count), or at its end for a song shorter than about that, played nearly whole. A loop under Repeat one
 // is a new play: mpv starts no new file for it, only seeks back to the start,
 // so a seek from the last 2 s to the first 2 s is taken as the song again.
 // Past `cap` lines the file is rewritten to the last `keep` (temp and rename).
@@ -71,9 +71,13 @@ local function record()
   if count > o.cap then trim() end
 end
 
--- A song shorter than o.min counts once it has played to its end.
+-- A song that ends before it could reach o.min counts at its end, if it played
+-- nearly all the way (the ticks count up to about 1 s short, so a song up to
+-- o.min + 2 s long counts here too). A long song skipped to near its end
+-- doesn't: it would have reached o.min had it played.
 local function ended()
-  if play and play.duration and play.duration < o.min and play.played > 0 then record() end
+  if not play or not play.duration or play.duration >= o.min + 2 or play.played <= 0 then return end
+  if play.played >= math.min(play.duration, o.min) - 2 then record() end
 end
 
 -- What the line says of the song, read while it plays: at its end-file the
