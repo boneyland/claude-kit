@@ -1,6 +1,6 @@
 {
   "name": "pr-watch",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "icon": "./.claude-plugin/icon.png",
   "types": "./types/index.d.ts",
   "description": "Watch pull requests from a session: when CI fails or a merge conflict appears, wake this same session to fix it and push, with no cloud session. A footer button sums up each PR's state and opens a side panel to watch, check and stop PRs; /pr-watch does the same.",

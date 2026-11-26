@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { buildPrompt, decide, label, matches, newWatched, parseArgs, readStatus, summary } from './watch'
+import { buildPrompt, decide, label, matches, newWatched, parseArgs, parseInterval, readStatus, summary } from './watch'
 import type { PrStatus, Rules } from './watch'
 
 const URL = 'https://github.com/acme/app/pull/12'
@@ -259,4 +259,15 @@ test('the prompt rules out failures that are not the PR\'s and guards the checko
   expect(text).toContain('never commit, stash, discard or overwrite it')
   expect(text).toContain('git pull --ff-only')
   expect(text).toContain("project's own fast checks")
+})
+
+test('parseInterval reads seconds or minutes, 30 s to 60 min', () => {
+  expect(parseInterval('90')).toBe(90)
+  expect(parseInterval(' 45 s ')).toBe(45)
+  expect(parseInterval('5m')).toBe(300)
+  expect(parseInterval('15 min')).toBe(900)
+  expect(parseInterval('60 min')).toBe(3600)
+  expect(parseInterval('10')).toMatch(/30 s to 60 min/)
+  expect(parseInterval('2h')).toMatch(/isn't a number/)
+  expect(parseInterval('')).toMatch(/isn't a number/)
 })

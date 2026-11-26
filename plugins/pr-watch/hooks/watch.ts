@@ -291,3 +291,15 @@ export function matches(watched: Watched, target: string): boolean {
 
   return found !== null && watched.repo === found[1] && watched.number === Number(found[2])
 }
+
+// The panel's interval field: whole seconds, or minutes with an `m`/`min`
+// ("90", "90 s", "5m", "15 min"). Resolves seconds, or why the text isn't one
+// (the option takes 30 to 3600).
+export function parseInterval(text: string): number | string {
+  const found = /^\s*(\d+)\s*(s|sec|secs|m|min|mins)?\s*$/i.exec(text)
+  if (!found) return `"${text.trim()}" isn't a number of seconds; try 90, or 5m.`
+  const seconds = Number(found[1]) * (found[2]?.toLowerCase().startsWith('m') ? 60 : 1)
+  if (seconds < 30 || seconds > 3600) return `The interval must be 30 s to 60 min; ${seconds} s isn't.`
+
+  return seconds
+}

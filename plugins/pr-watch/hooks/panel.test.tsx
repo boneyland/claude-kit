@@ -117,7 +117,7 @@ for (const surface of ['terminal'] as const) {
 
     expect(await ui.find({ type: 'Text', text: /No PRs watched/ })).toBeDefined()
     // the settings rows: the current interval marked, push fixes on by default
-    expect((await ui.find({ type: 'Button', key: 'every-90' }))?.props.label).toBe('[90 s]')
+    expect((await ui.find({ type: 'Input', key: 'every' }))?.props.value).toBe('90')
     expect((await ui.find({ type: 'Button', key: 'push' }))?.props.label).toBe('on')
     await ui.press({ key: 'watch-branch' })
     await clock.settle()
@@ -217,9 +217,14 @@ for (const surface of ['terminal'] as const) {
     await clock.settle()
     const polls = world.ran.length
 
-    await ui.press({ key: 'every-300' })
+    // a bad entry is refused and says why, saving nothing
+    await ui.input({ key: 'every', text: '10' })
+    expect(await ui.find({ type: 'Text', text: /30 s to 60 min/ })).toBeDefined()
+    expect(saved).toEqual([])
+
+    await ui.input({ key: 'every', text: '5m' })
     expect(saved).toEqual([['pr-watch.intervalSeconds', 300]])
-    expect((await ui.find({ type: 'Button', key: 'every-300' }))?.props.label).toBe('[5 min]')
+    expect((await ui.find({ type: 'Input', key: 'every' }))?.props.value).toBe('300')
     expect(await ui.find({ type: 'Text', text: /Checks every 5 min\./ })).toBeDefined()
     // the new period applies at once: nothing at 90 s, a poll at 300 s
     await clock.advance(90_000)

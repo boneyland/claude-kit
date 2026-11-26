@@ -19,12 +19,12 @@ A button in the footer under the prompt sums up the watched PRs: `PRs` with none
 │   CI / lint                               │
 │   CI / test                               │
 │                                           │
-│ Check every 30 s 1 min [90 s] 5 min 15 min│
+│ Check every (s): 90                       │
 │ Push fixes [on]                           │
 ╰───────────────────────────────────────────╯
 ```
 
-Type a PR number or URL in the box and press Enter to watch it: any PR, on any branch, not only the one you're on. `open` and each failing check are links to GitHub. The bottom rows change two options: click an interval to check that often (the current one is in brackets), and click **on**/**off** to switch whether Claude may push its fixes. A change applies at once and is saved as the plugin's option, as `/config` would; if saving is refused (say a managed setting owns it) it still holds for this session, and the panel says why.
+Type a PR number or URL in the box and press Enter to watch it: any PR, on any branch, not only the one you're on. `open` and each failing check are links to GitHub. The bottom rows change two options: type an interval in seconds (or minutes, as `5m`), 30 s to 60 min, and press Enter to check that often, and click **on**/**off** to switch whether Claude may push its fixes. A change applies at once and is saved as the plugin's option, as `/config` would; if saving is refused (say a managed setting owns it) it still holds for this session, and the panel says why.
 
 ## The command
 

@@ -9,6 +9,7 @@ import {
   matches,
   newWatched,
   parseArgs,
+  parseInterval,
   readStatus,
   summary,
   USAGE,
@@ -196,8 +197,6 @@ async function toggle($: EngineInterface): Promise<'opened' | 'closed'> {
   return 'opened'
 }
 
-// The panel's interval choices, in seconds (the option takes 30 to 3600).
-const INTERVALS = [30, 60, 90, 300, 900] as const
 const every = (seconds: number) => (seconds % 60 ? `${seconds} s` : `${seconds / 60} min`)
 
 // Writes one of this plugin's options as /config would, which reloads the plugin
@@ -363,6 +362,13 @@ export const register: Register = (on, options) => {
         return `Push fixes: ${config.allowPush ? 'on' : 'off'}${why ? ` for this session (not saved: ${why})` : ''}.`
       })
     const seconds = Math.round(config.intervalMs / 1000)
+    const submitEvery = (value: string) => {
+      const parsed = parseInterval(value)
+      if (typeof parsed === 'string') return act(async () => parsed)
+      if (parsed === seconds) return act(async () => `Checks every ${every(seconds)} already.`)
+
+      return setEvery(parsed)
+    }
     const submit = (value: string) =>
       act(async () => {
         const parsed = parseArgs(value)
@@ -417,17 +423,13 @@ export const register: Register = (on, options) => {
             </Box>
           )
         })}
-        <Box flexDirection="row" gap={1} flexWrap="wrap">
-          <Text dimColor>Check every</Text>
-          {INTERVALS.map(n => (
-            <Button
-              key={`every-${n}`}
-              label={n === seconds ? `[${every(n)}]` : every(n)}
-              onPress={() => (n === seconds ? undefined : setEvery(n))}
-            />
-          ))}
-          {!(INTERVALS as readonly number[]).includes(seconds) && <Text>[{every(seconds)}]</Text>}
-        </Box>
+        <Input
+          key="every"
+          label="Check every (s)"
+          value={String(seconds)}
+          submitLabel="set"
+          onSubmit={submitEvery}
+        />
         <Box flexDirection="row" gap={1}>
           <Text dimColor>Push fixes</Text>
           <Button key="push" label={config.allowPush ? 'on' : 'off'} onPress={togglePush} />
