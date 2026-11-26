@@ -77,6 +77,33 @@ for (const surface of ['terminal'] as const) {
   })
 }
 
+test('polling goes on after /clear, and stops when the session exits', async ($, on) => {
+  const clock = mock.clock(on)
+  const ran: string[][] = []
+  on('process.run', (_$, e) => {
+    ran.push([...e.argv])
+
+    return { value: { exitCode: 0, stdout: pr({ statusCheckRollup: [] }), stderr: '' } } as never
+  })
+  on('command.register', () => ({ value: { command: 'pr-watch' } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }) as never)
+  on('session.end', (_$, e) => ({ sessionId: e.sessionId }) as never)
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'pr-watch', args: '' } as never)
+  await clock.settle()
+  const before = ran.length
+
+  await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
+  await clock.advance(90_000)
+  expect(ran.length).toBe(before + 1)
+
+  await $.session.end({ reason: 'prompt_input_exit', sessionId: 's2' } as never)
+  await clock.advance(180_000)
+  expect(ran.length).toBe(before + 1)
+})
+
 test('watching the same PR twice keeps one row and asks once', async ($, on) => {
   const clock = mock.clock(on)
   const prompts: string[] = []

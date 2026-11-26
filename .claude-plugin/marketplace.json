@@ -47,7 +47,7 @@
       "name": "pr-watch",
       "source": "./plugins/pr-watch",
       "description": "Mod: watches PRs from a session; when CI fails or a merge conflict appears it wakes this same session to fix it and push, with no cloud session. A footer button sums up the PRs and opens a side panel to watch, check and stop them.",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "category": "mod"
     },
     {

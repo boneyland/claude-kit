@@ -131,7 +131,9 @@ async function listText($: EngineInterface): Promise<string> {
 // The actions /pr-watch and the panel share; each resolves its reply text.
 
 // Starts watching a PR (a number, a URL, or empty for this branch's PR).
-async function watchTarget($: EngineInterface, config: Config, target: string): Promise<string> {
+// `isLive`: the reply stands in the panel above the PR's own row, which keeps
+// updating; a status there would go stale beside it, so it names the PR alone.
+async function watchTarget($: EngineInterface, config: Config, target: string, isLive = false): Promise<string> {
   const status = await fetchStatus($, target)
   if (typeof status === 'string') return `Couldn't read ${target || "this branch's PR"} with gh: ${status}`
   if (status.state !== 'OPEN') return `#${status.number} is ${status.state.toLowerCase()}; nothing to watch.`
@@ -156,7 +158,9 @@ async function watchTarget($: EngineInterface, config: Config, target: string): 
   }
   const shown = (await read($, watched)).find(w => w.url === status.url) ?? newWatched(status)
 
-  return `${isAdded ? 'Watching' : 'Already watching'} ${describe({ ...shown, status })}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`
+  const what = isLive ? `#${status.number} ${status.repo}: ${status.title}` : describe({ ...shown, status })
+
+  return `${isAdded ? 'Watching' : 'Already watching'} ${what}\nChecks every ${Math.round(config.intervalMs / 1000)} s; /pr-watch stop ${status.number} ends it.`
 }
 
 // Stops watching `target`: 'all', a number or a URL.
@@ -275,6 +279,9 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
+    // After /clear (or a resume) the process goes on with no session.start to
+    // restart the timer, and the watched PRs are still listed: keep polling.
+    if (e.reason === 'clear' || e.reason === 'resume') return next(e)
     timer?.cancel()
     timer = undefined
 
@@ -373,13 +380,13 @@ export const register: Register = (on, options) => {
       act(async () => {
         const parsed = parseArgs(value)
 
-        return parsed.kind === 'watch' && parsed.target ? watchTarget($, config, parsed.target) : USAGE
+        return parsed.kind === 'watch' && parsed.target ? watchTarget($, config, parsed.target, true) : USAGE
       })
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={1}>
-          <Button key="watch-branch" label="Watch this branch's PR" onPress={() => act(() => watchTarget($, config, ''))} />
+          <Button key="watch-branch" label="Watch this branch's PR" onPress={() => act(() => watchTarget($, config, '', true))} />
           <Button
             key="check"
             label="Check now"

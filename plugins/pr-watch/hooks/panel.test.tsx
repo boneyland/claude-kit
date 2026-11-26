@@ -122,7 +122,9 @@ for (const surface of ['terminal'] as const) {
     await ui.press({ key: 'watch-branch' })
     await clock.settle()
     expect(world.ran[0]).toEqual(['gh', 'pr', 'view', '--json', expect.any(String)])
-    expect((await ui.find({ type: 'Text', text: /#12/ }))?.text).toContain('#12 ✗ 1 failed')
+    expect((await ui.find({ type: 'Text', text: /#12 ✗/ }))?.text).toContain('#12 ✗ 1 failed')
+    // the reply names the PR without a status, which would go stale beside the row
+    expect((await ui.find({ type: 'Text', text: /^Watching/ }))?.text).toMatch(/^Watching #12 acme\/app: Add thing\n/)
     expect(await ui.find({ type: 'Link', text: /CI \/ test/ })).toBeDefined()
     const links = (await ui.findAll({ type: 'Link' })).map(l => l.props.href)
     expect(links).toContain(URL)
