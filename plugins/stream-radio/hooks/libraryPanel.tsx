@@ -15,8 +15,8 @@ import type { Host } from '../core/host'
 import type { QueueEntry } from '../core/stored'
 
 export const POLL_MS = 2000
-// Recently played rows drawn at most; a click still plays the whole history.
-const HISTORY_ROWS = 200
+// Song rows a list draws at most; a click still plays the whole list.
+const MAX_ROWS = 200
 const QUEUE_VIEW = 'queue'
 const HISTORY_VIEW = 'history'
 const FAV_VIEW = 'fav'
@@ -42,6 +42,9 @@ const nameOfView = (view: string) => (view === FAV_VIEW ? FAVOURITES : view.star
 const UNSEEN = { fav: -1, dir: -1, view: '', shown: -1 }
 let seen = { ...UNSEEN }
 let favKeys = new Set<string>()
+// Each checklist row's file mtime as last read: a list edited in place moves
+// only its own.
+let checkTimes = new Map<string, number>()
 let poller: Timer | undefined
 let lastTitle: string | undefined
 let running: Promise<void> | undefined
@@ -95,9 +98,14 @@ async function look($: EngineInterface, h: Host) {
     }
   } else seen.view = QUEUE_VIEW
   const open = await read($, checklist)
-  if (open.songs.length > 0 && (isFavChanged || isDirChanged)) {
-    const rows = await checklistRows(h, open.songs)
-    await update($, checklist, c => (c.songs === open.songs || same(c.songs, open.songs) ? { ...c, rows } : c))
+  if (open.songs.length > 0) {
+    const times = new Map(await Promise.all(open.rows.map(async r => [r.name, await listMtime(h, r.name)] as const)))
+    const isMoved = [...times].some(([name, t]) => checkTimes.get(name) !== t)
+    checkTimes = times
+    if (isFavChanged || isDirChanged || isMoved) {
+      const rows = await checklistRows(h, open.songs)
+      await update($, checklist, c => (c.songs === open.songs || same(c.songs, open.songs) ? { ...c, rows } : c))
+    }
   }
   const song = await playingSong(h)
   const isFav = !!song && favKeys.has(songKey(song.path, home))
@@ -122,6 +130,7 @@ function refresh($: EngineInterface, h: Host): Promise<void> {
 // Everything read again: after a change made here.
 function changed($: EngineInterface, h: Host): Promise<void> {
   seen = { ...UNSEEN }
+  checkTimes = new Map()
   return refresh($, h)
 }
 
@@ -143,6 +152,7 @@ export function stopLibraryPoll() {
 export async function resetLibrary($: EngineInterface) {
   stopLibraryPoll()
   seen = { ...UNSEEN }
+  checkTimes = new Map()
   await update($, listView, () => QUEUE_VIEW)
   await update($, shownList, () => NO_LIST)
   await update($, checklist, () => NO_CHECKLIST)
@@ -290,7 +300,7 @@ export async function libraryParts(
   const isHistory = view === HISTORY_VIEW
   const now = isHistory ? Math.floor((await host().now()) / 1000) : 0
   const songs = shown.view === view ? shown.songs : []
-  const rows = isHistory ? songs.slice(0, HISTORY_ROWS) : songs
+  const rows = songs.slice(0, MAX_ROWS)
   const play = (i: number) =>
     act(async () => {
       // the list as shown when clicked

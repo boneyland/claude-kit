@@ -211,3 +211,37 @@ test('the panel polls its lists every 2 s while open, and starts at the queue ea
   await again.unmount()
   await $.command.run({ command: 'stream', args: 'panel' } as never)
 })
+
+test('an open checklist shows a list edited in place within a poll', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on)
+  world.files[ROAD] = '#EXTM3U\n'
+  await stopped($, world, clock)
+  await $.command.run({ command: 'stream', args: 'panel' } as never)
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'add-to' })
+  await clock.advance(10)
+  const label = async () => (await pane.find({ type: 'Button', key: 'check-Road trip' }))?.props.label
+  expect(await label()).toBe('  Road trip')
+  // an editor writes the file in place: its mtime moves, the folder's does not
+  world.files[ROAD] = `#EXTM3U\n${B}\n`
+  world.times[ROAD] = 9
+  await clock.advance(2000)
+  expect(await label()).toBe('✓ Road trip')
+  await pane.unmount()
+  await $.command.run({ command: 'stream', args: 'panel' } as never)
+})
+
+test('a long playlist draws 200 rows, then says how many more', async ($, on) => {
+  const clock = mock.clock(on)
+  const world = engine(on)
+  world.files[ROAD] = '#EXTM3U\n' + [...Array(205).keys()].map(i => `/m/s${i}.mp3\n`).join('')
+  await stopped($, world, clock)
+  const pane = await $.ui.mount(PANE)
+  await pane.select({ key: 'list', value: 'list:Road trip' })
+  await clock.advance(10)
+  expect((await pane.find({ type: 'Button', key: 'song-199' }))?.props.label).toBe('200. s199.mp3')
+  expect(await pane.find({ type: 'Button', key: 'song-200' })).toBe(undefined)
+  expect(await pane.find({ type: 'Text', text: 'and 5 more' })).toBeTruthy()
+  await pane.unmount()
+})
