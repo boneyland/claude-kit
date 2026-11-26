@@ -3,8 +3,8 @@
 You are auditing one component of the claude-kit repo (`/home/yh/projects/claude-kit`):
 
 **Component:** `{{COMPONENT}}`
-**Checklists:** `{{CHECKLISTS}}` (six files: correctness, security, efficiency,
-cleanups, docs-drift, repo-rules)
+**Checklists:** `{{CHECKLISTS}}` (seven files: correctness, security, efficiency,
+consistency, cleanups, docs-drift, repo-rules)
 {{EXCLUDE}}
 
 This is an audit of the whole component as it stands, not of a diff.
@@ -32,7 +32,7 @@ This is an audit of the whole component as it stands, not of a diff.
    in full. Read tests only to learn what the code is meant to do; tests are
    not themselves under audit except for docs-drift #6.
 3. Work through each checklist in order — correctness, security, efficiency,
-   cleanups, docs-drift, repo-rules — check by check. For each check, look for
+   consistency, cleanups, docs-drift, repo-rules — check by check. For each check, look for
    it across the whole component before moving on.
    For what the Claude Code engine's API does (`$.session.messages`, `$.ui.*`,
    hook events and their limits), grep the generated types in
@@ -52,7 +52,7 @@ nothing before or after. Number nothing; the conductor numbers the report.
 
 ```
 ### <short title>
-- area: <correctness|security|efficiency|cleanups|docs-drift|repo-rules> #<check number>
+- area: <correctness|security|efficiency|consistency|cleanups|docs-drift|repo-rules> #<check number>
 - where: <repo-relative path>:<line>
 - severity: <security|bug|drift|cleanup>
 - what: <the defect, one or two sentences>
@@ -67,7 +67,7 @@ nothing before or after. Number nothing; the conductor numbers the report.
 ```
 
 Severity: `security` for anything in the security checklist with a real path
-to harm; `bug` for wrong results, crashes, hangs, leaks and repo-rule
-breaches; `drift` for words that disagree with the code; `cleanup` for the
+to harm; `bug` for wrong results, crashes, hangs, leaks, repo-rule
+breaches, and copies or lists that already disagree (consistency); `drift` for words that disagree with the code; `cleanup` for the
 rest. If you found nothing in an area, say nothing about it. If you found
 nothing at all, return only `## Not covered` (with `- nothing` if so).

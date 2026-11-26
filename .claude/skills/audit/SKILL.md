@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Audit a whole component of claude-kit (one plugin, the stream-radio TUI app, stream-radio's shared core, or the whole repo) against written checklists — correctness, security, efficiency, cleanups, docs drift and this repo's own rules. Verifies every finding, writes a numbered report to docs/audits/, prints a short summary and waits for the user to say what to fix. For whole components as they stand, not diffs; for a diff or PR use /code-review.
+description: Audit a whole component of claude-kit (one plugin, the stream-radio TUI app, stream-radio's shared core, or the whole repo) against written checklists — correctness, security, efficiency, consistency (drifted copies, hand-synced lists), cleanups, docs drift and this repo's own rules. Verifies every finding, writes a numbered report to docs/audits/, prints a short summary and waits for the user to say what to fix. For whole components as they stand, not diffs; for a diff or PR use /code-review.
 ---
 
 # Audit
@@ -115,7 +115,7 @@ add `-2`, `-3`, ….
 - Date: YYYY-MM-DD
 - Commit: <git rev-parse --short HEAD>
 - Components: <name (lines)>, …
-- Checklists: correctness, security, efficiency, cleanups, docs-drift, repo-rules
+- Checklists: correctness, security, efficiency, consistency, cleanups, docs-drift, repo-rules
 - Audited by: <the main agent | N subagents>
 - Findings: <n> (<x> security, <y> bug, <z> drift, <w> cleanup); <d> dropped at verify
 
