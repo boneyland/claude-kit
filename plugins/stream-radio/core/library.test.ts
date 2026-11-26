@@ -8,6 +8,8 @@ import {
   moveSongs,
   parseHistory,
   parseList,
+  placesOf,
+  removeAt,
   removeSongs,
   songKey,
   songsOf,
@@ -156,4 +158,23 @@ test('checkName refuses names over 200 bytes', () => {
   expect(checkName('a'.repeat(200), [])).toBe('')
   expect(checkName('a'.repeat(201), [])).toBe('That name is too long.')
   expect(checkName('★'.repeat(67), [])).toBe('That name is too long.')
+})
+
+test('lines between #EXTINF and its song stay between them on a rewrite', () => {
+  const text = '#EXTM3U\n#EXTINF:5,A\n#EXTVLCOPT:x\na.mp3\n#EXTINF:1,orphan\n# note\n#EXTINF:2,B\nb.mp3\n'
+  const f = parseList(text, '/m')
+  expect(songsOf(f)).toEqual([song('/m/a.mp3', 'A'), song('/m/b.mp3', 'B')])
+  expect(listText(f)).toBe(text)
+  expect(listText(toggle(f, [song('/c.mp3')], ''))).toBe(text + '/c.mp3\n')
+  // a move takes them with the song
+  expect(listText(moveSongs(f, [1, 0]))).toBe('#EXTM3U\n#EXTINF:1,orphan\n# note\n#EXTINF:2,B\nb.mp3\n#EXTINF:5,A\n#EXTVLCOPT:x\na.mp3\n')
+})
+
+test('placesOf and removeAt act on one copy of a song listed twice', () => {
+  const f = parseList('#EXTM3U\n/a.mp3\n/b.mp3\n/a.mp3\n', '/')
+  expect(placesOf(f, [{ index: 2, song: song('/a.mp3') }], '')).toEqual([2])
+  expect(listText(removeAt(f, placesOf(f, [{ index: 2, song: song('/a.mp3') }], '')).file)).toBe('#EXTM3U\n/a.mp3\n/b.mp3\n')
+  // the file changed since: found by song instead, never the same row twice
+  expect(placesOf(f, [{ index: 1, song: song('/a.mp3') }, { index: 9, song: song('/a.mp3') }], '')).toEqual([0, 2])
+  expect(placesOf(f, [{ index: 0, song: song('/gone.mp3') }], '')).toEqual([])
 })

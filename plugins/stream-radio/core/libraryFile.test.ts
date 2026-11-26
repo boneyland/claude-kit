@@ -10,6 +10,7 @@ import {
   listMtime,
   listPlaylists,
   NO_LIBRARY,
+  playlistNames,
   GONE,
   readHistory,
   readPlaylist,
@@ -42,6 +43,9 @@ function hostOf(files: Record<string, string> = {}, folder = false) {
         files[to] = files[from]!
         mtimes[to] = clock.now
         delete files[from]
+      } else if (argv[0] === 'sh' && argv[2] === ': > "$1"') {
+        files[argv[4]!] = ''
+        mtimes[argv[4]!] = clock.now
       } else if (argv[0] === 'sh') {
         const path = argv[5]!
         if (path in files) return { exitCode: 1, stdout: '', stderr: 'exists' }
@@ -183,6 +187,12 @@ test('an edit that must find the list does not make a deleted one again', async 
   expect(Object.keys(files).filter(f => f.endsWith('.m3u'))).toEqual([])
 })
 
+test('playlistNames lists the folder without reading a file', async () => {
+  const { h } = hostOf({ [`${LIB}/B.m3u`]: '#EXTM3U\n', [`${LIB}/a.m3u`]: '#EXTM3U\n' })
+  const counted = { ...h, fs: { ...h.fs, read: async () => { throw new Error('read') } } } as Host
+  expect(await playlistNames(counted)).toEqual([FAVOURITES, 'a', 'B'])
+})
+
 test('delete and rename refuse Favourites', async () => {
   const { h, files } = hostOf({ [`${LIB}/${FAVOURITES}.m3u`]: '/a\n' })
   expect(await deletePlaylist(h, FAVOURITES)).not.toBe('')
@@ -198,9 +208,10 @@ test('history skips broken lines, newest first; missing file is empty', async ()
   expect((await readHistory(h)).map(p => p.path)).toEqual(['/b', '/a'])
 })
 
-test('clearHistory empties', async () => {
-  const { h, files } = hostOf({ '/data/history.jsonl': '{"at":1,"path":"/a","title":"A"}\n' })
+test('clearHistory empties the file in place, so an append from mpv is not lost', async () => {
+  const { h, files, ran } = hostOf({ '/data/history.jsonl': '{"at":1,"path":"/a","title":"A"}\n' })
   await clearHistory(h)
   expect(files['/data/history.jsonl']).toBe('')
+  expect(ran.some(a => a[0] === 'mv' && a.at(-1) === '/data/history.jsonl')).toBe(false)
   expect(await readHistory(h)).toEqual([])
 })

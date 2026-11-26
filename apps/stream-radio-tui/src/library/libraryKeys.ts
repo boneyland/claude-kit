@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { Host } from '@core/host'
-import { FAVOURITES, moveSongs, removeSongs, songKey, songsOf, type Song } from '@core/library'
+import { FAVOURITES, moveSongs, placesOf, removeAt, songKey, songsOf, type Song } from '@core/library'
 import { GONE, planList, playList } from '@core/library-actions'
 import { clearHistory, createPlaylist, deletePlaylist, editPlaylist, renamePlaylist } from '@core/libraryFile'
 import { baseName } from '@core/nowplaying'
@@ -198,33 +198,41 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const sortReverse = () => sortBy({ field: sort?.field ?? 'title', isReversed: !sort?.isReversed })
 
   // The picked songs (or the cursor's) moved as `make` says, in the file as it
-  // is under the lock: by which songs they are, not the places they had when
-  // keys were pressed, so a change by another program is neither lost nor undone.
+  // is under the lock: by which rows they are, found again by song when the
+  // file changed (placesOf), so a change by another program is neither lost nor
+  // undone, and moving one copy of a song listed twice moves only that copy.
   const moveChosen = (make: (keys: string[], from: number[], keyOf: (s: Song) => string) => Moved) => {
     const o = lib.open
     if (!o || o.kind === 'history') return
     if (sort) return ui.say(whenSorted(sort))
     const was = sel()
-    const moving = chosenSongs().map(r => r.song)
-    if (!moving.length) return
+    const picks = chosenSongs().map(r => ({ index: r.index, song: r.song }))
+    if (!picks.length) return
     const cursorRow = rows[was.cursor]
-    const cursorSong = cursorRow?.kind === 'song' ? cursorRow.song : undefined
+    const cursorPick = cursorRow?.kind === 'song' ? { index: cursorRow.index, song: cursorRow.song } : undefined
     act(() =>
       inTurn(async () => {
         const home = await h.home().catch(() => '')
         const keyOf = (s: Song) => songKey(s.path, home)
-        const wanted = new Set(moving.map(keyOf))
+        // the moved songs' and the cursor's song indexes once moved
+        let moved: number[] = []
+        let cursorAt = -1
         const done = await editPlaylist(h, o.name, f => {
           const keys = songsOf(f).map(s => keyOf(s))
-          const from = keys.flatMap((k, i) => (wanted.has(k) ? [i] : []))
-          return from.length ? moveSongs(f, make(keys, from, keyOf).order) : f
+          const from = placesOf(f, picks, home).sort((a, b) => a - b)
+          if (!from.length) return f
+          const { order } = make(keys, from, keyOf)
+          moved = from.map(i => order.indexOf(i))
+          const c = cursorPick ? placesOf(f, [cursorPick], home)[0] : undefined
+          cursorAt = c === undefined ? -1 : order.indexOf(c)
+          return moveSongs(f, order)
         }, { mustExist: o.name !== FAVOURITES })
         if (typeof done === 'string') return done
         // the rows as they will be once the list is read again, the pick and cursor on the songs moved
         const after = libraryRows({ lists: lib.lists, isLoaded: lib.isLoaded, open: { ...o, songs: songsOf(done) } }, filterRef.current.trim())
-        const placeOf = (key: string) => after.findIndex(r => r.kind === 'song' && keyOf(r.song) === key)
-        const picked = after.flatMap((r, i) => (r.kind === 'song' && wanted.has(keyOf(r.song)) ? [i] : []))
-        const at = cursorSong ? placeOf(keyOf(cursorSong)) : -1
+        const rowOf = (index: number) => after.findIndex(r => r.kind === 'song' && r.index === index)
+        const picked = moved.map(rowOf).filter(i => i >= 0)
+        const at = cursorAt >= 0 ? rowOf(cursorAt) : -1
         const cursor = at >= 0 ? at : was.cursor
         setSelState({ cursor, anchor: cursor, picked: was.picked.length ? picked : [], forKey: after.map(rowKey).join('\n') })
         setTop(undefined)
@@ -258,11 +266,11 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     setSel(clear(sel()))
     act(() => inTurn(async () => (await addToQueue(h, config, songs.map(entryOf), where)) || `Added ${plural(songs.length, 'song')}${next}.`))
   }
-  // from: the songs a song's menu was opened on, and their list
-  const remove = (from?: { list: string; songs: readonly Song[] }) => {
+  // from: the songs a song's menu was opened on, their rows, and their list
+  const remove = (from?: { list: string; picks: readonly { index: number; song: Song }[] }) => {
     const o = lib.open
     const row = rows[sel().cursor]
-    if (from) return removeFrom(from.list, from.songs)
+    if (from) return removeFrom(from.list, from.picks)
     if (!o) {
       // a list at the top level: Delete playlist, which asks first
       if (row?.kind === 'history') return ui.say(HISTORY_READ_ONLY)
@@ -270,18 +278,19 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       return
     }
     if (o.kind === 'history') return ui.say(HISTORY_READ_ONLY)
-    removeFrom(o.name, chosenSongs().map(r => r.song))
+    removeFrom(o.name, chosenSongs().map(r => ({ index: r.index, song: r.song })))
   }
-  // Takes `songs` out of list `name`, by which songs they are (not where).
-  const removeFrom = (name: string, songs: readonly Song[]) => {
-    if (!songs.length) return
+  // Takes the rows `picks` out of list `name`: found by place, or by song when
+  // the file changed meanwhile; one copy of a song listed twice stays.
+  const removeFrom = (name: string, picks: readonly { index: number; song: Song }[]) => {
+    if (!picks.length) return
     setSel(clear(sel()))
     act(() =>
       inTurn(async () => {
         const home = await h.home().catch(() => '')
         let removed = 0
         const done = await editPlaylist(h, name, f => {
-          const r = removeSongs(f, songs, home)
+          const r = removeAt(f, placesOf(f, picks, home))
           removed = r.removed
           return r.file
         }, { mustExist: name !== FAVOURITES })
@@ -492,8 +501,10 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
       if (row?.kind === 'song' && o) {
         const s = sel()
         const chosen = s.picked.includes(at) ? s.picked : [at]
-        const songs = chosen.flatMap(i => (rows[i]?.kind === 'song' ? [(rows[i] as Extract<LibraryRow, { kind: 'song' }>).song] : []))
-        return songMenu({ all: shownSongs(), source: o.file ?? '', index: shownIndex(row.index), songs, isFavourite: ui.allFavourite(songs), ...(o.kind === 'history' ? {} : { list: o.name }) })
+        const chosenRows = chosen.flatMap(i => (rows[i]?.kind === 'song' ? [rows[i] as Extract<LibraryRow, { kind: 'song' }>] : []))
+        const songs = chosenRows.map(r => r.song)
+        const picks = chosenRows.map(r => ({ index: r.index, song: r.song }))
+        return songMenu({ all: shownSongs(), source: o.file ?? '', index: shownIndex(row.index), songs, picks, isFavourite: ui.allFavourite(songs), ...(o.kind === 'history' ? {} : { list: o.name }) })
       }
       if (row?.kind === 'history') return historyMenu(HISTORY)
       if (row?.kind === 'list') return row.info.name === FAVOURITES ? favouritesMenu(FAVOURITES) : listMenu(row.info.name)

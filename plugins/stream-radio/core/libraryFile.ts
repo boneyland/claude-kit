@@ -18,8 +18,35 @@ export const GONE = 'That playlist is gone.'
 // Neither XDG_DATA_HOME nor HOME is set: there is no folder to keep playlists in.
 export const NO_LIBRARY = 'No folder for playlists: set HOME or XDG_DATA_HOME.'
 
-// The playlists, Favourites first (listed even before its file exists), then
-// the rest by name. A folder that is not there lists only Favourites.
+// The playlists' names, Favourites first (listed even before its file
+// exists), then the rest by name, from the folder listing alone: no file is
+// read. A folder that is not there lists only Favourites.
+export async function playlistNames(h: Host): Promise<string[]> {
+  const dir = await h.libraryDir()
+  if (!dir) return []
+  return [FAVOURITES, ...(await namesIn(h, dir))]
+}
+
+// The playlist file a name is kept in ('' with no library folder).
+export async function playlistFile(h: Host, name: string): Promise<string> {
+  const dir = await h.libraryDir()
+  return dir ? fileOf(dir, name) : ''
+}
+
+async function namesIn(h: Host, dir: string): Promise<string[]> {
+  try {
+    return (await h.fs.list(dir))
+      .filter(e => e.kind !== 'dir' && !e.name.startsWith('.') && e.name.endsWith(EXT) && e.name.length > EXT.length)
+      .map(e => e.name.slice(0, -EXT.length))
+      .filter(n => n !== FAVOURITES)
+      .sort(byName)
+  } catch {
+    return [] // no folder yet
+  }
+}
+
+// The playlists as playlistNames orders them, each with its song count and
+// modification time: every file is read, so only for views that show them.
 export async function listPlaylists(h: Host): Promise<ListInfo[]> {
   const dir = await h.libraryDir()
   if (!dir) return []
@@ -32,17 +59,7 @@ export async function listPlaylists(h: Host): Promise<ListInfo[]> {
       return { name, file, count: 0, mtimeMs: 0 }
     }
   }
-  let names: string[] = []
-  try {
-    names = (await h.fs.list(dir))
-      .filter(e => e.kind !== 'dir' && !e.name.startsWith('.') && e.name.endsWith(EXT) && e.name.length > EXT.length)
-      .map(e => e.name.slice(0, -EXT.length))
-      .filter(n => n !== FAVOURITES)
-      .sort(byName)
-  } catch {
-    // no folder yet
-  }
-  return Promise.all([FAVOURITES, ...names].map(info))
+  return Promise.all([FAVOURITES, ...(await namesIn(h, dir))].map(info))
 }
 
 // Never throws: a playlist that is missing or cannot be read is empty.
@@ -101,7 +118,7 @@ export async function createPlaylist(h: Host, name: string, songs: readonly Song
   if (!dir) return NO_LIBRARY
   const p = await paths(h)
   const done = await withFileLock(h, p.libraryLock, QUEUE_LOCK_STALE_MS, async () => {
-    const bad = checkName(name, (await listPlaylists(h)).map(l => l.name))
+    const bad = checkName(name, await playlistNames(h))
     if (bad) return bad
     await h.run(['mkdir', '-p', dir], { timeoutMs: 3000 })
     await writeWhole(h, fileOf(dir, name), listText({ lines: songs.map(song => ({ kind: 'song' as const, song })) }))
@@ -116,7 +133,7 @@ export async function renamePlaylist(h: Host, from: string, to: string): Promise
   if (!dir) return NO_LIBRARY
   const p = await paths(h)
   const done = await withFileLock(h, p.libraryLock, QUEUE_LOCK_STALE_MS, async () => {
-    const existing = (await listPlaylists(h)).map(l => l.name)
+    const existing = await playlistNames(h)
     if (!existing.includes(from)) return `There is no playlist called "${from}".`
     const bad = checkName(to, existing.filter(n => n !== from))
     if (bad) return bad
@@ -179,6 +196,10 @@ export async function readHistory(h: Host): Promise<Play[]> {
   }
 }
 
+// Emptied in place, not replaced: mpv's history script appends to the file
+// (O_APPEND), so a play it records as this runs lands in the emptied file
+// instead of in a replaced one nobody reads.
 export async function clearHistory(h: Host): Promise<void> {
-  await writeWhole(h, (await paths(h)).history, '')
+  const r = await h.run(['sh', '-c', ': > "$1"', 'sh', (await paths(h)).history], { timeoutMs: 3000 })
+  if (r.exitCode !== 0) throw new Error(`Could not clear Recently played: ${r.stderr.trim()}`)
 }

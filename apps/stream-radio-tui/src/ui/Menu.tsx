@@ -75,17 +75,18 @@ export const historyMenu = (name: string): readonly MenuItem[] => [...listPlay(n
 
 // Playlists, on songs inside a list, as it was when the menu opened: `all`
 // its songs, `source` its file, `index` the cursor's song, `songs` the ones
-// the menu acts on (the picked, or the cursor's). Each item carries them, so
+// the menu acts on (the picked, or the cursor's), and `picks` their rows (song
+// index in the file, and song) for Remove. Each item carries them, so
 // a poll that changes the list meanwhile can't change what it plays or
 // removes. Recently played's (no `list`) can't be removed. isFavourite: all of
 // `songs` are favourites.
-export type SongMenuOf = { all: readonly Song[]; source: string; index: number; songs: readonly Song[]; list?: string; isFavourite: boolean }
-export function songMenu({ all, source, index, songs, list, isFavourite }: SongMenuOf): readonly MenuItem[] {
+export type SongMenuOf = { all: readonly Song[]; source: string; index: number; songs: readonly Song[]; picks?: readonly { index: number; song: Song }[]; list?: string; isFavourite: boolean }
+export function songMenu({ all, source, index, songs, picks, list, isFavourite }: SongMenuOf): readonly MenuItem[] {
   return [
     { label: 'Play from here', key: 'Enter', action: { kind: 'enter', play: { songs: all, source, index } } },
     { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end', songs } },
     { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next', songs } },
-    ...(list === undefined ? [] : [{ label: 'Remove from playlist', key: 'Del', action: { kind: 'remove', from: { list, songs } } } as const]),
+    ...(list === undefined ? [] : [{ label: 'Remove from playlist', key: 'Del', action: { kind: 'remove', from: { list, picks: picks ?? songs.map(song => ({ index: -1, song })) } } } as const]),
     ...libraryItems({ songs, isFavourite }),
   ]
 }

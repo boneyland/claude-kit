@@ -3,7 +3,7 @@
 // the history as text. Each answers with the line to show.
 import type { Host } from './host'
 import { FAVOURITES, addMissing, markOf, removeSongs, songsOf, toggle, whenPlayed, type Mark, type Play, type Song } from './library'
-import { GONE, editPlaylist, listPlaylists, readHistory, readPlaylist } from './libraryFile'
+import { GONE, editPlaylist, playlistFile, playlistNames, readHistory, readPlaylist } from './libraryFile'
 import { baseName } from './nowplaying'
 import { playEntries, type PlayerConfig } from './player'
 import { played, type QueueEntry } from './stored'
@@ -12,21 +12,23 @@ import { readPlace, readStored } from './storedFile'
 const NOTHING = 'Nothing playing.'
 
 // The queue's current entry (the first when the place has none), as a song;
-// a chapter video is its whole entry. Undefined with an empty queue.
+// a chapter video is its whole entry. Undefined with an empty queue. Its title
+// is only the entry's own: what the footer shows can be a status line
+// (connecting…) or, for a radio station, the track now on air.
 export async function playingSong(h: Host): Promise<Song | undefined> {
   const [q, place] = await Promise.all([readStored(h), readPlace(h)])
   const byPlace = place.current === null ? undefined : q.entries.find(e => e.id === place.current)
   const entry = byPlace ?? played(q)[0]
   if (!entry) return undefined
-  const title = entry.title || (byPlace ? await h.vars.read('playing').catch(() => '') : '')
-  return title ? { path: entry.path, title } : { path: entry.path }
+  return entry.title ? { path: entry.path, title: entry.title } : { path: entry.path }
 }
 
 // The playlist a typed name means (fav is Favourites; any case), or undefined.
 async function resolve(h: Host, typed: string): Promise<{ name: string; file: string } | undefined> {
   const low = typed.trim().toLowerCase()
   const want = low === 'fav' ? FAVOURITES.toLowerCase() : low
-  return (await listPlaylists(h)).find(l => l.name.toLowerCase() === want)
+  const name = (await playlistNames(h)).find(n => n.toLowerCase() === want)
+  return name === undefined ? undefined : { name, file: await playlistFile(h, name) }
 }
 
 export async function toggleFavourite(h: Host, songs: readonly Song[]): Promise<string> {
@@ -116,8 +118,8 @@ export { GONE }
 // Favourites, then the saved playlists by name, each marked from its file as it is now.
 export async function checklistRows(h: Host, songs: readonly Song[]): Promise<ChecklistRow[]> {
   const home = await h.home().catch(() => '')
-  const lists = await listPlaylists(h)
-  return Promise.all(lists.map(async l => ({ name: l.name, mark: markOf(await readPlaylist(h, l.name), songs, home) })))
+  const names = await playlistNames(h)
+  return Promise.all(names.map(async name => ({ name, mark: markOf(await readPlaylist(h, name), songs, home) })))
 }
 
 // A checklist row chosen: blank or – adds the songs missing, ✓ takes them all

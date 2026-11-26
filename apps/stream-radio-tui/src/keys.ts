@@ -50,7 +50,7 @@ export type Action =
   // the picked songs (or the cursor's) one place up (-1) or down
   | { kind: 'move'; by: 1 | -1 }
   // from: a Playlists song's menu, the songs it was opened on and their list
-  | { kind: 'remove'; from?: { list: string; songs: readonly Song[] } }
+  | { kind: 'remove'; from?: { list: string; picks: readonly { index: number; song: Song }[] } }
   // the whole queue, stopping the player; from a key, only when pressed twice
   | { kind: 'clearQueue'; isSure?: boolean }
   // the cursor a row up or down, picking the rows from the anchor

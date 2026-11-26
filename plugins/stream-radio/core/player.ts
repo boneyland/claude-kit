@@ -1296,24 +1296,26 @@ export async function locate(h: Host, args: string, fallback: string) {
   // Home and the session's folder only for a path that needs them: a URL or a
   // word like `stop` reads neither.
   let parsed = parseArgs(args, fallback)
-  if (parsed.kind === 'error' || (parsed.kind === 'play' && parsed.isLocal)) {
-    const home = await h.home().catch(() => '')
-    const cwd = await h.cwd().catch(() => '')
-    parsed = parseArgs(args, fallback, { home, cwd })
-  } else if (LIBRARY_WORDS.has(parsed.kind)) {
-    // A file or folder in the session's folder named like a library word
-    // (`history`, `play list.m3u`) still plays as a path, as it did before the
-    // words existed; so does `play <name>` when <name> is a song file or there.
+  const word = args.trim()
+  // A library word, or one of add / remove / play with nothing after it (a
+  // usage error): a file or folder of that name in the session's folder (a
+  // folder `history`, a file `play list.m3u`, a folder `play`) still plays as
+  // a path, as it did before the words existed.
+  const isLibraryWord = LIBRARY_WORDS.has(parsed.kind) || (parsed.kind === 'error' && /^(add|remove|play)\b/.test(word))
+  if (parsed.kind === 'error' || (parsed.kind === 'play' && parsed.isLocal) || isLibraryWord) {
     const home = await h.home().catch(() => '')
     const cwd = await h.cwd().catch(() => '')
     const where = { home, cwd }
-    const there = async (name: string) => {
-      const at = resolveTarget(name, where)
-      return at.kind === 'play' && at.isLocal && (await h.fs.exists(at.url).catch(() => false)) ? at : undefined
-    }
-    const whole = await there(args.trim())
-    if (whole) return whole
-    if (parsed.kind === 'playList' && (isPlayable(baseName(parsed.list)) || (await there(parsed.list)))) parsed = resolveTarget(parsed.list, where)
+    if (isLibraryWord) {
+      const there = async (name: string) => {
+        const at = resolveTarget(name, where)
+        return at.kind === 'play' && at.isLocal && (await h.fs.exists(at.url).catch(() => false)) ? at : undefined
+      }
+      const whole = await there(word)
+      if (whole) return whole
+      // `play <name>` plays <name> as a path when it is a song file or is there
+      if (parsed.kind === 'playList' && (isPlayable(baseName(parsed.list)) || (await there(parsed.list)))) parsed = resolveTarget(parsed.list, where)
+    } else parsed = parseArgs(args, fallback, where)
   }
   if (parsed.kind === 'play' && parsed.isLocal && !(await h.fs.exists(parsed.url).catch(() => false))) {
     return { kind: 'error' as const, text: `No such file or folder: ${parsed.url}` }

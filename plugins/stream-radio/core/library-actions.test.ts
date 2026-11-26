@@ -51,7 +51,7 @@ function hostOf(files: Record<string, string> = {}, playing = '') {
 
 const song = { path: '/h/M/a.mp3', title: 'A' }
 
-test('playingSong: the place picks, the first is the fallback, empty is undefined', async () => {
+test('playingSong: the place picks, the first is the fallback, empty is undefined; only the entry titles it', async () => {
   const q = [{ id: '1.0', path: '/m/a.mp3' }, { id: '1.1', path: '/m/b.mp3', title: 'B' }, { id: '1.2', path: 'https://x/y' }]
   const { h, files } = hostOf({}, 'Now')
   expect(await playingSong(h)).toBeUndefined()
@@ -60,7 +60,8 @@ test('playingSong: the place picks, the first is the fallback, empty is undefine
   files['/data/queue-place.json'] = JSON.stringify({ rev: 1, current: '1.1', seconds: 3 })
   expect(await playingSong(h)).toEqual({ path: '/m/b.mp3', title: 'B' })
   files['/data/queue-place.json'] = JSON.stringify({ rev: 1, current: '1.2', seconds: 3 })
-  expect(await playingSong(h)).toEqual({ path: 'https://x/y', title: 'Now' })
+  // what the footer shows is not a title: a station's track on air, or connecting…
+  expect(await playingSong(h)).toEqual({ path: 'https://x/y' })
 })
 
 test('favourite toggles', async () => {

@@ -5,10 +5,11 @@
 import { videoOf } from './expand'
 
 export type Song = { path: string; title?: string }
-// A song read from a file keeps the lines it was written as (`text`, and the
-// #EXTINF line before it as `info`), so a rewrite puts them back unchanged:
-// relative paths, empty titles and durations included.
-export type ListLine = { kind: 'song'; song: Song; text?: string; info?: string } | { kind: 'other'; text: string }
+// A song read from a file keeps the lines it was written as (`text`, and in
+// `info` its #EXTINF line with any lines between that and the song, such as
+// #EXTVLCOPT), so a rewrite puts them back unchanged and in place: relative
+// paths, empty titles and durations included.
+export type ListLine = { kind: 'song'; song: Song; text?: string; info?: string[] } | { kind: 'other'; text: string }
 export type ListFile = { lines: ListLine[] }
 export type Mark = 'all' | 'some' | 'none'
 export type Play = { at: number; path: string; title: string; artist?: string; duration?: number }
@@ -71,29 +72,35 @@ export function songKey(path: string, home: string): string {
 export function parseList(text: string, dir: string): ListFile {
   const lines: ListLine[] = []
   let title: string | undefined
-  let infoLine = ''
-  const src = text.replace(/^﻿/, '').split(/\r\n|\n|\r/)
+  // from an #EXTINF line to the song it names
+  let held: string[] = []
+  const flush = () => {
+    for (const t of held) lines.push({ kind: 'other', text: t })
+    held = []
+  }
+  const src = text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/)
   if (src[src.length - 1] === '') src.pop()
   for (const raw of src) {
     const info = /^#EXTINF:[^,]*,(.*)$/i.exec(raw)
     if (info) {
       // a title with no song after it is kept as it was
-      if (infoLine) lines.push({ kind: 'other', text: infoLine })
-      infoLine = raw
+      flush()
+      held = [raw]
       title = info[1]!.trim() || undefined
     } else if (raw.trim() === '' || raw.trim().startsWith('#')) {
-      lines.push({ kind: 'other', text: raw })
+      if (held.length) held.push(raw)
+      else lines.push({ kind: 'other', text: raw })
     } else {
       const p = raw.trim()
       const path = isUrl(p) || p.startsWith('/') ? p : tidy(`${dir}/${p}`)
       const line: ListLine = { kind: 'song', song: title === undefined ? { path } : { path, title }, text: raw }
-      if (infoLine) line.info = infoLine
+      if (held.length) line.info = held
       lines.push(line)
       title = undefined
-      infoLine = ''
+      held = []
     }
   }
-  if (infoLine) lines.push({ kind: 'other', text: infoLine })
+  flush()
   return { lines }
 }
 
@@ -104,7 +111,7 @@ export function listText(f: ListFile): string {
   for (const l of f.lines) {
     if (l.kind === 'other') out.push(l.text)
     else if (l.text !== undefined) {
-      if (l.info !== undefined) out.push(l.info)
+      if (l.info) out.push(...l.info)
       out.push(l.text)
     } else {
       if (l.song.title) out.push(`#EXTINF:-1,${l.song.title.replace(/[\r\n]+/g, ' ')}`)
@@ -147,6 +154,33 @@ export function addMissing(f: ListFile, songs: readonly Song[], home: string): {
 export function removeSongs(f: ListFile, songs: readonly Song[], home: string): { file: ListFile; removed: number } {
   const gone = new Set(songs.map(s => songKey(s.path, home)))
   const lines = f.lines.filter(l => l.kind === 'other' || !gone.has(songKey(l.song.path, home)))
+  return { file: { lines }, removed: f.lines.length - lines.length }
+}
+
+// The song indexes `picks` mean in `f` as it is now: each pick's own place
+// while the same song is still there, else another copy of it not already
+// taken; a pick no longer in the list is left out. So acting on one row of a
+// song listed twice acts on that row only, and a list changed meanwhile by
+// another program still loses or moves the right song.
+export function placesOf(f: ListFile, picks: readonly { index: number; song: Song }[], home: string): number[] {
+  const keys = songsOf(f).map(s => songKey(s.path, home))
+  const taken = new Set<number>()
+  const out: number[] = []
+  for (const { index, song } of picks) {
+    const k = songKey(song.path, home)
+    const at = keys[index] === k && !taken.has(index) ? index : keys.findIndex((x, i) => x === k && !taken.has(i))
+    if (at < 0) continue
+    taken.add(at)
+    out.push(at)
+  }
+  return out
+}
+
+// The songs at song indexes `places` taken out, with the lines that belong to them.
+export function removeAt(f: ListFile, places: readonly number[]): { file: ListFile; removed: number } {
+  const gone = new Set(places)
+  let n = -1
+  const lines = f.lines.filter(l => l.kind === 'other' || !gone.has(++n))
   return { file: { lines }, removed: f.lines.length - lines.length }
 }
 

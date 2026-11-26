@@ -109,6 +109,13 @@ test('/stream play <file> and a folder named history play from the session folde
   expect(text(await $.command.run({ command: 'stream', args: 'history' } as never))).not.toContain('Nothing played yet.')
   await clock.advance(10)
   expect(world.urls.at(-1)).toBe('/repo/history')
+  // a folder named play, with nothing after the word
+  world.files['/repo/play'] = 'x'
+  expect(text(await $.command.run({ command: 'stream', args: 'play' } as never))).not.toContain('Usage')
+  await clock.advance(10)
+  expect(world.urls.at(-1)).toBe('/repo/play')
+  delete world.files['/repo/play']
+  expect(text(await $.command.run({ command: 'stream', args: 'add' } as never))).toContain('Usage: /stream add <playlist>')
   await $.command.run({ command: 'stream', args: 'stop' } as never)
   await clock.advance(10)
 })
