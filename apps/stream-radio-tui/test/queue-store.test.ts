@@ -168,7 +168,7 @@ test('empty queue: l brings back the cleared one, else the default', { timeout: 
   await stopPlaying(h, session.config)
   launches = []
   fs.writeFileSync(QUEUE_JSON, JSON.stringify({ version: 1, rev: 12, entries: [], arrangement: { kind: 'none' }, root: '', source: '' }))
-  expect(await resumeQueue(h, session.config, '')).toBe('Nothing has played yet, and there is no default stream.')
+  expect(await resumeQueue(h, session.config, '')).toBe('Queue is empty, nothing to play.')
   expect(launches).toEqual([])
 })
 
