@@ -19,7 +19,9 @@ import { edit, indexAt, type Line } from './lineEdit'
 import { CHAPTER_MENU, FILES_MENU, Menu, QUEUE_MENU, type MenuItem } from './Menu'
 import { useFiles } from '../files/useFiles'
 import { FILES_SORTS, FILES_SORT_LABEL } from '../files/tree'
-import { Tabs, type Tab } from './Tabs'
+import { stepTab, Tabs, type Tab } from './Tabs'
+import { NamePrompt, PlaylistsView } from './PlaylistsView'
+import { usePlaylistsTab } from '../library/libraryKeys'
 import { useTagBook } from './tagbook'
 import type { TagReader } from '../media/tags'
 import { filterFlat, flatRows } from '../queue/rows'
@@ -101,12 +103,18 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const filesSel = (): Selection => clamp(current(files.sel(), fKey) ?? NO_SELECTION, fRows.length)
   const setF = (sel: Selection) => files.setSel({ ...sel, forKey: fKey })
   const isEditable = queueTab.isEditable
+  const showMenu = (items: readonly MenuItem[], at: number) => {
+    setMenu({ items, at, choice: 0 })
+    setMode('menu')
+  }
+  const pl = usePlaylistsTab(h, session.config, tab === 'playlists', view.playing, { act, inTurn }, { mode: () => modeRef.current, setMode, showMenu, say: setNotice })
   // The tab showing: its selection, rows and scroll.
   const isQueueTab = () => tabRef.current === 'queue'
-  const curSel = () => (isQueueTab() ? qSel() : filesSel())
-  const setCurSel = (sel: Selection) => (isQueueTab() ? setQSel(sel) : setF(sel))
-  const curCount = () => (isQueueTab() ? rows.length : fRows.length)
-  const setCurTop = (top: number | undefined) => (isQueueTab() ? queueTab.setTop(top) : files.setTop(top))
+  const isPlaylistsTab = () => tabRef.current === 'playlists'
+  const curSel = () => (isQueueTab() ? qSel() : isPlaylistsTab() ? pl.sel() : filesSel())
+  const setCurSel = (sel: Selection) => (isQueueTab() ? setQSel(sel) : isPlaylistsTab() ? pl.setSel(sel) : setF(sel))
+  const curCount = () => (isQueueTab() ? rows.length : isPlaylistsTab() ? pl.rows.length : fRows.length)
+  const setCurTop = (top: number | undefined) => (isQueueTab() ? queueTab.setTop(top) : isPlaylistsTab() ? pl.setTop(top) : files.setTop(top))
   const selected = qSel().cursor
   const picked = qSel().picked
 
@@ -133,10 +141,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // The menu of row `at` of the tab showing; the cursor moves there unless it is picked.
   const openMenu = (at: number) => {
     const sel = curSel()
-    if (isQueueTab() ? !rows[at] : fRows[at]?.kind !== 'file' && fRows[at]?.kind !== 'dir') return
+    const items = isQueueTab() ? (rows[at] ? (isEditable() ? QUEUE_MENU : CHAPTER_MENU) : undefined) : isPlaylistsTab() ? pl.menuOf(at) : fRows[at]?.kind === 'file' || fRows[at]?.kind === 'dir' ? FILES_MENU : undefined
+    if (!items) return
     setCurSel(sel.picked.includes(at) ? { ...sel, cursor: at } : select(sel, at))
-    setMenu({ items: isQueueTab() ? (isEditable() ? QUEUE_MENU : CHAPTER_MENU) : FILES_MENU, at, choice: 0 })
-    setMode('menu')
+    showMenu(items, at)
   }
   const closeMenu = () => {
     setMenu(undefined)
@@ -160,6 +168,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const fileRow = fRows[at]
     const mode = modeRef.current
     const inRange = (n: number) => Math.max(0, Math.min(n, curCount() - 1))
+    if (isPlaylistsTab() && mode !== 'menu' && mode !== 'help' && pl.handle(a)) return
     switch (a.kind) {
       case 'up':
       case 'down':
@@ -230,7 +239,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         if (!isQueueTab() && fileRow?.kind === 'dir') files.setOpen(fileRow.path, a.kind === 'openFolder')
         return
       case 'tab':
-        return setTab(tabRef.current === 'files' ? 'queue' : 'files')
+        return setTab(stepTab(tabRef.current, a.dir))
       case 'pause':
         return act(async () => {
           // stopped with a queue: play it, its song from the start, as the
@@ -335,7 +344,19 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No queue or chapters.'
-  const textLine = mode === 'filter' ? `/ filter: ${view.filter}_` : mode === 'open' ? 'go to a folder or URL · Enter goes there · Esc leaves it' : filter ? `/ filter: ${filter}` : ' '
+  const shownFilter = tab === 'playlists' ? pl.filter : view.filter
+  const textLine =
+    mode === 'name' && pl.prompt ? (
+      <NamePrompt label={pl.prompt.label} line={pl.prompt.line} width={columns} />
+    ) : mode === 'filter' ? (
+      `/ filter: ${shownFilter}_`
+    ) : mode === 'open' ? (
+      'go to a folder or URL · Enter goes there · Esc leaves it'
+    ) : shownFilter.trim() ? (
+      `/ filter: ${shownFilter.trim()}`
+    ) : (
+      ' '
+    )
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
@@ -400,7 +421,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   }
   // A click outside the location being edited only leaves it, as Esc does.
   const leaveEdit = () => {
-    if (modeRef.current !== 'open') return false
+    if (modeRef.current !== 'open' && modeRef.current !== 'name') return false
     setMode('list')
     return true
   }
@@ -417,6 +438,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setLine({ text, at: isAsShown && x >= 0 ? indexAt({ text, at: 0 }, cells, x) : text.length })
     setMode('open')
   }
+  const plSel = pl.sel()
+  const plFirst = firstRow(plSel.cursor, pl.rows.length, listHeight, pl.top)
+  const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, listHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const onPlRow = (index: number, hit: Hit) => dismissMenu() || leaveEdit() || pl.onRow(index, hit, plFirst)
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
   // every file's tags when sorting by them; the shown ones' first
@@ -435,7 +460,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const menu = menuRef.current
   const menuTop = (() => {
     if (!menu) return 0
-    const rowY = 2 + menu.at - (tab === 'queue' ? first : fFirst)
+    const rowY = 2 + menu.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
     const height = menu.items.length + 2
     // below the row, or above it when that would run past the list
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
@@ -449,7 +474,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         sortLabel={
           tab === 'files'
             ? FILES_SORT_LABEL[files.sort]
-            : q.kind === 'playlist'
+            : tab === 'queue' && q.kind === 'playlist'
               ? queueTab.sort.field
                 ? SORT_LABEL[queueTab.sort.field]
                 : 'as queued'
@@ -475,6 +500,20 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           onRowRelease={onRowRelease}
           onMenu={openMenu}
           onWheel={onWheel}
+        />
+      ) : tab === 'playlists' ? (
+        <PlaylistsView
+          heading={pl.heading}
+          rows={pl.rows}
+          selected={plSel.cursor}
+          picked={new Set(plSel.picked)}
+          height={listHeight}
+          width={listWidth}
+          first={plFirst}
+          now={pl.lib.now}
+          onRow={onPlRow}
+          onMenu={openMenu}
+          onWheel={onPlWheel}
         />
       ) : (
         <FilesView
@@ -502,8 +541,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const statusLine =
     tab === 'queue' && drag && drag.to !== drag.from
       ? `Let go to move ${Math.max(1, picked.length)} song${picked.length > 1 ? 's' : ''} ${drag.to < rows.length ? `above ${rows[drag.to].number}. ${rows[drag.to].title}` : 'to the end'}.`
-      : (tab === 'queue' ? picked : fSel.picked).length
-        ? `${(tab === 'queue' ? picked : fSel.picked).length} picked · Space picks/unpicks · Esc clears`
+      : (tab === 'queue' ? picked : tab === 'playlists' ? plSel.picked : fSel.picked).length
+        ? `${(tab === 'queue' ? picked : tab === 'playlists' ? plSel.picked : fSel.picked).length} picked · Space picks/unpicks · Esc clears`
         : notice
   return (
     <Settling.Provider value={isSettling}>

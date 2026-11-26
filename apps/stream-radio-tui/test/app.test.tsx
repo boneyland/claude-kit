@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, onTestFinished, test, vi } from 'vitest'
+import nodeFs from 'node:fs'
+import os from 'node:os'
+import nodePath from 'node:path'
 import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import type { Host, PlayerKeys } from '@core/host'
 import * as player from '@core/player'
 import { moveBy, moveTo } from '@core/queue'
 import { DEFAULT_CONFIG } from '../src/config'
-import { memoryStore } from '../src/host-node'
+import { memoryStore, nodeHost } from '../src/host-node'
 import type { Session } from '../src/session'
 import { App } from '../src/ui/App'
 import type { Media } from '../src/media'
@@ -55,8 +58,15 @@ vi.mock('@core/player', async original => {
     clearQueue: vi.fn(async () => 'Cleared the queue. l brings it back.'),
     removeFromQueue: vi.fn(async () => ''),
     addToQueue: vi.fn(async () => ''),
+    playEntries: vi.fn(async () => ''),
   }
 })
+
+// One state folder for the whole file: core's paths() keeps the first it sees.
+const TMP = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'sr-app-'))
+const STATE = nodePath.join(TMP, 'state')
+nodeFs.mkdirSync(STATE, { recursive: true })
+afterAll(() => nodeFs.rmSync(TMP, { recursive: true, force: true }))
 
 const ALBUM = '/m/Album'
 const PLAYING: Partial<PlayerKeys> = {
@@ -94,14 +104,19 @@ const [PG_UP, PG_DOWN, HOME, END] = ['\x1b[5~', '\x1b[6~', '\x1b[H', '\x1b[F']
 
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
-type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']> }
+// library: the saved playlists' data folder (XDG_DATA_HOME), files read for real, and the poll's timer.
+type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']>; library?: { data: string; every: Host['every'] } }
 async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', extra: Extra = {}) {
-  const { media, graphics, rows, tags, fs } = extra
+  const { media, graphics, rows, tags, fs, library } = extra
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
   for (const [k, v] of Object.entries(state)) await vars.change(k as keyof PlayerKeys, () => v as never)
-  const host = { program: 'tui', vars, home: async () => home, fs, dataDir: async () => '/state' } as unknown as Host
+  const host = (
+    library
+      ? { ...nodeHost({ titleChanged: () => undefined, watching: () => undefined }, vars, { env: { HOME: home || TMP, XDG_DATA_HOME: library.data } }), home: async () => home, dataDir: async () => STATE, every: library.every }
+      : { program: 'tui', vars, home: async () => home, fs, dataDir: async () => STATE, libraryDir: async () => '', every: () => ({ cancel: () => undefined }) }
+  ) as unknown as Host
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -703,13 +718,30 @@ describe('tabs', () => {
 
   test('Tab and Shift-Tab switch; each tab keeps its own list', async () => {
     const { press, lines } = await show(100)
-    await press('\t')
+    await press('\x1b[Z')
     expect(tabHeading(lines())).toMatch(INV_FILES)
     expect(lines().join('\n')).not.toContain('Song three ·')
     expect(lines().join('\n')).not.toMatch(/\d+\. Song two/)
-    await press('\x1b[Z')
+    await press('\t')
     expect(tabHeading(lines())).toMatch(INV)
     expect(lines().join('\n')).toContain('2. Song two')
+  })
+
+  test('Tab cycles Files, Queue, Playlists; Shift-Tab goes back', async () => {
+    const { press, lines } = await show(100)
+    // each tab's list heading starts with its name
+    const current = () => tabHeading(lines()).trim().split(' ')[0]
+    expect(current()).toBe('Queue')
+    await press('\t')
+    expect(current()).toBe('Playlists')
+    await press('\t')
+    expect(current()).toBe('Files')
+    await press('\t')
+    expect(current()).toBe('Queue')
+    await press('\x1b[Z')
+    expect(current()).toBe('Files')
+    await press('\x1b[Z')
+    expect(current()).toBe('Playlists')
   })
 
   test('a click on a tab name switches', async () => {
@@ -812,7 +844,7 @@ describe('files', () => {
   })
 
   test('opens at the remembered folder', async () => {
-    const { lines } = await showFiles({ '/state/tui-files.json': JSON.stringify({ folder: '/other' }) })
+    const { lines } = await showFiles({ [`${STATE}/tui-files.json`]: JSON.stringify({ folder: '/other' }) })
     await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
     expect(lines().join('\n')).toContain('x.mp3')
   })
@@ -823,7 +855,7 @@ describe('files', () => {
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     await click(where('../').x, where('../').y)
     await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
-    expect(JSON.parse(saved['/state/tui-files.json'])).toEqual({ folder: '/h' })
+    expect(JSON.parse(saved[`${STATE}/tui-files.json`])).toEqual({ folder: '/h' })
   })
 
   test('U goes up a folder, as ../ does', async () => {
@@ -1125,7 +1157,7 @@ describe('youtube in files', () => {
 describe('pr review fixes', () => {
   test('a double-click on ../ goes up one folder, not two', async () => {
     const { lines, dblclick, where } = await show(100, { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }, '', '/h', {
-      fs: treeFs({ ...BASE_TREE, '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }] }, { '/state/tui-files.json': JSON.stringify({ folder: '/h/Music/Album' }) }),
+      fs: treeFs({ ...BASE_TREE, '/h/Music/Album': [{ name: '01 One.flac', kind: 'file' }] }, { [`${STATE}/tui-files.json`]: JSON.stringify({ folder: '/h/Music/Album' }) }),
     })
     await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
     await dblclick(where('../').x, where('../').y)
@@ -1209,7 +1241,7 @@ describe('queue editing', () => {
 
   test("C in Files doesn't clear the queue", async () => {
     const { press } = await show(100, FIVE)
-    await press('\t', 'C', 'C')
+    await press('\x1b[Z', 'C', 'C')
     expect(player.clearQueue).not.toHaveBeenCalled()
   })
 
@@ -1608,7 +1640,7 @@ describe('the key list', () => {
     let all = lines().join('\n')
     for (const text of ['Queue tab', 'move the picked songs', 'remove the picked songs', 'switch tabs', 'pick rows', 'Ctrl-click']) expect(all).toContain(text)
     expect(all).not.toContain('Files tab')
-    await press(ESC, '\t', '?')
+    await press(ESC, '\x1b[Z', '?')
     all = lines().join('\n')
     for (const text of ['Files tab', 'add to queue', 'play next', 'go up', 'switch tabs']) expect(all).toContain(text)
     expect(all).not.toContain('remove the picked songs')
@@ -1617,7 +1649,7 @@ describe('the key list', () => {
   test('the hints follow the tab', async () => {
     const { press, lines } = await show(100)
     expect(lines().join('\n')).toMatch(/u\/d move.*Del remove/)
-    await press('\t')
+    await press('\x1b[Z')
     expect(lines().join('\n')).toMatch(/a add.*A play next/)
   })
 
@@ -1677,5 +1709,227 @@ describe('audit fixes', () => {
     const all = lines().join('\n')
     expect(all).toContain('Enter goes there')
     expect(all).not.toContain('Enter plays it')
+  })
+})
+
+describe('the Playlists tab', () => {
+  const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
+  const DEL = '\x1b[3~'
+  const HISTORY = nodePath.join(STATE, 'history.jsonl')
+  afterEach(() => nodeFs.rmSync(HISTORY, { force: true }))
+  const m3u = (...songs: [string, string][]) => `#EXTM3U\n${songs.map(([p, t]) => `#EXTINF:-1,${t}\n${p}`).join('\n')}\n`
+  const FAV = '★ Favourites'
+
+  // A data folder holding `files` (name → .m3u text), and a poll timer turned by hand.
+  function library(files: Record<string, string> = {}) {
+    const data = nodeFs.mkdtempSync(nodePath.join(TMP, 'data-'))
+    const dir = nodePath.join(data, 'stream-radio', 'playlists')
+    nodeFs.mkdirSync(dir, { recursive: true })
+    for (const [name, text] of Object.entries(files)) nodeFs.writeFileSync(nodePath.join(dir, `${name}.m3u`), text)
+    const timers = new Set<{ ms: number; fn: () => void }>()
+    const every: Host['every'] = (ms, fn) => {
+      const t = { ms, fn }
+      timers.add(t)
+      return { cancel: () => void timers.delete(t) }
+    }
+    const file = (name: string) => nodePath.join(dir, `${name}.m3u`)
+    return { data, dir, file, every, timers, tick: () => [...timers].forEach(t => t.fn()) }
+  }
+  const FILES = {
+    [FAV]: m3u(['/m/a.mp3', 'Fav A'], ['/m/b.mp3', 'Fav B']),
+    'Road trip': m3u(['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two'], ['/m/r3.mp3', 'Road three']),
+    'Late night': m3u(['/m/l1.mp3', 'Late one']),
+  }
+  async function open(files: Record<string, string> = FILES) {
+    const lib = library(files)
+    const ui = await show(100, PLAYING, '', '', { library: lib })
+    await ui.press('\t')
+    await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
+    return { ...ui, lib }
+  }
+  const rowsText = (all: string[]) => all.join('\n')
+
+  test('the top level: Favourites with its count, Recently played, the lists, + New playlist…', async () => {
+    const { lines } = await open()
+    const all = lines()
+    const order = ['★ Favourites', 'Recently played', 'Late night', 'Road trip', '+ New playlist…'].map(t => lineOf(all, new RegExp(t.replace(/[+…]/g, '.'))))
+    expect(order.every((y, i) => y > 0 && (i === 0 || y > order[i - 1]))).toBe(true)
+    expect(all[order[0]]).toMatch(/★ Favourites\s+· 2/)
+    expect(all[order[3]]).toMatch(/Road trip\s+· 3/)
+    expect(all[order[2]]).toMatch(/Late night\s+· 1/)
+  })
+
+  test('Enter opens a list, ../ first and its name as the heading; ←, U and ../ go back', async () => {
+    const { press, lines } = await open()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    expect(lines().some(l => /^\s*Road trip/.test(l))).toBe(true)
+    expect(lines().some(l => l.includes('../'))).toBe(true)
+    await press('\x1b[D')
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('+ New playlist…'))
+    await press(ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    await press('U')
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('+ New playlist…'))
+    await press(ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    await press(HOME, ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('+ New playlist…'))
+  })
+
+  test('Enter on a song plays the list from it', async () => {
+    const { press, lines, host, session, lib } = await open()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    // the cursor starts on the first song
+    await press('j', ENTER)
+    const entries = [{ path: '/m/r1.mp3', title: 'Road one' }, { path: '/m/r2.mp3', title: 'Road two' }, { path: '/m/r3.mp3', title: 'Road three' }]
+    await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, entries, lib.file('Road trip'), 1))
+  })
+
+  test("the list's menu plays it from the start; Enter doesn't play a list", async () => {
+    const { press, host, session, lib } = await open()
+    await press('j', 'j', 'j', 'm')
+    await press(ENTER)
+    await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, expect.any(Array), lib.file('Road trip'), 0))
+  })
+
+  test('a and A add the picked songs to the queue; on a list, the whole list', async () => {
+    const { press, lines, host, session } = await open()
+    await press('a')
+    await vi.waitFor(() => expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/m/a.mp3', title: 'Fav A' }, { path: '/m/b.mp3', title: 'Fav B' }], 'end'))
+    vi.mocked(player.addToQueue).mockClear()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    await press('\x1b[1;2B', 'A')
+    await vi.waitFor(() => expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/m/r1.mp3', title: 'Road one' }, { path: '/m/r2.mp3', title: 'Road two' }], 'next'))
+  })
+
+  test('Delete takes the picked songs out of the list file, not off the disk', async () => {
+    const { press, lines, lib } = await open()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    await press('j', DEL)
+    await vi.waitFor(() => expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).not.toContain('r2.mp3'))
+    expect(nodeFs.readFileSync(lib.file('Road trip'), 'utf8')).toContain('r1.mp3')
+    await vi.waitFor(() => expect(rowsText(lines())).not.toContain('Road two'))
+  })
+
+  test("Recently played: when each played, dimmed after the title; Delete doesn't edit it", async () => {
+    const now = Math.floor(Date.now() / 1000)
+    nodeFs.writeFileSync(HISTORY, [{ at: now - 3600 * 30, path: '/m/old.mp3', title: 'Old song' }, { at: now - 180, path: '/m/new.mp3', title: 'New song' }].map(j => JSON.stringify(j)).join('\n') + '\n')
+    const was = nodeFs.readFileSync(HISTORY, 'utf8')
+    const { press, lines } = await open()
+    await press('j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('New song'))
+    const all = lines()
+    expect(lineOf(all, /New song/)).toBeLessThan(lineOf(all, /Old song/))
+    expect(all[lineOf(all, /New song/)]).toMatch(/New song · 3 min ago/)
+    await press(DEL)
+    await vi.waitFor(() => expect(status(lines())).toContain("Recently played can't be edited; Clear it from its menu."))
+    expect(nodeFs.readFileSync(HISTORY, 'utf8')).toBe(was)
+  })
+
+  test('/ filters the open list; Enter plays the list from the first match', async () => {
+    const { press, lines, host, session, lib } = await open()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    await press('/', 't', 'h', 'r')
+    await vi.waitFor(() => expect(rowsText(lines())).not.toContain('Road two'))
+    expect(rowsText(lines())).toContain('Road three')
+    await press(ENTER)
+    await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, expect.any(Array), lib.file('Road trip'), 2))
+  })
+
+  test('+ New playlist… asks a name and makes the list; a bad name says why', async () => {
+    const { press, lines, lib } = await open()
+    await press(END, ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toMatch(/name/i))
+    await press(...'Gym'.split(''), ENTER)
+    await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Gym'))).toBe(true))
+    await vi.waitFor(() => expect(rowsText(lines())).toMatch(/Gym\s+· 0/))
+    await press(END, ENTER, 'f', 'a', 'v', ENTER)
+    await vi.waitFor(() => expect(status(lines())).toContain('"fav" is a reserved name.'))
+    expect(nodeFs.existsSync(lib.file('fav'))).toBe(false)
+  })
+
+  test("Rename, from a list's menu, edits its name in the prompt", async () => {
+    const { press, lines, lib } = await open()
+    await press('j', 'j', 'j', 'm')
+    const all = rowsText(lines())
+    for (const item of ['Play', 'Add to queue', 'Play next', 'Rename', 'Delete playlist']) expect(all).toContain(item)
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toMatch(/to: Road trip/))
+    await press('\x7f', '\x7f', '\x7f', '\x7f', 'X', ENTER)
+    await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Road X'))).toBe(true))
+    expect(nodeFs.existsSync(lib.file('Road trip'))).toBe(false)
+  })
+
+  test("Favourites' menu has no Rename or Delete; Recently played's has Clear", async () => {
+    const { press, lines } = await open()
+    await press('m')
+    expect(rowsText(lines())).toContain('Add to queue')
+    expect(rowsText(lines())).not.toContain('Rename')
+    expect(rowsText(lines())).not.toContain('Delete playlist')
+    await press(ESC, 'j', 'm')
+    expect(rowsText(lines())).toContain('Clear')
+    expect(rowsText(lines())).not.toContain('Rename')
+  })
+
+  test('Delete playlist asks first', async () => {
+    const { press, lines, lib } = await open()
+    await press('j', 'j', 'j', 'm', 'j', 'j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Delete "Road trip"'))
+    expect(nodeFs.existsSync(lib.file('Road trip'))).toBe(true)
+    // Keep it
+    await press('j', ENTER)
+    expect(nodeFs.existsSync(lib.file('Road trip'))).toBe(true)
+    await press('m', 'j', 'j', 'j', 'j', ENTER, ENTER)
+    await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Road trip'))).toBe(false))
+    await vi.waitFor(() => expect(rowsText(lines())).not.toMatch(/Road trip\s+·/))
+    expect(status(lines())).toContain('Deleted "Road trip".')
+  })
+
+  test('Clear on Recently played asks first', async () => {
+    nodeFs.writeFileSync(HISTORY, JSON.stringify({ at: 100, path: '/m/a.mp3', title: 'A' }) + '\n')
+    const { press, lines } = await open()
+    await press('j', 'm', 'j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Clear Recently played'))
+    expect(nodeFs.readFileSync(HISTORY, 'utf8')).not.toBe('')
+    await press(ENTER)
+    await vi.waitFor(() => expect(nodeFs.readFileSync(HISTORY, 'utf8')).toBe(''))
+  })
+
+  test('a list changed on disk shows within one 2 s poll', async () => {
+    const { press, lines, lib } = await open()
+    expect([...lib.timers].map(t => t.ms)).toEqual([2000])
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    const file = lib.file('Road trip')
+    const was = nodeFs.statSync(file).mtimeMs
+    nodeFs.writeFileSync(file, m3u(['/m/r9.mp3', 'Road nine']))
+    nodeFs.utimesSync(file, new Date(was + 5000), new Date(was + 5000))
+    lib.tick()
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road nine'))
+    expect(rowsText(lines())).not.toContain('Road two')
+  })
+
+  test('an open list is checked again when the song changes', async () => {
+    const { press, lines, lib, vars } = await open()
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    const file = lib.file('Road trip')
+    const was = nodeFs.statSync(file).mtimeMs
+    nodeFs.writeFileSync(file, m3u(['/m/r8.mp3', 'Road eight']))
+    nodeFs.utimesSync(file, new Date(was + 5000), new Date(was + 5000))
+    await vars.change('playing', () => 'Other')
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road eight'))
+  })
+
+  test('the poll runs only while the tab shows', async () => {
+    const { press, lib } = await open()
+    expect(lib.timers.size).toBe(1)
+    await press('\t')
+    await vi.waitFor(() => expect(lib.timers.size).toBe(0))
   })
 })

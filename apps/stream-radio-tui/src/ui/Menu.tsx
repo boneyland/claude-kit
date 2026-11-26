@@ -36,3 +36,32 @@ export const QUEUE_MENU: readonly MenuItem[] = [
   { label: 'Remove', key: 'Del', action: { kind: 'remove' } },
   { label: 'Clear queue', key: 'C', action: { kind: 'clearQueue', isSure: true } },
 ]
+
+// Playlists, on a list at the top level. Favourites has no Rename or Delete;
+// Recently played has Clear instead.
+const LIST_PLAY: readonly MenuItem[] = [
+  { label: 'Play', key: '', action: { kind: 'playList' } },
+  { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end' } },
+  { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next' } },
+]
+export const LIST_MENU: readonly MenuItem[] = [
+  ...LIST_PLAY,
+  { label: 'Rename', key: '', action: { kind: 'rename' } },
+  { label: 'Delete playlist', key: 'Del', action: { kind: 'deleteList' } },
+]
+export const FAVOURITES_MENU: readonly MenuItem[] = LIST_PLAY
+export const HISTORY_MENU: readonly MenuItem[] = [...LIST_PLAY, { label: 'Clear', key: '', action: { kind: 'clearHistory' } }]
+
+// Playlists, on a song inside a list; Recently played's can't be removed.
+export const HISTORY_SONG_MENU: readonly MenuItem[] = [
+  { label: 'Play from here', key: 'Enter', action: { kind: 'enter' } },
+  { label: 'Add to queue', key: 'a', action: { kind: 'add', where: 'end' } },
+  { label: 'Play next', key: 'A', action: { kind: 'add', where: 'next' } },
+]
+export const LIST_SONG_MENU: readonly MenuItem[] = [...HISTORY_SONG_MENU, { label: 'Remove from playlist', key: 'Del', action: { kind: 'remove' } }]
+
+// What Delete playlist and Clear ask before they act.
+export const confirmMenu = (label: string, action: Action): readonly MenuItem[] => [
+  { label, key: '', action },
+  { label: 'Keep it', key: 'Esc', action: { kind: 'cancel' } },
+]

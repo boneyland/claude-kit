@@ -170,6 +170,32 @@ describe('pick and move keys', () => {
   })
 })
 
+describe('tabs and the Playlists tab', () => {
+  const PLS = { tab: 'playlists' as const, hasPick: false }
+  test('Tab goes to the next tab, Shift-Tab (Ink: tab with shift) to the one before', () => {
+    expect(keyAction('\t', key({ tab: true }), 'list', PLS)).toEqual({ kind: 'tab', dir: 1 })
+    expect(keyAction('', key({ tab: true, shift: true }), 'list', PLS)).toEqual({ kind: 'tab', dir: -1 })
+    expect(keyAction('\t', key({ tab: true }), 'list')).toEqual({ kind: 'tab', dir: 1 })
+  })
+  test('a, A, U and Delete act in Playlists; C, u and d do not', () => {
+    expect(keyAction('a', key(), 'list', PLS)).toEqual({ kind: 'add', where: 'end' })
+    expect(keyAction('A', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'add', where: 'next' })
+    expect(keyAction('U', key({ shift: true }), 'list', PLS)).toEqual({ kind: 'folderUp' })
+    expect(keyAction('', key({ delete: true }), 'list', PLS)).toEqual({ kind: 'remove' })
+    expect(keyAction('', key({ backspace: true }), 'list', PLS)).toEqual({ kind: 'remove' })
+    expect(keyAction('C', key({ shift: true }), 'list', PLS)).toBeNull()
+    expect(keyAction('d', key(), 'list', PLS)).toBeNull()
+  })
+  test('the name prompt edits a line, as the Files location does', () => {
+    expect(keyAction('x', key(), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'insert', text: 'x' } })
+    expect(keyAction('', key({ leftArrow: true }), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'left' } })
+    expect(keyAction('', key({ backspace: true }), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'erase' } })
+    expect(keyAction('\r', key({ return: true }), 'name')).toEqual({ kind: 'submit' })
+    expect(keyAction('', key({ escape: true }), 'name')).toEqual({ kind: 'cancel' })
+    expect(keyAction('q', key(), 'name')).toEqual({ kind: 'lineEdit', edit: { kind: 'insert', text: 'q' } })
+  })
+})
+
 describe('chords are not letters', () => {
   test('Ctrl or Alt with a, A, S or R does nothing', () => {
     const FILES = { tab: 'files' as const, hasPick: false }

@@ -98,6 +98,18 @@ A sort reorders what plays: it plays in that order afterwards, and songs added l
 
 `q` only closes the TUI. Run `stream-radio-tui` again, or use the mod, to get back to it. `x` stops the player itself.
 
+### Playlists
+
+| Key | |
+| --- | --- |
+| `Enter` | open a list; on `../`, go back; on a song, play the list from that song |
+| `←` `→` | back to the lists, or open the list |
+| `U` | back to the lists (`../`) |
+| `a` | add to the queue: the picked songs, or on a list the whole list |
+| `A` | play next: the same, after the song playing |
+| `Delete` (or Backspace) | take the picked songs out of the list; the files stay. Recently played can't be edited. On a playlist at the top level, delete it, after asking |
+| `/` | filter the open list; `Enter` plays the list from the first match, `Esc` clears |
+
 ## Mouse
 
 Everything the keys do, the mouse can do too:

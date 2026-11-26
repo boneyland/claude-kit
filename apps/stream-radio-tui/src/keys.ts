@@ -2,11 +2,11 @@ import type { Key } from 'ink'
 import type { Tab } from './ui/Tabs'
 import type { Edit } from './ui/lineEdit'
 
-// list: keys are commands; filter and open: keys edit a line of text (open's
-// with a cursor, in the Files heading); help:
-// the key list shows, and keys scroll or close it; menu: a row's menu is
-// open, and keys choose from it.
-export type Mode = 'list' | 'filter' | 'open' | 'help' | 'menu'
+// list: keys are commands; filter, open and name: keys edit a line of text
+// (open's with a cursor, in the Files heading; name's a playlist's name, new or
+// renamed, with a cursor); help: the key list shows, and keys scroll or close
+// it; menu: a row's menu is open, and keys choose from it.
+export type Mode = 'list' | 'filter' | 'open' | 'name' | 'help' | 'menu'
 
 export type Action =
   | { kind: 'up' }
@@ -42,8 +42,8 @@ export type Action =
   | { kind: 'lineEdit'; edit: Edit }
   | { kind: 'submit' }
   | { kind: 'cancel' }
-  // to the other tab
-  | { kind: 'tab' }
+  // to the next tab (1) or the one before (-1)
+  | { kind: 'tab'; dir: 1 | -1 }
   // the picked songs (or the cursor's) one place up (-1) or down
   | { kind: 'move'; by: 1 | -1 }
   | { kind: 'remove' }
@@ -64,6 +64,12 @@ export type Action =
   | { kind: 'goPlaying' }
   // the cursor's row's menu
   | { kind: 'menu' }
+  // Playlists, from a list's menu: play it from its first song; rename it;
+  // delete it, or clear Recently played (each asks first, then isSure)
+  | { kind: 'playList' }
+  | { kind: 'rename' }
+  | { kind: 'deleteList'; isSure?: boolean }
+  | { kind: 'clearHistory'; isSure?: boolean }
 
 // How far b and f jump, as the mod's panel does.
 export const SEEK_SECONDS = 10
@@ -167,7 +173,7 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
-    if (mode === 'open') {
+    if (mode === 'open' || mode === 'name') {
       const e = lineKey(input, key)
       if (e) return { kind: 'lineEdit', edit: e }
     }
@@ -176,15 +182,16 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
     if (key.ctrl || key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null
     return { kind: 'type', text: input }
   }
-  // Tab and Shift-Tab: with two tabs, either goes to the other
-  if (key.tab) return { kind: 'tab' }
+  // Tab and Shift-Tab (Ink reports it as Tab with shift)
+  if (key.tab) return { kind: 'tab', dir: key.shift ? -1 : 1 }
   const isQueue = ctx.tab === 'queue'
+  const canRemove = isQueue || ctx.tab === 'playlists'
   // Ink calls Esc meta too, so it is read first
   if (key.escape) return ctx.hasPick ? { kind: 'clearPick' } : null
   if ((key.upArrow || key.downArrow) && key.shift) return { kind: 'extendPick', by: key.upArrow ? -1 : 1 }
   if ((key.upArrow || key.downArrow) && key.meta) return isQueue ? { kind: 'move', by: key.upArrow ? -1 : 1 } : null
   // Ink names the key most terminals send for Backspace `delete` too
-  if (key.delete || key.backspace) return isQueue ? { kind: 'remove' } : null
+  if (key.delete || key.backspace) return canRemove ? { kind: 'remove' } : null
   if (input === ' ' && ctx.hasPick) return { kind: 'togglePick' }
   if (isQueue && (input === 'u' || input === 'd') && !key.ctrl && !key.meta) return { kind: 'move', by: input === 'u' ? -1 : 1 }
   // plain letters only: Ctrl-A or Alt-S are someone else's chords

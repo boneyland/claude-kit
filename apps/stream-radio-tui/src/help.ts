@@ -4,9 +4,9 @@ import { ICONS } from './ui/Controls'
 // The one list of keys and what the mouse does: the ? screen (ui/Help.tsx)
 // and --help both draw it, and a test checks the README's tables name every key.
 
-// Every key, as the README's tables have it: the keys of both tabs, then each tab's own.
+// Every key, as the README's tables have it: the keys of every tab, then each tab's own.
 export const KEY_HELP: [string, string][] = [
-  ['Tab  Shift-Tab', 'switch tabs: Files and the queue'],
+  ['Tab  Shift-Tab', 'switch tabs: Files, Queue, Playlists, or back'],
   ['↑ ↓  k j', 'move'],
   ['PgUp  PgDn', 'move a page'],
   ['Home  End', 'the first or last row'],
@@ -46,12 +46,22 @@ export const FILES_KEY_HELP: [string, string][] = [
   ['A', 'play next: the same, after the song playing'],
 ]
 
+export const PLAYLISTS_KEY_HELP: [string, string][] = [
+  ['Enter', 'open a list; on ../ go back; on a song, play the list from it'],
+  ['← →', 'back to the lists, or open the list'],
+  ['U', 'back to the lists (../)'],
+  ['a', 'add to queue: the picked songs, or the whole list'],
+  ['A', 'play next: the same, after the song playing'],
+  ['Delete', 'take the picked songs out of the list (the files stay); on a playlist, delete it, after asking'],
+  ['/', 'filter the open list; Enter plays it from the first match, Esc clears'],
+]
+
 // What the mouse does.
 export const MOUSE_HELP: [string, string][] = [
-  ['click', 'select a row; on a folder, open or shut it; on ../, go up'],
+  ['click', 'select a row; on a folder, open or shut it; on a playlist, open it; on ../, go up'],
   ['Ctrl-click', 'pick or unpick a row'],
   ['Shift-, Alt-click', 'pick the rows from the cursor to there'],
-  ['double-click', 'Queue: play the song; Files: add to queue'],
+  ['double-click', 'Queue: play the song; Files: add to queue; Playlists: play the list from the song'],
   ['right-click, ⋯', "the row's menu"],
   ['drag', 'Queue: move the picked songs (or the one dragged)'],
   ['wheel', 'scroll the list'],
@@ -75,9 +85,10 @@ A full-screen player for the stream-radio mod's shared mpv. With a URL, or a
 file, folder or playlist, it plays that; with none it follows the player that
 is running, or shows the last URL, ready to play with l.
 
-Two tabs: Files, to browse folders and add songs, and Queue, what plays.
+Three tabs: Files, to browse folders and add songs; Queue, what plays; and
+Playlists: Favourites, Recently played and the saved playlists.
 
-Keys (both tabs):
+Keys (every tab):
 ${list(KEY_HELP)}
 
 Queue tab:
@@ -85,6 +96,9 @@ ${list(QUEUE_KEY_HELP)}
 
 Files tab:
 ${list(FILES_KEY_HELP)}
+
+Playlists tab:
+${list(PLAYLISTS_KEY_HELP)}
 
 Mouse:
 ${list(MOUSE_HELP)}
