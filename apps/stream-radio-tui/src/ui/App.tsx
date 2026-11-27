@@ -638,7 +638,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const heading = filter
     ? `${rows.length} of ${q.items.length} ${q.kind === 'chapters' ? 'chapters' : 'songs'} match`
     : q.kind === 'playlist'
-      ? `Queue${q.root ? ` · ${tilde(q.root, home)}` : ''}`
+      ? `${q.root ? `${tilde(q.root, home)} · ` : ''}${q.items.length} song${q.items.length === 1 ? '' : 's'}`
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No queue or chapters.'
@@ -742,7 +742,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     return true
   }
   // A click on the Files heading edits the location in place, the cursor
-  // where it landed (at the end from the prefix, or from a YouTube playlist's title,
+  // where it landed (at the end from a YouTube playlist's title,
   // which edits as its URL); while editing, it moves the cursor there.
   const onHeading = (x: number) => {
     const cells = editCells(listWidth)

@@ -253,7 +253,7 @@ describe('drawing', () => {
 
   test('the queue under the home folder is headed with ~', async () => {
     const { lines } = await show(100, PLAYING, '', '/m')
-    expect(lines().join('\n')).toContain('Queue · ~/Album')
+    expect(lines().join('\n')).toContain('~/Album · 4 songs')
     expect(tilde('/m', '/m')).toBe('~')
     expect(tilde('/music/Album', '/m')).toBe('/music/Album')
     expect(tilde('/m/Album', '')).toBe('/m/Album')
@@ -746,40 +746,39 @@ describe('mouse rows', () => {
 })
 
 describe('tabs', () => {
-  // Tests draw without colour, so which tab shows is read from the heading
-  // under the tab row (and under the Queue's and Playlists' filter line).
-  const INV = /^\s*Queue/
-  const INV_FILES = /^\s*Files/
-  const tabHeading = (all: string[]) => {
+  // Tests draw without colour, so which tab shows is read from the lines
+  // under the tab row: Files has its filter on its heading's row, the Queue
+  // and Playlists a line of their own, and Playlists' heading names it.
+  const tabOf = (all: string[]) => {
     const at = lineOf(all, /Files\s+Queue/) + 1
-    return (/^\s*Filter · /.test(stripAnsi(all[at] ?? '')) ? all[at + 1] : all[at]) ?? ''
+    if (!/^\s*Filter · /.test(stripAnsi(all[at] ?? ''))) return 'Files'
+    return /^\s*Playlists/.test(stripAnsi(all[at + 1] ?? '')) ? 'Playlists' : 'Queue'
   }
   const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
 
   test('starts on Queue with a queue, on Files without', async () => {
     const a = await show(100)
-    expect(tabHeading(a.lines())).toMatch(INV)
+    expect(tabOf(a.lines())).toBe('Queue')
     expect(a.lines().join('\n')).toContain('3. Song three')
     cleanup()
     const b = await show(100, EMPTY)
-    expect(tabHeading(b.lines())).toMatch(INV_FILES)
+    expect(tabOf(b.lines())).toBe('Files')
   })
 
   test('Tab and Shift-Tab switch; each tab keeps its own list', async () => {
     const { press, lines } = await show(100)
     await press('\x1b[Z')
-    expect(tabHeading(lines())).toMatch(INV_FILES)
+    expect(tabOf(lines())).toBe('Files')
     expect(lines().join('\n')).not.toContain('Song three ·')
     expect(lines().join('\n')).not.toMatch(/\d+\. Song two/)
     await press('\t')
-    expect(tabHeading(lines())).toMatch(INV)
+    expect(tabOf(lines())).toBe('Queue')
     expect(lines().join('\n')).toContain('2. Song two')
   })
 
   test('Tab cycles Files, Queue, Playlists; Shift-Tab goes back', async () => {
     const { press, lines } = await show(100)
-    // each tab's list heading starts with its name
-    const current = () => tabHeading(lines()).trim().split(' ')[0]
+    const current = () => tabOf(lines())
     expect(current()).toBe('Queue')
     await press('\t')
     expect(current()).toBe('Playlists')
@@ -797,10 +796,10 @@ describe('tabs', () => {
     const { click, where, lines } = await show(100)
     const at = where(' Files ')
     await click(at.x + 2, at.y)
-    expect(tabHeading(lines())).toMatch(INV_FILES)
+    expect(tabOf(lines())).toBe('Files')
     const back = where(' Queue ')
     await click(back.x + 2, back.y)
-    expect(tabHeading(lines())).toMatch(INV)
+    expect(tabOf(lines())).toBe('Queue')
   })
 
   test('rows show the title from the file\'s tags once read', async () => {
@@ -882,11 +881,11 @@ describe('files', () => {
   const showFiles = async (saved: Record<string, string> = {}, tree = TREE, extra: Extra = {}) => {
     return show(100, EMPTY, '', '/h', { fs: fsOf(tree, saved), ...extra })
   }
-  const heading = (all: string[]) => all[lineOf(all, /Files\s+Queue/) + 1] ?? ''
+  const heading = (all: string[]) => stripAnsi(all[lineOf(all, /Files\s+Queue/) + 1] ?? '')
 
   test('with nothing remembered it opens ~/Music: ../ first, folders, then playable files', async () => {
     const { lines } = await showFiles()
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     const all = lines().join('\n')
     expect(all).toMatch(/\.\.\/[\s\S]*📁 Album\/[\s\S]*loose\.mp3/)
     expect(all).not.toContain('cover.jpg')
@@ -894,7 +893,7 @@ describe('files', () => {
 
   test('opens at the remembered folder', async () => {
     const { lines } = await showFiles({ [`${STATE}/tui-files.json`]: JSON.stringify({ folder: '/other' }) })
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('/other'))
     expect(lines().join('\n')).toContain('x.mp3')
   })
 
@@ -903,7 +902,7 @@ describe('files', () => {
     const { lines, click, where } = await showFiles(saved)
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     await click(where('../').x, where('../').y)
-    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
     expect(JSON.parse(saved[`${STATE}/tui-files.json`])).toEqual({ folder: '/h' })
   })
 
@@ -911,7 +910,7 @@ describe('files', () => {
     const { lines, press } = await showFiles()
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     await press('U')
-    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
   })
 
   test("G opens Files at the playing song's folder, the cursor on it", async () => {
@@ -922,7 +921,7 @@ describe('files', () => {
     }
     const { lines, press, host, session } = await show(100, playing, '', '/h', { fs: fsOf(TREE) })
     await press('G')
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music/Album'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music/Album'))
     await vi.waitFor(async () => {
       await press('a')
       expect(player.addToQueue).toHaveBeenLastCalledWith(host, session.config, [{ path: song }], 'end')
@@ -945,7 +944,7 @@ describe('files', () => {
     }
     const { lines, press, host, session } = await show(100, playing, '', '/h', { fs: { ...fs, list } })
     await press('G')
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · ~/Music/Album'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music/Album'))
     await vi.waitFor(() => expect(lines().join('\n')).toContain("Can't read /h/Music/Album"))
     isReadable = true
     await press('U')
@@ -962,7 +961,7 @@ describe('files', () => {
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     await press('G')
     expect(lines().join('\n')).toContain('Nothing is playing.')
-    expect(heading(lines())).toContain('Files · ~/Music')
+    expect(heading(lines())).toContain('~/Music')
   })
 
   test('a click on a folder opens it in place; Enter on it shuts it', async () => {
@@ -982,10 +981,10 @@ describe('files', () => {
     expect(lines().join('\n')).toContain('go to a folder or URL')
     expect(heading(lines())).not.toContain('~/Music')
     await press('/other', ENTER)
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('/other'))
     await press('o', '/nope', ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /nope'))
-    expect(heading(lines())).toContain('Files · /other')
+    expect(heading(lines())).toContain('/other')
   })
 
   test('a click on the heading edits the location there; a key types at the cursor', async () => {
@@ -995,10 +994,10 @@ describe('files', () => {
     await click(t.x + 2, t.y)
     // the cursor on the M
     await press('X')
-    expect(stripAnsi(heading(lines()))).toContain('Files · ~/XMusic')
+    expect(stripAnsi(heading(lines()))).toContain('~/XMusic')
     await press(ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('No such folder: /h/XMusic'))
-    expect(heading(lines())).toContain('Files · ~/Music')
+    expect(heading(lines())).toContain('~/Music')
   })
 
   test('editing the heading: Ctrl-K, a new path, Enter goes there', async () => {
@@ -1007,7 +1006,7 @@ describe('files', () => {
     const t = where('~/Music')
     await click(t.x, t.y)
     await press('\x0b', '/other', ENTER)
-    await vi.waitFor(() => expect(heading(lines())).toContain('Files · /other'))
+    await vi.waitFor(() => expect(heading(lines())).toContain('/other'))
   })
 
   test('Home and End move the cursor to the start and end of the location', async () => {
@@ -1016,7 +1015,7 @@ describe('files', () => {
     const t = where('~/Music')
     await click(t.x + 2, t.y)
     await press(HOME, 'X', END, 'Y')
-    expect(stripAnsi(heading(lines()))).toContain('Files · X~/MusicY')
+    expect(stripAnsi(heading(lines()))).toContain('X~/MusicY')
   })
 
   test('arrows and Ctrl-W edit at the cursor; a click past the end puts it there', async () => {
@@ -1026,17 +1025,17 @@ describe('files', () => {
     await click(t.x + 25, t.y)
     await press('/Album', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D')
     await press('\x17')
-    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Album')
+    expect(stripAnsi(heading(lines()))).toContain('~/Album')
   })
 
   test('the filter, at the right of the heading, narrows the tree read so far; Enter keeps it, the cursor on the first match', async () => {
     const { lines, click, where, press, host, session } = await showFiles()
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
-    expect(stripAnsi(heading(lines()))).toMatch(/Files · ~\/Music\s+Filter · \/ or click to filter/)
+    expect(stripAnsi(heading(lines()))).toMatch(/^~\/Music\s+Filter · \/ or click to filter/)
     await click(where('Album/').x, where('Album/').y)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
     await press('/', 't', 'w', 'o')
-    expect(stripAnsi(heading(lines()))).toMatch(/Files · ~\/Music\s+Filter · two/)
+    expect(stripAnsi(heading(lines()))).toMatch(/^~\/Music\s+Filter · two/)
     const all = lines().join('\n')
     expect(all).toMatch(/Album\/[\s\S]*02 Two\.flac/)
     expect(all).not.toContain('01 One.flac')
@@ -1060,7 +1059,7 @@ describe('files', () => {
     await click(where('loose.mp3').x, where('loose.mp3').y)
     // U is a command again: the folder above, which clears the filter
     await press('U')
-    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
     expect(stripAnsi(heading(lines()))).toContain('Filter · / or click to filter')
   })
 
@@ -1070,22 +1069,23 @@ describe('files', () => {
     const t = where('~/Music')
     await click(t.x, t.y)
     await press('zz', ESC)
-    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Music')
+    expect(stripAnsi(heading(lines()))).toContain('~/Music')
     expect(lines().join('\n')).not.toContain('zz')
     await click(t.x, t.y)
     await press('zz')
     await click(where('Album/').x, where('Album/').y)
-    expect(stripAnsi(heading(lines()))).toContain('Files · ~/Music')
+    expect(stripAnsi(heading(lines()))).toContain('~/Music')
     expect(lines().join('\n')).not.toContain('01 One.flac')
     // keys are commands again
     await press('U')
-    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
   })
 
   test('o from the Queue goes to Files', async () => {
     const { lines, press } = await show(100, PLAYING, '', '/h', { fs: fsOf(TREE) })
     await press('o')
-    expect(heading(lines())).toMatch(/^\s*Files/)
+    // the location being typed from nothing, Files' filter on the same row
+    expect(heading(lines())).toMatch(/^\s+Filter · /)
   })
 
   test('a big folder lists before its tags arrive, and j moves the cursor', async () => {
@@ -1239,7 +1239,7 @@ describe('youtube in files', () => {
     const { press, lines } = await withRun({ exitCode: 1, stdout: '', stderr: 'ERROR: Private video' })
     await press('o', LIST, ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('Private video'))
-    expect(lines().join('\n')).toContain('Files · ~/Music')
+    expect(lines().join('\n')).toContain('~/Music')
     expect(lines().join('\n')).toContain('loose.mp3')
     expect(player.playSource).not.toHaveBeenCalled()
     expect(player.addToQueue).not.toHaveBeenCalled()
@@ -1262,7 +1262,7 @@ describe('pr review fixes', () => {
     await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
     await dblclick(where('../').x, where('../').y)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
-    expect(lines().join('\n')).toContain('Files · ~/Music')
+    expect(lines().join('\n')).toContain('~/Music')
   })
 
   test('a YouTube playlist keeps its order, and a video in it twice shows twice', async () => {
@@ -1533,7 +1533,7 @@ describe('review fixes', () => {
     await click(where(' Files ').x + 2, where(' Files ').y)
     expect(lines().join('\n')).not.toContain('Move up')
     // the click only closed the menu: still on the Queue, where Enter plays the row
-    expect(lines()[lineOf(lines(), /Files\s+Queue/) + 2]).toMatch(/^\s*Queue/)
+    expect(stripAnsi(lines()[lineOf(lines(), /Files\s+Queue/) + 2] ?? '')).toMatch(/^\s*\/m · 12 songs/)
     await press(ENTER)
     expect(player.pick).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1)
     expect(player.addToQueue).not.toHaveBeenCalled()

@@ -9,11 +9,11 @@ import type { Line } from './lineEdit'
 import { EditLine } from './EditLine'
 
 type Props = {
-  // the root folder's name, after HEADING_PREFIX
+  // where the tree is: a folder, or a YouTube playlist's title
   heading: string
   // the location being edited in its place, with a cursor
   editing?: Line
-  // a click on the heading, x cells from the location's start (less than 0 on the prefix)
+  // a click on the heading, x cells from the location's start
   onHeading?(x: number): void
   rows: FileRow[]
   selected: number
@@ -32,8 +32,6 @@ type Props = {
   filter?: React.ReactNode
 }
 
-export const HEADING_PREFIX = 'Files · '
-const PREFIX_CELLS = HEADING_PREFIX.length
 
 // The filter's share of the heading's row, in a list `width` wide; a cell
 // between it and the location.
@@ -41,7 +39,7 @@ export const filterWidth = (width: number) => Math.min(32, Math.max(12, Math.flo
 const headingWidth = (width: number) => Math.max(1, width - filterWidth(width) - 1)
 
 // The cells a location being edited has in a list `width` wide.
-export const editCells = (width: number) => Math.max(1, headingWidth(width) - PREFIX_CELLS)
+export const editCells = headingWidth
 
 // x of a folder row's 🢒/🢓, from the row's left edge.
 export const arrowAt = (row: FileRow) => (row.kind === 'dir' ? 2 + 2 * row.depth : -1)
@@ -72,10 +70,10 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Box>
-        <Clickable width={headingWidth(width)} marginRight={1} flexShrink={0} onClick={hit => onHeading?.(hit.x - PREFIX_CELLS)}>
-          {editing ? <EditLine prefix={HEADING_PREFIX} line={editing} width={editCells(width)} /> : (
+        <Clickable width={headingWidth(width)} marginRight={1} flexShrink={0} onClick={hit => onHeading?.(hit.x)}>
+          {editing ? <EditLine prefix="" line={editing} width={editCells(width)} /> : (
             <Text dimColor wrap="truncate-end">
-              {HEADING_PREFIX + heading}
+              {heading}
             </Text>
           )}
         </Clickable>
