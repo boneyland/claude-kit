@@ -196,7 +196,7 @@ Only source is committed. A GitHub Actions workflow tests, builds and publishes 
 
 stream-radio-tui is built on these projects; thanks to their authors.
 
-Bundled into `stream-radio-tui.mjs` (all MIT):
+Bundled into `stream-radio-tui.mjs`, with the smaller packages they use; the licences of all of them are at the end of that file:
 
 - [Ink](https://github.com/vadimdemedes/ink): React for the terminal, which draws the whole screen
 - [React](https://github.com/facebook/react): the components Ink renders
