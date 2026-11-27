@@ -164,7 +164,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | --- | --- | --- |
 | `volume` | 60 | 0 to 100, where playback starts |
 | `player` | `mpv` | the mpv executable; it also decodes the art and waveforms |
-| `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md)) |
+| `androidClient` | `false` | try yt-dlp's android client first (see the [mod's README](../../plugins/stream-radio/README.md#when-youtube-refuses)) |
 | `defaultUrl` | empty | what `l` plays when the queue is empty and nothing cleared can come back |
 | `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |
 | `mouse` | `on` | clicks and the wheel (see Mouse); `off` leaves text selection to the terminal |
