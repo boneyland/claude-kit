@@ -2,6 +2,11 @@
 
 A full-screen terminal music player for the same mpv the [stream-radio](../../plugins/stream-radio) mod drives. Play a YouTube stream, a file, a folder or a playlist from any terminal, with or without Claude Code.
 
+- **Full mouse support:** everything the keys do, a click does too: pick, drag to reorder, seek, set the volume, open a row's menu ([Mouse](#mouse)).
+- **Pixel graphics:** album art and the song's waveform drawn in pixels in kitty and Ghostty, with braille dots elsewhere ([Pictures](#pictures)).
+- **Files, Queue and Playlists:** browse folders, queue songs and save playlists, with ★ Favourites and Recently played; each tab sorts and filters.
+- **Plays anything mpv can:** local files and folders, `.m3u`/`.pls` playlists, YouTube videos, playlists and live streams.
+
 It shares the one player with the mod's sessions: start music in either and the other shows it, pauses it, skips it, stops it. Playback state is kept in `${XDG_STATE_HOME:-~/.local/state}/stream-radio/`, which both read.
 
 ## Install
