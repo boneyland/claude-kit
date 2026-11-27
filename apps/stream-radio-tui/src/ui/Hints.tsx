@@ -10,7 +10,7 @@ const FIRST = {
   files: ['Enter open  a add  A play next  * fav  P playlist  m menu  S sort  space pause', 'a add  A play next  * fav  P playlist  m menu'],
   playlists: ['Enter open/play  a add  A next  Del remove  * fav  P playlist  m menu  / filter', 'Enter open/play  a add  * fav  P playlist  m menu'],
   name: ['type the playlist\'s name  Enter saves it  Esc leaves it as it was', 'type a name  Enter saves  Esc leaves it'],
-  filter: ['type to narrow the list  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
+  filter: ['type to narrow the list  ← → move  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
   open: ['type a folder path or a YouTube playlist URL  Enter goes there  Esc leaves it', 'type a folder or URL  Enter goes there  Esc leaves it'],
   help: ['↑/↓ or j/k scroll  PgUp/PgDn a page  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
   menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],

@@ -57,49 +57,27 @@ const listCases: Case[] = [
   ['Ctrl-N is not n', 'n', key({ ctrl: true }), null],
 ]
 
-// The same keys in a text mode: letters are text, the rest edits or leaves.
+// The same keys in a text mode (the filter, the Files location, a playlist's
+// name): letters are typed at the cursor, the rest edits, moves it or leaves.
+const lineEdit = (edit: Edit): Action => ({ kind: 'lineEdit', edit })
 const textCases: Case[] = [
-  ['a letter', 'q', key(), { kind: 'type', text: 'q' }],
-  ['space', ' ', key(), { kind: 'type', text: ' ' }],
-  ['/', '/', key(), { kind: 'type', text: '/' }],
-  ['+', '+', key(), { kind: 'type', text: '+' }],
-  ['pasted text', '~/Music/Album', key(), { kind: 'type', text: '~/Music/Album' }],
-  ['a capital', 'A', key({ shift: true }), { kind: 'type', text: 'A' }],
+  ['a letter', 'q', key(), lineEdit({ kind: 'insert', text: 'q' })],
+  ['space', ' ', key(), lineEdit({ kind: 'insert', text: ' ' })],
+  ['/', '/', key(), lineEdit({ kind: 'insert', text: '/' })],
+  ['+', '+', key(), lineEdit({ kind: 'insert', text: '+' })],
+  ['pasted text', '~/Music/Album', key(), lineEdit({ kind: 'insert', text: '~/Music/Album' })],
+  ['a capital', 'A', key({ shift: true }), lineEdit({ kind: 'insert', text: 'A' })],
   ['Enter', '\r', key({ return: true }), { kind: 'submit' }],
   ['Esc', '', key({ escape: true }), { kind: 'cancel' }],
-  ['Backspace', '', key({ backspace: true }), { kind: 'erase' }],
-  ['Delete (most terminals send it for Backspace)', '', key({ delete: true }), { kind: 'erase' }],
+  ['Backspace', '', key({ backspace: true }), lineEdit({ kind: 'erase' })],
+  ['Delete (most terminals send it for Backspace)', '', key({ delete: true }), lineEdit({ kind: 'erase' })],
   ['Ctrl-C', 'c', key({ ctrl: true }), { kind: 'interrupt' }],
   ['↑', '', key({ upArrow: true }), null],
-  ['←', '', key({ leftArrow: true }), null],
   ['Tab', '\t', key({ tab: true }), null],
-  ['Ctrl-A', 'a', key({ ctrl: true }), null],
   ['Alt-x', 'x', key({ meta: true }), null],
-]
-
-describe('keyAction in the list', () => {
-  test.each(listCases)('%s', (_name, input, k, expected) => {
-    expect(keyAction(input, k, 'list')).toEqual(expected)
-  })
-})
-
-describe('keyAction in filter mode', () => {
-  test.each(textCases)('%s', (_name, input, k, expected) => {
-    expect(keyAction(input, k, 'filter')).toEqual(expected)
-  })
-})
-
-// The Files location, edited in its heading: the same keys, at a cursor, and
-// the keys that move it.
-const lineEdit = (edit: Edit): Action => ({ kind: 'lineEdit', edit })
-const openCases: Case[] = [
-  ...textCases.map(([name, input, k, expected]): Case => {
-    if (expected?.kind === 'type') return [name, input, k, lineEdit({ kind: 'insert', text: expected.text })]
-    if (expected?.kind === 'erase') return [name, input, k, lineEdit({ kind: 'erase' })]
-    if (name === '←' || name === 'Ctrl-A') return [name, input, k, name === '←' ? lineEdit({ kind: 'left' }) : lineEdit({ kind: 'start' })]
-    return [name, input, k, expected]
-  }),
+  ['←', '', key({ leftArrow: true }), lineEdit({ kind: 'left' })],
   ['→', '', key({ rightArrow: true }), lineEdit({ kind: 'right' })],
+  ['Ctrl-A', 'a', key({ ctrl: true }), lineEdit({ kind: 'start' })],
   ['Ctrl-E', 'e', key({ ctrl: true }), lineEdit({ kind: 'end' })],
   ['Ctrl-U', 'u', key({ ctrl: true }), lineEdit({ kind: 'eraseToStart' })],
   ['Ctrl-K', 'k', key({ ctrl: true }), lineEdit({ kind: 'eraseToEnd' })],
@@ -110,9 +88,9 @@ const openCases: Case[] = [
   ['End', '', key({ end: true }), lineEdit({ kind: 'end' })],
 ]
 
-describe('keyAction in open mode', () => {
-  test.each(openCases)('%s', (_name, input, k, expected) => {
-    expect(keyAction(input, k, 'open')).toEqual(expected)
+describe.each(['filter', 'open', 'name'] as const)('keyAction in %s mode', mode => {
+  test.each(textCases)('%s', (_name, input, k, expected) => {
+    expect(keyAction(input, k, mode)).toEqual(expected)
   })
 })
 

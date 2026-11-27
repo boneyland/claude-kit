@@ -206,6 +206,8 @@ const columnOf = (line: string, index: number) =>
   }, 0)
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
+// The Queue's or Playlists' filter line, under the tabs (without the pane beside it).
+const filterOf = (lines: string[]) => stripAnsi(lines[lineOf(lines, /Files\s+Queue/) + 1] ?? '').split('│')[0]!.trimEnd()
 
 afterEach(() => {
   cleanup()
@@ -490,7 +492,7 @@ describe('keys', () => {
     const { settled, ui, lines } = await show(100)
     for (const k of ['/', 'a', 'b', 'c']) ui.stdin.write(k)
     await settled()
-    expect(lines().join('\n')).toContain('/ filter: abc_')
+    expect(filterOf(lines())).toBe('Filter · abc')
   })
 
   test('a fast Enter after typing in open mode submits all of it', async () => {
@@ -613,10 +615,44 @@ describe('keys', () => {
   test('/ filters as you type; Enter plays the first match', async () => {
     const { press, host, lines } = await show(100)
     await press('/', 'o', 't', 'h')
-    expect(lines().join('\n')).toContain('/ filter: oth')
+    expect(filterOf(lines())).toBe('Filter · oth')
     expect(lines().join('\n')).not.toContain('Intro')
     await press(ENTER)
     expect(player.pick).toHaveBeenCalledWith(host, expect.anything(), 3)
+  })
+
+  test('the filter line under the tabs says how to filter; a click types there, at the cursor', async () => {
+    const { press, click, where, lines, vars } = await show(100)
+    expect(filterOf(lines())).toBe('Filter · / or click to filter')
+    const f = where('Filter · ')
+    await click(f.x + 20, f.y)
+    await press('o', 't', 'h')
+    expect(filterOf(lines())).toBe('Filter · oth')
+    expect(lines().join('\n')).not.toContain('Intro')
+    // on the t: a key types before it; ← and Ctrl-K edit at the cursor
+    await click(where('Filter · ').x + 'Filter · o'.length, f.y)
+    await press('X')
+    expect(await vars.read('filter')).toBe('oXth')
+    await press('\x1b[D', '\x0b')
+    expect(filterOf(lines())).toBe('Filter · o')
+    await press(ESC)
+    expect(filterOf(lines())).toBe('Filter · / or click to filter')
+    expect(await vars.read('filter')).toBe('')
+  })
+
+  test('a click on a row leaves the filter as typed and selects the row; another click on the line types at its end', async () => {
+    const { press, click, where, lines, vars } = await show(100)
+    await press('/', 'o', 't', 'h')
+    const row = where('. Other')
+    await click(row.x, row.y)
+    expect(filterOf(lines())).toBe('Filter · oth')
+    // keys are commands again: n is next, not typed
+    await press('n')
+    expect(await vars.read('filter')).toBe('oth')
+    const f = where('Filter · ')
+    await click(f.x, f.y)
+    await press('e')
+    expect(await vars.read('filter')).toBe('othe')
   })
 
 })
@@ -711,10 +747,13 @@ describe('mouse rows', () => {
 
 describe('tabs', () => {
   // Tests draw without colour, so which tab shows is read from the heading
-  // under the tab row.
+  // under the tab row (and under the Queue's and Playlists' filter line).
   const INV = /^\s*Queue/
   const INV_FILES = /^\s*Files/
-  const tabHeading = (all: string[]) => all[lineOf(all, /Files\s+Queue/) + 1] ?? ''
+  const tabHeading = (all: string[]) => {
+    const at = lineOf(all, /Files\s+Queue/) + 1
+    return (/^\s*Filter · /.test(stripAnsi(all[at] ?? '')) ? all[at + 1] : all[at]) ?? ''
+  }
   const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
 
   test('starts on Queue with a queue, on Files without', async () => {
@@ -1459,7 +1498,7 @@ describe('review fixes', () => {
     await click(where(' Files ').x + 2, where(' Files ').y)
     expect(lines().join('\n')).not.toContain('Move up')
     // the click only closed the menu: still on the Queue, where Enter plays the row
-    expect(lines()[lineOf(lines(), /Files\s+Queue/) + 1]).toMatch(/^\s*Queue/)
+    expect(lines()[lineOf(lines(), /Files\s+Queue/) + 2]).toMatch(/^\s*Queue/)
     await press(ENTER)
     expect(player.pick).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1)
     expect(player.addToQueue).not.toHaveBeenCalled()
@@ -1726,7 +1765,7 @@ describe('audit fixes', () => {
   test('Backspace in the filter takes off a whole emoji', async () => {
     const { press, lines } = await show(100)
     await press('/', 'a', '🎵', '\x7f')
-    expect(lines().join('\n')).toContain('/ filter: a_')
+    expect(filterOf(lines())).toBe('Filter · a')
   })
 
   test('the hints say that o goes to a location, not that it plays', async () => {
@@ -2171,6 +2210,22 @@ describe('the Playlists tab', () => {
     await vi.waitFor(() => expect(player.playEntries).toHaveBeenCalledWith(host, session.config, expect.any(Array), lib.file('Road trip'), 2))
   })
 
+  test('the filter line: none at the top level; in an open list a click types there', async () => {
+    const { press, click, where, lines } = await open()
+    expect(filterOf(lines())).toBe('Filter · open a list to filter it')
+    const f = where('Filter · ')
+    await click(f.x + 12, f.y)
+    // still a command: j moves down
+    await press('j', 'j', 'j', ENTER)
+    await vi.waitFor(() => expect(rowsText(lines())).toContain('Road two'))
+    expect(filterOf(lines())).toBe('Filter · / or click to filter')
+    await click(f.x + 12, f.y)
+    await press('t', 'h', 'r')
+    await vi.waitFor(() => expect(rowsText(lines())).not.toContain('Road two'))
+    expect(filterOf(lines())).toBe('Filter · thr')
+    expect(rowsText(lines())).toContain('Road three')
+  })
+
   test('+ New playlist… asks a name and makes the list; a bad name says why', async () => {
     const { press, lines, lib } = await open()
     await press(END, ENTER)
@@ -2337,7 +2392,7 @@ describe('the Playlists tab', () => {
       await ui.click(q.x + 2, q.y)
       await ui.press('z', 'z')
       expect(await ui.vars.read('filter')).toBe('')
-      expect(rowsText(ui.lines())).not.toContain('/ filter:')
+      expect(filterOf(ui.lines())).toBe('Filter · / or click to filter')
       // and back: the Queue's filter typed, then a click on Playlists
       await ui.press('/', 'z')
       expect(await ui.vars.read('filter')).toBe('z')
@@ -2345,8 +2400,7 @@ describe('the Playlists tab', () => {
       await ui.click(p.x + 2, p.y)
       await ui.press('z')
       expect(await ui.vars.read('filter')).toBe('z')
-      expect(rowsText(ui.lines())).toContain('/ filter: t')
-      expect(rowsText(ui.lines())).not.toContain('/ filter: tz')
+      expect(filterOf(ui.lines())).toBe('Filter · t')
     })
 
     test('Enter in the filter plays from the first match of the text typed, before a redraw', async () => {

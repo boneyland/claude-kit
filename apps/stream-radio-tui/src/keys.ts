@@ -4,10 +4,11 @@ import type { Tab } from './ui/Tabs'
 import type { Edit } from './ui/lineEdit'
 
 // list: keys are commands; filter, open and name: keys edit a line of text
-// (open's with a cursor, in the Files heading; name's a playlist's name, new or
-// renamed, with a cursor); help: the key list shows, and keys scroll or close
-// it; menu: a row's menu is open, and keys choose from it; checklist: Add to
-// playlist's checklist is open, and keys choose and toggle its rows.
+// with a cursor (filter's under the Queue's or Playlists' tabs; open's in the
+// Files heading; name's a playlist's name, new or renamed); help: the key list
+// shows, and keys scroll or close it; menu: a row's menu is open, and keys
+// choose from it; checklist: Add to playlist's checklist is open, and keys
+// choose and toggle its rows.
 export type Mode = 'list' | 'filter' | 'open' | 'name' | 'help' | 'menu' | 'checklist'
 
 export type Action =
@@ -38,10 +39,7 @@ export type Action =
   | { kind: 'interrupt' }
   | { kind: 'help' }
   | { kind: 'closeHelp' }
-  // in a text mode
-  | { kind: 'type'; text: string }
-  | { kind: 'erase' }
-  // open: the location being edited in the Files heading, with a cursor
+  // in a text mode: the line being typed, at its cursor
   | { kind: 'lineEdit'; edit: Edit }
   | { kind: 'submit' }
   | { kind: 'cancel' }
@@ -147,7 +145,7 @@ const HOME_END: Record<string, 'home' | 'end'> = {
 // Whether a read from the terminal is the Home or End key; undefined for anything else.
 export const homeEnd = (data: string | Buffer): 'home' | 'end' | undefined => HOME_END[String(data)]
 
-// A key that edits the Files location.
+// A key that edits the line being typed.
 const CTRL_EDITS: Record<string, Edit> = {
   a: { kind: 'start' },
   e: { kind: 'end' },
@@ -190,14 +188,8 @@ export function keyAction(input: string, key: Keys, mode: Mode, ctx: KeyContext 
   if (mode !== 'list') {
     if (key.return) return { kind: 'submit' }
     if (key.escape) return { kind: 'cancel' }
-    if (mode === 'open' || mode === 'name') {
-      const e = lineKey(input, key)
-      if (e) return { kind: 'lineEdit', edit: e }
-    }
-    // Ink names the key most terminals send for Backspace (DEL) `delete`.
-    if (key.backspace || key.delete) return { kind: 'erase' }
-    if (key.ctrl || key.meta || key.tab || !input || /[\x00-\x1f\x7f]/.test(input)) return null
-    return { kind: 'type', text: input }
+    const e = lineKey(input, key)
+    return e ? { kind: 'lineEdit', edit: e } : null
   }
   // Tab and Shift-Tab (Ink reports it as Tab with shift)
   if (key.tab) return { kind: 'tab', dir: key.shift ? -1 : 1 }

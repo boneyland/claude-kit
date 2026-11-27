@@ -95,7 +95,7 @@ One row per song: its title (from its tags, else its file name), then, dimmed, i
 | `S` | sort by title, artist, album artist, album, or folder then file name, then `as queued` (the order the songs were added or moved to) |
 | `R` | the same sort the other way round (also the `↓` / `↑` after `sort:` on the tab row) |
 | `C` twice | clear the queue and stop; `l` brings it back (also in the row's menu) |
-| `/` | filter the list; `Enter` plays the first match, `Esc` clears |
+| `/` | filter the list, on the `Filter ·` line under the tabs; `Enter` plays the first match, `Esc` clears |
 
 A sort reorders what plays: it plays in that order afterwards, and songs added later go where they are added (not sorted in). It can be undone: `S` past the last field, or `s` on a shuffle, goes back to `as queued`, the order the songs were added or moved to. Moving a song by hand makes the order shown the queued order, and turns a sort or shuffle off; a sort replaces a shuffle. The song playing keeps playing through any sort, move, add or removal. Removing the song playing plays the next; removing every song stops, as `x` does, and so does clearing the queue. A stop keeps the queue: it still lists, and while stopped you can edit it, `Enter` plays a song from its start, `space` (or the play control) plays the song it stopped on from its start, and `l` resumes the saved place.
 
@@ -114,7 +114,7 @@ A sort reorders what plays: it plays in that order afterwards, and songs added l
 | `Alt-↑` `Alt-↓`, or `u` `d` | move the picked songs one place in the list's file; refused while the list is sorted, and in Recently played |
 | `S` | sort the open list by title, artist, album artist, album, or folder, then `custom order`, the order of the file |
 | `R` | the same sort the other way round (also the `↓` / `↑` after `sort:` on the tab row) |
-| `/` | filter the open list; `Enter` plays the list from the first match, `Esc` clears |
+| `/` | filter the open list, on the `Filter ·` line under the tabs; `Enter` plays the list from the first match, `Esc` clears |
 | `Enter`, `Esc` | in the name prompt (New playlist, Rename): save the name, or leave it as it was |
 
 Playlists are `.m3u` files in `$XDG_DATA_HOME/stream-radio/playlists`, else `~/.local/share/stream-radio/playlists`. Recently played is recorded by the player itself, not by the TUI: see [Playlists and history](../../plugins/stream-radio/README.md#playlists-and-history) in the mod's README for `history.lua` and `history.jsonl`. The menu on a list row (`m`, or a right click) has **Rename** and **Delete playlist** on a playlist, and **Clear** on Recently played.
@@ -130,6 +130,7 @@ Everything the keys do, the mouse can do too:
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
 - **Drag:** in the Queue, or in a playlist's custom order, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
 - **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In Files, and in the Queue or an open playlist once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
+- **Filter:** in the Queue, or in an open playlist, a click on the `Filter ·` line under the tabs types a filter there, the cursor where you clicked (a click while typing moves it). It edits as the Files location does (`←` `→` `Home` `End`, `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U` `Ctrl-K` `Ctrl-D`). A click on a row leaves it, the filter as typed; `Esc` clears it.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.

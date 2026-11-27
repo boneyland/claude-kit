@@ -18,6 +18,7 @@ import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { QueueView } from './QueueView'
 import { editCells, FilesView } from './FilesView'
+import { filterCells, FilterLine } from './EditLine'
 import { edit, indexAt, type Line } from './lineEdit'
 import { chapterMenu, filesMenu, Menu, queueMenu, type MenuItem } from './Menu'
 import { Checklist } from './Checklist'
@@ -96,6 +97,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const fRows = files.rows
   // the Files location being edited in its heading (mode open)
   const [lineRef, setLine] = useRefState<Line>({ text: '', at: 0 })
+  // the Queue's filter being typed, with its cursor (mode filter); the store
+  // has its text, which may not have reached the view yet
+  const [qFilterRef, setQFilter] = useRefState<Line>({ text: '', at: 0 })
   // a drag in the Queue: the row pressed and where the rows would land
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
   // a row's menu, open: its items, the row (a place in the tab's rows), the item chosen
@@ -164,6 +168,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const setFilter = (fn: (text: string) => string) => {
     queueTab.refilter()
     void h.vars.change('filter', fn)
+  }
+  // types in the Queue's filter from `at` (its end when left out)
+  const editQueueFilter = (at?: number) => {
+    const text = view.filter
+    setQFilter({ text, at: at ?? text.length })
+    setMode('filter')
   }
 
   // Adds the picked Files rows (or the cursor's), folders whole, in row order.
@@ -455,7 +465,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         if (mode === 'help') return setHelpTop(helpTop(a.by === 'all' ? a.dir * Infinity : helpTopRef.current + a.dir * bodyHeight, bodyHeight, tabRef.current))
         setCurTop(undefined)
         // a page keeps a row of the last one in view
-        const to = inRange(a.by === 'all' ? a.dir * Infinity : at + a.dir * Math.max(1, listHeight - 1))
+        const to = inRange(a.by === 'all' ? a.dir * Infinity : at + a.dir * Math.max(1, rowsHeight - 1))
         return setCurSel({ cursor: to, anchor: to, picked: curSel().picked })
       }
       case 'extendPick':
@@ -533,7 +543,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'repeat':
         return act(() => inTurn(async () => setRepeat(h, nextRepeat(await h.vars.read('repeat')))))
       case 'filterMode':
-        return setMode('filter')
+        // Files has no filter line (Playlists' is its own)
+        return isQueueTab() ? editQueueFilter() : undefined
       case 'openMode':
         // o edits the Files tab's location, from nothing
         setTab('files')
@@ -568,14 +579,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'quit':
         session.close()
         return exit()
-      case 'type':
-      case 'erase': {
-        // Backspace takes off a whole character: an emoji is two UTF-16 units
-        const change = (t: string) => (a.kind === 'type' ? t + a.text : edit({ text: t, at: t.length }, { kind: 'erase' }).text)
-        return mode === 'filter' ? setFilter(change) : undefined
+      case 'lineEdit': {
+        if (mode !== 'filter') return setLine(edit(lineRef.current, a.edit))
+        const was = qFilterRef.current
+        const next = edit(was, a.edit)
+        setQFilter(next)
+        // a cursor moved: the rows stay
+        return next.text !== was.text ? setFilter(() => next.text) : undefined
       }
-      case 'lineEdit':
-        return setLine(edit(lineRef.current, a.edit))
       case 'submit':
         if (mode === 'menu') return pickMenu(menuRef.current?.choice ?? 0)
         setMode('list')
@@ -594,7 +605,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         })
       case 'cancel':
         if (mode === 'menu') return closeMenu()
-        if (mode === 'filter') setFilter(() => '')
+        if (mode === 'filter') {
+          setQFilter({ text: '', at: 0 })
+          setFilter(() => '')
+        }
         return setMode('list')
     }
   }
@@ -608,6 +622,10 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const sideWidth = isWide ? Math.max(28, Math.floor(columns * 0.35)) : columns
   const listWidth = isWide ? columns - sideWidth : columns
   const listHeight = Math.max(1, lines - FIXED_ROWS - (isWide ? 0 : NOW_PLAYING_ROWS + 1))
+  // the filter line under the tabs, in the Queue and Playlists
+  const hasFilterLine = tab !== 'files'
+  // the rows the tab showing has room for
+  const rowsHeight = Math.max(1, listHeight - (hasFilterLine ? 1 : 0))
   // The lines between the title and the text line: the list and the pane.
   const bodyHeight = listHeight + 2 + (isWide ? 0 : NOW_PLAYING_ROWS + 1)
   const heading = filter
@@ -617,30 +635,26 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       : q.kind === 'chapters'
         ? 'Chapters'
         : 'No queue or chapters.'
-  const shownFilter = tab === 'playlists' ? pl.filter : view.filter
   const newName = newNameRef.current
   const textLine =
     mode === 'name' && newName ? (
       <NamePrompt label="New playlist name: " line={newName} width={columns} />
     ) : mode === 'name' && pl.prompt ? (
       <NamePrompt label={pl.prompt.label} line={pl.prompt.line} width={columns} />
-    ) : mode === 'filter' ? (
-      `/ filter: ${shownFilter}_`
     ) : mode === 'open' ? (
       'go to a folder or URL · Enter goes there · Esc leaves it'
-    ) : shownFilter.trim() ? (
-      `/ filter: ${shownFilter.trim()}`
     ) : (
       ' '
     )
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
-  const first = firstRow(selected, rows.length, listHeight, queueTab.top)
+  const first = firstRow(selected, rows.length, rowsHeight, queueTab.top)
   // A click selects and holds the view where it is; a double-click does what
   // Enter does. Ctrl-click picks one row; Shift- or Alt-click a range.
   const onRow = (index: number, hit: Hit) => {
     if (dismissMenu()) return
+    leaveFilter()
     queueTab.setTop(first)
     pendingSelect.current = undefined
     const sel = qSel()
@@ -673,7 +687,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     if (!drag || drag.to === drag.from) return
     queueTab.moveTo(drag.to < rows.length ? rows[drag.to].index : q.items.length)
   }
-  const onWheel = (dir: 'up' | 'down') => queueTab.setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const onWheel = (dir: 'up' | 'down') => queueTab.setTop(firstRow(selected, rows.length, rowsHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const fSel = filesSel()
   const fFirst = firstRow(fSel.cursor, fRows.length, listHeight, files.top)
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
@@ -694,6 +708,23 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       return addFiles('end')
     }
     if (row?.kind === 'dir') files.setOpen(row.path)
+  }
+  // A click on a row leaves the filter being typed, as it is, and does what it does.
+  const leaveFilter = () => modeRef.current === 'filter' && setMode('list')
+  // A click on the filter line types in it, the cursor where it landed (at
+  // the end from the prefix); while typing, it moves the cursor there.
+  const onFilterLine = (x: number) => {
+    if (dismissMenu()) return
+    const isPl = isPlaylistsTab()
+    if (isPl && !pl.canFilter) return
+    const cells = filterCells(listWidth)
+    const isTyping = modeRef.current === 'filter'
+    // not typing, the line shows from its start
+    const line = isTyping ? (isPl ? pl.filterLine : qFilterRef.current) : { text: isPl ? pl.filter : view.filter, at: 0 }
+    const at = x < 0 ? (isTyping ? line.at : line.text.length) : indexAt(line, cells, x)
+    if (isTyping && !isPl) return setQFilter({ ...line, at })
+    leaveEdit()
+    return isPl ? pl.editFilter(at) : editQueueFilter(at)
   }
   // A click outside the location being edited only leaves it, as Esc does.
   const leaveEdit = () => {
@@ -716,11 +747,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMode('open')
   }
   const plSel = pl.sel()
-  const plFirst = firstRow(plSel.cursor, pl.rows.length, listHeight, pl.top)
-  const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, listHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
-  const onPlRow = (index: number, hit: Hit) => dismissMenu() || leaveEdit() || pl.onRow(index, hit, plFirst)
+  const plFirst = firstRow(plSel.cursor, pl.rows.length, rowsHeight, pl.top)
+  const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, rowsHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const onPlRow = (index: number, hit: Hit) => dismissMenu() || leaveEdit() || (leaveFilter(), pl.onRow(index, hit, plFirst))
   // the shown songs' tags, for their artist (the newest asked is read first)
-  const plShownKey = tab === 'playlists' ? pl.rows.slice(plFirst, plFirst + listHeight).flatMap(r => (r.kind === 'song' ? [r.song.path] : [])).join('\n') : ''
+  const plShownKey = tab === 'playlists' ? pl.rows.slice(plFirst, plFirst + rowsHeight).flatMap(r => (r.kind === 'song' ? [r.song.path] : [])).join('\n') : ''
   useEffect(() => book.need(plShownKey ? plShownKey.split('\n') : []), [book, plShownKey])
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
@@ -731,7 +762,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   )
   useEffect(() => book.need(fAllKey ? fAllKey.split('\n') : []), [book, fAllKey])
   useEffect(() => book.need(fShownKey ? fShownKey.split('\n') : []), [book, fShownKey])
-  const shown = tab === 'queue' ? rows.slice(first, first + listHeight) : []
+  const shown = tab === 'queue' ? rows.slice(first, first + rowsHeight) : []
   const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
   // every song's tags, for sorting; the shown rows' first (the newest asked is read first)
   const allKey = useMemo(() => (tab === 'queue' ? q.paths.join('\n') : ''), [tab, q.paths])
@@ -740,7 +771,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const menu = menuRef.current
   const menuTop = (() => {
     if (!menu) return 0
-    const rowY = 2 + menu.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
+    const rowY = 2 + (hasFilterLine ? 1 : 0) + menu.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
     const height = menu.items.length + 2
     // below the row, or above it when that would run past the list
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
@@ -750,7 +781,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const checkRows = Math.max(1, listHeight - 1)
   const checkTop = (() => {
     if (!check) return 0
-    const rowY = 2 + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
+    const rowY = 2 + (hasFilterLine ? 1 : 0) + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
     // title, the rows shown and the frame
     const height = Math.min(check.rows.length + 1, checkRows) + 3
     // below the row, or above it when that would run past the list; at the top when neither fits
@@ -777,6 +808,15 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
         onReverse={() => dismissMenu() || handle({ kind: 'sortReverse' })}
       />
+      {hasFilterLine ? (
+        <FilterLine
+          text={tab === 'playlists' ? pl.filter : view.filter}
+          editing={mode !== 'filter' ? undefined : tab === 'playlists' ? pl.filterLine : qFilterRef.current}
+          canFilter={tab === 'queue' || pl.canFilter}
+          width={listWidth}
+          onClick={onFilterLine}
+        />
+      ) : null}
       {tab === 'queue' ? (
         <QueueView
           heading={heading}
@@ -786,7 +826,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           dropAt={dragRef.current?.to}
           current={q.current}
           isFavourite={i => favs.has(q.paths[i] ?? '')}
-          height={listHeight}
+          height={rowsHeight}
           width={listWidth}
           first={first}
           onRow={onRow}
@@ -802,7 +842,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           selected={plSel.cursor}
           picked={new Set(plSel.picked)}
           dropAt={pl.drag?.to}
-          height={listHeight}
+          height={rowsHeight}
           width={listWidth}
           first={plFirst}
           now={pl.lib.now}

@@ -49,6 +49,12 @@ export type PlaylistsTab = {
   top: number | undefined
   setTop(top: number | undefined): void
   filter: string
+  // the filter as a line with its cursor, for typing in it (mode filter)
+  filterLine: Line
+  // whether the rows can be filtered: only an open list's
+  canFilter: boolean
+  // types in the filter from `at` (its end when left out); only in an open list
+  editFilter(at?: number): void
   heading: string
   // mode name: what the line is for, and the line
   prompt: { label: string; line: Line } | undefined
@@ -93,6 +99,9 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const [selRef, setSelState] = useRefState<Held | undefined>(undefined)
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
   const [filterRef, setFilterState] = useRefState('')
+  // the filter's cursor; past the end (the filter cleared) it is at the end
+  const [filterAtRef, setFilterAt] = useRefState(0)
+  const filterLine = (): Line => ({ text: filterRef.current, at: Math.min(filterAtRef.current, filterRef.current.length) })
   const [promptRef, setPrompt] = useRefState<{ for: Prompt; line: Line } | undefined>(undefined)
   // a drag of songs: the row pressed and where they would land
   const [dragRef, setDrag] = useRefState<{ from: number; to: number } | undefined>(undefined)
@@ -140,6 +149,13 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     setFilterState(text)
     setTop(undefined)
     putCursor(0)
+  }
+
+  // the open list only
+  const editFilter = (at = filterRef.current.length) => {
+    if (!lib.open) return
+    setFilterAt(at)
+    ui.setMode('filter')
   }
 
   const open = (name: string) => {
@@ -411,12 +427,14 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     }
     if (mode === 'filter') {
       switch (a.kind) {
-        case 'type':
-          setFilter(filterRef.current + a.text)
+        case 'lineEdit': {
+          const was = filterRef.current
+          const next = edit(filterLine(), a.edit)
+          setFilterAt(next.at)
+          // a cursor moved: the rows and the cursor in them stay
+          if (next.text !== was) setFilter(next.text)
           return true
-        case 'erase':
-          setFilter(edit({ text: filterRef.current, at: filterRef.current.length }, { kind: 'erase' }).text)
-          return true
+        }
         case 'submit': {
           ui.setMode('list')
           // the filter as typed: keys in one go may not have redrawn the rows yet
@@ -454,8 +472,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
         remove(a.from)
         return true
       case 'filterMode':
-        // the open list only
-        if (lib.open) ui.setMode('filter')
+        editFilter()
         return true
       case 'playList':
       case 'rename':
@@ -497,6 +514,9 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     top: topRef.current,
     setTop,
     filter: filterRef.current,
+    filterLine: filterLine(),
+    canFilter: !!o,
+    editFilter,
     heading,
     prompt: p && { label: p.for.kind === 'new' ? 'New playlist name: ' : `Rename "${p.for.from}" to: `, line: p.line },
     menuOf: at => {

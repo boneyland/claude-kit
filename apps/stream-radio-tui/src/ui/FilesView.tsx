@@ -5,7 +5,8 @@ import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
 import type { FileRow } from '../files/tree'
 import type { Tags } from '../media/tags'
-import { shown, type Line } from './lineEdit'
+import type { Line } from './lineEdit'
+import { EditLine } from './EditLine'
 
 type Props = {
   // the root folder's name, after HEADING_PREFIX
@@ -64,7 +65,7 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
       <Clickable onClick={hit => onHeading?.(hit.x - PREFIX_CELLS)}>
-        {editing ? <EditLine line={editing} width={editCells(width)} /> : (
+        {editing ? <EditLine prefix={HEADING_PREFIX} line={editing} width={editCells(width)} /> : (
           <Text dimColor wrap="truncate-end">
             {HEADING_PREFIX + heading}
           </Text>
@@ -95,18 +96,5 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
         )
       })}
     </Clickable>
-  )
-}
-
-// The heading as the location is edited: the cursor on a cell of its own.
-function EditLine({ line, width }: { line: Line; width: number }) {
-  const { before, under, after } = shown(line, width)
-  return (
-    <Text wrap="truncate-end">
-      <Text dimColor>{HEADING_PREFIX}</Text>
-      {before}
-      <Text inverse>{under}</Text>
-      {after}
-    </Text>
   )
 }
