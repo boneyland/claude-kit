@@ -135,7 +135,7 @@ Everything the keys do, the mouse can do too:
 - **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In Files, and in the Queue or an open playlist once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Filter:** a click on `Filter ·`, at the right of the heading (in Playlists, of an open list), types a filter there, the cursor where you clicked (a click while typing moves it). It edits as the Files location does (`←` `→` `Home` `End`, `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U` `Ctrl-K` `Ctrl-D`). A click on a row leaves it, the filter as typed; `Esc` clears it.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
-- **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
+- **Controls:** ⏮ previous, ⏸ pause (▶ while paused; stopped, it plays as `space` does), ⏹ stop, ⏭ next (the TUI draws these as Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
