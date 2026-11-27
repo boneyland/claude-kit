@@ -191,3 +191,24 @@ node dist/stream-radio-tui.mjs --help
 ```
 
 Only source is committed. A GitHub Actions workflow tests, builds and publishes `stream-radio-tui.mjs` to the `stream-radio-tui-rolling` prerelease, whose tag moves to each new build, on each push to `main` that touches the TUI or the mod's core.
+
+## Credits
+
+stream-radio-tui is built on these projects; thanks to their authors.
+
+Bundled into `stream-radio-tui.mjs` (all MIT):
+
+- [Ink](https://github.com/vadimdemedes/ink): React for the terminal, which draws the whole screen
+- [React](https://github.com/facebook/react): the components Ink renders
+- [Yoga](https://github.com/facebook/yoga): the flexbox layout Ink uses
+- [music-metadata](https://github.com/Borewit/music-metadata): reads songs' tags and embedded art
+
+Programs it runs, installed separately:
+
+- [mpv](https://mpv.io): plays everything, and decodes the waveforms and art
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp): reads YouTube and the other sites it supports
+- [curl](https://curl.se): fetches remote playlists, and the installer's download
+
+To build and test it: [esbuild](https://github.com/evanw/esbuild), [TypeScript](https://github.com/microsoft/TypeScript), [Vitest](https://github.com/vitest-dev/vitest) and [ink-testing-library](https://github.com/vadimdemedes/ink-testing-library).
+
+Album art and pixel waveforms use [kitty](https://sw.kovidgoyal.net/kitty/)'s graphics protocol, and the controls' icons come from [Nerd Fonts](https://www.nerdfonts.com).
