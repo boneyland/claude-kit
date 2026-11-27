@@ -11,6 +11,7 @@ const FIRST = {
   playlists: ['Enter open/play  a add  A next  Del remove  * fav  P playlist  m menu  / filter', 'Enter open/play  a add  * fav  P playlist  m menu'],
   name: ['type the playlist\'s name  Enter saves it  Esc leaves it as it was', 'type a name  Enter saves  Esc leaves it'],
   filter: ['type to narrow the list  ← → move  Enter plays the first match  Esc clears', 'type to narrow  Enter plays the first  Esc clears'],
+  filesFilter: ['type to narrow the folders read so far  ← → move  Enter keeps it  Esc clears', 'type to narrow  Enter keeps it  Esc clears'],
   open: ['type a folder path or a YouTube playlist URL  Enter goes there  Esc leaves it', 'type a folder or URL  Enter goes there  Esc leaves it'],
   help: ['↑/↓ or j/k scroll  PgUp/PgDn a page  ?, Esc or q closes', '↑/↓ j/k scroll  ? Esc q close'],
   menu: ['↑/↓ choose  Enter does it  Esc closes the menu', '↑/↓ choose  Enter does it  Esc closes'],
@@ -21,7 +22,7 @@ const SECOND = ['? all keys  Tab switch tabs  o go to  l resume  x stop  q quit 
 // The two lines of key hints, for the tab showing; shorter under 80 columns.
 export function Hints({ mode, isWide, tab = 'queue' }: { mode: Mode; isWide: boolean; tab?: Tab }) {
   const at = isWide ? 0 : 1
-  const first = mode === 'list' && tab !== 'queue' ? FIRST[tab] : FIRST[mode]
+  const first = mode === 'list' && tab !== 'queue' ? FIRST[tab] : mode === 'filter' && tab === 'files' ? FIRST.filesFilter : FIRST[mode]
   return (
     <Box flexDirection="column">
       <Text dimColor wrap="truncate-end">

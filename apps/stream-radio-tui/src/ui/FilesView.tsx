@@ -28,13 +28,20 @@ type Props = {
   // a row's menu: right-click, or the ⋯ at the end of the cursor's row
   onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
+  // the filter line, at the right of the heading's row, filterWidth(width) wide
+  filter?: React.ReactNode
 }
 
 export const HEADING_PREFIX = 'Files · '
 const PREFIX_CELLS = HEADING_PREFIX.length
 
+// The filter's share of the heading's row, in a list `width` wide; a cell
+// between it and the location.
+export const filterWidth = (width: number) => Math.min(32, Math.max(12, Math.floor(width * 0.45)))
+const headingWidth = (width: number) => Math.max(1, width - filterWidth(width) - 1)
+
 // The cells a location being edited has in a list `width` wide.
-export const editCells = (width: number) => Math.max(1, width - PREFIX_CELLS)
+export const editCells = (width: number) => Math.max(1, headingWidth(width) - PREFIX_CELLS)
 
 // x of a folder row's 🢒/🢓, from the row's left edge.
 export const arrowAt = (row: FileRow) => (row.kind === 'dir' ? 2 + 2 * row.depth : -1)
@@ -54,7 +61,7 @@ function label(row: FileRow, isFavourite: boolean): string {
 }
 
 // The Files tab: a tree from the root folder, ../ first.
-export function FilesView({ heading, editing, onHeading, rows, selected, picked, height, width, first, tags, isFavourite, onRow, onMenu, onWheel }: Props) {
+export function FilesView({ heading, editing, onHeading, rows, selected, picked, height, width, first, tags, isFavourite, onRow, onMenu, onWheel, filter }: Props) {
   // how many times each path has been drawn so far, for keys
   const seen = new Map<string, number>()
   const copies = (path: string) => {
@@ -64,13 +71,18 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
   }
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
-      <Clickable onClick={hit => onHeading?.(hit.x - PREFIX_CELLS)}>
-        {editing ? <EditLine prefix={HEADING_PREFIX} line={editing} width={editCells(width)} /> : (
-          <Text dimColor wrap="truncate-end">
-            {HEADING_PREFIX + heading}
-          </Text>
-        )}
-      </Clickable>
+      <Box>
+        <Clickable width={headingWidth(width)} marginRight={1} flexShrink={0} onClick={hit => onHeading?.(hit.x - PREFIX_CELLS)}>
+          {editing ? <EditLine prefix={HEADING_PREFIX} line={editing} width={editCells(width)} /> : (
+            <Text dimColor wrap="truncate-end">
+              {HEADING_PREFIX + heading}
+            </Text>
+          )}
+        </Clickable>
+        <Box width={filterWidth(width)} flexShrink={0}>
+          {filter}
+        </Box>
+      </Box>
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         // a video can be in a playlist twice: each copy is its own row

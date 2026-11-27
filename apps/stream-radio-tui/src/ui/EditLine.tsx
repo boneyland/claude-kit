@@ -37,11 +37,12 @@ type FilterProps = {
   onClick?(x: number): void
 }
 
-// The Queue's and Playlists' filter, under the tabs: edited in place, as the
-// Files heading is.
+// A tab's filter: the Queue's and Playlists' under the tabs, Files' at the
+// right of its heading. Edited in place, as the Files heading is; an empty
+// one too narrow for the hint says only /.
 export function FilterLine({ text, editing, canFilter, width, onClick }: FilterProps) {
   return (
-    <Clickable onClick={hit => onClick?.(hit.x - PREFIX_CELLS)}>
+    <Clickable width={width} onClick={hit => onClick?.(hit.x - PREFIX_CELLS)}>
       {editing ? (
         <EditLine prefix={FILTER_PREFIX} line={editing} width={filterCells(width)} />
       ) : text ? (
@@ -51,7 +52,7 @@ export function FilterLine({ text, editing, canFilter, width, onClick }: FilterP
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          {FILTER_PREFIX + (canFilter ? FILTER_HINT : FILTER_NONE)}
+          {FILTER_PREFIX + (!canFilter ? FILTER_NONE : PREFIX_CELLS + FILTER_HINT.length <= width ? FILTER_HINT : '/')}
         </Text>
       )}
     </Clickable>

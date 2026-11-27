@@ -44,6 +44,7 @@ export const FILES_KEY_HELP: [string, string][] = [
   ['← →', 'shut or open a folder'],
   ['U', 'the folder above (../)'],
   ['o, click heading', 'edit the location: ← → Home End Ctrl-A/E/W/U/K/D, Enter goes'],
+  ['/, click Filter', 'filter the folders read so far (the open ones), at the right of the heading; Enter keeps it, Esc clears'],
   ['a', 'add to queue: the picked rows, or this one'],
   ['A', 'play next: the same, after the song playing'],
   ['R', 'sort the other way round'],

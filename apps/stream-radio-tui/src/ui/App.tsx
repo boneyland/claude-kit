@@ -17,7 +17,7 @@ import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { QueueView } from './QueueView'
-import { editCells, FilesView } from './FilesView'
+import { editCells, FilesView, filterWidth } from './FilesView'
 import { filterCells, FilterLine } from './EditLine'
 import { edit, indexAt, type Line } from './lineEdit'
 import { chapterMenu, filesMenu, Menu, queueMenu, type MenuItem } from './Menu'
@@ -158,6 +158,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // The tab showing: its selection, rows and scroll.
   const isQueueTab = () => tabRef.current === 'queue'
   const isPlaylistsTab = () => tabRef.current === 'playlists'
+  const isFilesTab = () => tabRef.current === 'files'
   const curSel = () => (isQueueTab() ? qSel() : isPlaylistsTab() ? pl.sel() : filesSel())
   const setCurSel = (sel: Selection) => (isQueueTab() ? setQSel(sel) : isPlaylistsTab() ? pl.setSel(sel) : setF(sel))
   const curCount = () => (isQueueTab() ? rows.length : isPlaylistsTab() ? pl.rows.length : fRows.length)
@@ -169,10 +170,21 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     queueTab.refilter()
     void h.vars.change('filter', fn)
   }
-  // types in the Queue's filter from `at` (its end when left out)
-  const editQueueFilter = (at?: number) => {
-    const text = view.filter
-    setQFilter({ text, at: at ?? text.length })
+  // The Queue's or Files' filter (Playlists keeps its own): as typed, with its
+  // cursor; a new text or cursor.
+  const filterNow = (): Line => (isFilesTab() ? files.filter : qFilterRef.current)
+  const putFilter = (line: Line) => {
+    if (isFilesTab()) return files.setFilter(line)
+    const was = qFilterRef.current.text
+    setQFilter(line)
+    // a cursor moved: the rows stay
+    if (line.text !== was) setFilter(() => line.text)
+  }
+  // types in the Queue's or Files' filter from `at` (its end when left out)
+  const editFilter = (at?: number) => {
+    const text = isFilesTab() ? files.filter.text : view.filter
+    if (isFilesTab()) files.setFilter({ text, at: at ?? text.length })
+    else setQFilter({ text, at: at ?? text.length })
     setMode('filter')
   }
 
@@ -543,8 +555,8 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
       case 'repeat':
         return act(() => inTurn(async () => setRepeat(h, nextRepeat(await h.vars.read('repeat')))))
       case 'filterMode':
-        // Files has no filter line (Playlists' is its own)
-        return isQueueTab() ? editQueueFilter() : undefined
+        // Playlists' is its own
+        return editFilter()
       case 'openMode':
         // o edits the Files tab's location, from nothing
         setTab('files')
@@ -581,15 +593,13 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         return exit()
       case 'lineEdit': {
         if (mode !== 'filter') return setLine(edit(lineRef.current, a.edit))
-        const was = qFilterRef.current
-        const next = edit(was, a.edit)
-        setQFilter(next)
-        // a cursor moved: the rows stay
-        return next.text !== was.text ? setFilter(() => next.text) : undefined
+        return putFilter(edit(filterNow(), a.edit))
       }
       case 'submit':
         if (mode === 'menu') return pickMenu(menuRef.current?.choice ?? 0)
         setMode('list')
+        // Files: Enter keeps the filter, the cursor on the first file that matches
+        if (mode === 'filter' && isFilesTab()) return
         if (mode === 'filter') {
           // The store, not the last render: typing may not have redrawn yet.
           return act(async () => {
@@ -605,10 +615,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         })
       case 'cancel':
         if (mode === 'menu') return closeMenu()
-        if (mode === 'filter') {
-          setQFilter({ text: '', at: 0 })
-          setFilter(() => '')
-        }
+        if (mode === 'filter') putFilter({ text: '', at: 0 })
         return setMode('list')
     }
   }
@@ -694,6 +701,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // ../ goes up and a folder opens or shuts, at a click; a file only selects.
   const onFileRow = (index: number, hit: Hit) => {
     if (dismissMenu() || leaveEdit()) return
+    leaveFilter()
     files.setTop(fFirst)
     const sel = filesSel()
     if (hit.mods.ctrl) return setF(toggle(sel, index))
@@ -717,14 +725,14 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     if (dismissMenu()) return
     const isPl = isPlaylistsTab()
     if (isPl && !pl.canFilter) return
-    const cells = filterCells(listWidth)
+    const cells = filterCells(isFilesTab() ? filterWidth(listWidth) : listWidth)
     const isTyping = modeRef.current === 'filter'
     // not typing, the line shows from its start
-    const line = isTyping ? (isPl ? pl.filterLine : qFilterRef.current) : { text: isPl ? pl.filter : view.filter, at: 0 }
+    const line = isTyping ? (isPl ? pl.filterLine : filterNow()) : { text: isPl ? pl.filter : isFilesTab() ? files.filter.text : view.filter, at: 0 }
     const at = x < 0 ? (isTyping ? line.at : line.text.length) : indexAt(line, cells, x)
-    if (isTyping && !isPl) return setQFilter({ ...line, at })
+    if (isTyping && !isPl) return putFilter({ ...line, at })
     leaveEdit()
-    return isPl ? pl.editFilter(at) : editQueueFilter(at)
+    return isPl ? pl.editFilter(at) : editFilter(at)
   }
   // A click outside the location being edited only leaves it, as Esc does.
   const leaveEdit = () => {
@@ -868,6 +876,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           isFavourite={r => favs.has(files.entriesOf(r)[0]?.path ?? '')}
           onRow={onFileRow}
           onMenu={openMenu}
+          filter={<FilterLine text={files.filter.text} editing={mode === 'filter' ? files.filter : undefined} canFilter width={filterWidth(listWidth)} onClick={onFilterLine} />}
           onWheel={onFilesWheel}
         />
       )}

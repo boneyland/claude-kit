@@ -1023,10 +1023,45 @@ describe('files', () => {
     const { lines, click, where, press } = await showFiles()
     await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
     const t = where('~/Music')
-    await click(t.x + 40, t.y)
+    await click(t.x + 25, t.y)
     await press('/Album', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D', '\x1b[D')
     await press('\x17')
     expect(stripAnsi(heading(lines()))).toContain('Files · ~/Album')
+  })
+
+  test('the filter, at the right of the heading, narrows the tree read so far; Enter keeps it, the cursor on the first match', async () => {
+    const { lines, click, where, press, host, session } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    expect(stripAnsi(heading(lines()))).toMatch(/Files · ~\/Music\s+Filter · \/ or click to filter/)
+    await click(where('Album/').x, where('Album/').y)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
+    await press('/', 't', 'w', 'o')
+    expect(stripAnsi(heading(lines()))).toMatch(/Files · ~\/Music\s+Filter · two/)
+    const all = lines().join('\n')
+    expect(all).toMatch(/Album\/[\s\S]*02 Two\.flac/)
+    expect(all).not.toContain('01 One.flac')
+    expect(all).not.toContain('loose.mp3')
+    // keys are commands again; a adds the match the cursor is on
+    await press(ENTER, 'a')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/Album/02 Two.flac' }], 'end')
+    expect(stripAnsi(heading(lines()))).toContain('Filter · two')
+    // Esc while typing clears it
+    await press('/', ESC)
+    expect(lines().join('\n')).toContain('loose.mp3')
+  })
+
+  test("a click on Files' filter types there; a click on a row leaves it as typed; a new folder clears it", async () => {
+    const { lines, click, where, press } = await showFiles()
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    const f = where('Filter · ')
+    await click(f.x + 15, f.y)
+    await press('l', 'o')
+    expect(lines().join('\n')).not.toContain('Album/')
+    await click(where('loose.mp3').x, where('loose.mp3').y)
+    // U is a command again: the folder above, which clears the filter
+    await press('U')
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/Files · ~(?!\/)/))
+    expect(stripAnsi(heading(lines()))).toContain('Filter · / or click to filter')
   })
 
   test('Esc, or a click on a row, leaves the location as it was', async () => {

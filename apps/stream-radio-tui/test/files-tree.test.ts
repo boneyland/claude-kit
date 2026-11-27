@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Host } from '@core/host'
-import { fileRows, type FileEntry, type Listing } from '../src/files/tree'
+import { fileRows, filterFileRows, type FileEntry, type Listing } from '../src/files/tree'
 import { loadFolder } from '../src/files/load'
 import { lastFolder, rememberFolder } from '../src/files/remember'
 
@@ -128,5 +128,35 @@ describe('remember', () => {
     await rememberFolder(h, '/m/A')
     expect(JSON.parse(files['/state/tui-files.json'])).toEqual({ folder: '/m/A' })
     expect(await lastFolder(h)).toBe('/m/A')
+  })
+})
+
+describe('filterFileRows', () => {
+  const listings = new Map<string, Listing>([
+    ['/m', [dir('/m/Beatles'), dir('/m/Jazz'), file('/m/help me.mp3')]],
+    ['/m/Beatles', [dir('/m/Beatles/Help'), file('/m/Beatles/Yesterday.mp3')]],
+    ['/m/Beatles/Help', [file('/m/Beatles/Help/01 Help.flac'), file('/m/Beatles/Help/02 Night.flac')]],
+    ['/m/Jazz', 'loading'],
+  ])
+  const rows = fileRows('/m', listings, new Set(['/m/Beatles', '/m/Beatles/Help', '/m/Jazz']), 'name', none)
+  const names = (text: string, tags: Parameters<typeof filterFileRows>[2] = none) => filterFileRows(rows, text, tags).map(r => ('name' in r ? r.name : r.kind))
+
+  test('no words: every row', () => {
+    expect(filterFileRows(rows, '  ', none)).toBe(rows)
+  })
+  test('a match keeps the folders above it; ../ stays; notes go', () => {
+    expect(names('night')).toEqual(['up', 'Beatles', 'Help', '02 Night.flac'])
+  })
+  test('a folder that matches keeps what shows under it', () => {
+    expect(names('HELP')).toEqual(['up', 'Beatles', 'Help', '01 Help.flac', '02 Night.flac', 'help me.mp3'])
+  })
+  test('every word, anywhere on the way down from the root', () => {
+    expect(names('beatles help 01')).toEqual(['up', 'Beatles', 'Help', '01 Help.flac'])
+  })
+  test("a file's artist matches", () => {
+    expect(names('lennon', p => (p === '/m/Beatles/Yesterday.mp3' ? { title: '', artist: 'John Lennon', albumArtist: '', album: '' } : undefined))).toEqual(['up', 'Beatles', 'Yesterday.mp3'])
+  })
+  test('nothing matches: only ../', () => {
+    expect(names('zzz')).toEqual(['up'])
   })
 })

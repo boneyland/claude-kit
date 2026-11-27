@@ -6,7 +6,8 @@ import { NO_SELECTION, type Held } from '../ui/selection'
 import type { TagBook } from '../ui/tagbook'
 import { loadFolder } from './load'
 import { lastFolder, rememberFolder } from './remember'
-import { fileRows, parentOf, type FileRow, type FilesSort, type Listing } from './tree'
+import { fileRows, filterFileRows, parentOf, type FileRow, type FilesSort, type Listing } from './tree'
+import type { Line } from '../ui/lineEdit'
 import { listPlaylist, type Video } from '../media/youtube'
 import type { Tags } from '../media/tags'
 import type { QueueEntry } from '@core/player'
@@ -17,7 +18,12 @@ export type Files = {
   rootLabel(home: string): string
   // the root as a location to edit and go to: a folder's path, a playlist's URL
   rootText(home: string): string
+  // the rows showing: the tree, or what the filter matches of it
   rows: FileRow[]
+  // the filter, with its cursor; a new root clears it
+  filter: Line
+  // a new text puts the cursor on the first file that matches
+  setFilter(line: Line): void
   // with the rows it was made against (see Held)
   sel(): Held
   setSel(sel: Held): void
@@ -58,6 +64,7 @@ export function useFiles(h: Host, book: TagBook): Files {
   const [topRef, setTop] = useRefState<number | undefined>(undefined)
   const [sortRef, setSortField] = useRefState<FilesSort>('name')
   const [reversedRef, setReversed] = useRefState(false)
+  const [filterRef, setFilterLine] = useRefState<Line>({ text: '', at: 0 })
   // videos listed from URLs, by URL; the playlists' videos, by playlist URL
   const videos = useRef(new Map<string, Video>()).current
   const playlists = useRef(new Map<string, { title: string; videos: Video[] }>()).current
@@ -85,6 +92,7 @@ export function useFiles(h: Host, book: TagBook): Files {
   const showRoot = (path: string) => {
     if (!path.startsWith(YT)) lastLocal.current = path
     setRootState(path)
+    setFilterLine({ text: '', at: 0 })
     setSel(NO_SELECTION)
     setTop(undefined)
     load(path)
@@ -120,12 +128,15 @@ export function useFiles(h: Host, book: TagBook): Files {
   // Worked out again only when what they show changes, not at each redraw.
   // The playlists and videos change only along with the listings.
   const tagsSeen = book.version()
-  const rows = useMemo(
+  const tree = useMemo(
     () => (rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys()), reversedRef.current) : []),
     // tags is read through the listings and the book's version
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rootRef.current, listingsRef.current, openRef.current, sortRef.current, reversedRef.current, tagsSeen],
   )
+  const filterText = filterRef.current.text.trim()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => filterFileRows(tree, filterText, tags), [tree, filterText])
   const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
   // Its folder read (or not readable) without it: the reveal is given up, so
   // the cursor doesn't jump to it whenever it turns up later.
@@ -161,6 +172,16 @@ export function useFiles(h: Host, book: TagBook): Files {
       return [v ? { path: v.url, title: v.title } : { path: row.path }]
     },
     rows,
+    filter: filterRef.current,
+    setFilter: line => {
+      const was = filterRef.current.text
+      setFilterLine(line)
+      if (line.text === was) return
+      // the rows as they will be: listings don't change meanwhile
+      const at = filterFileRows(tree, line.text.trim(), tags).findIndex(r => r.kind === 'file')
+      setSel(at < 0 ? NO_SELECTION : { cursor: at, anchor: at, picked: [] })
+      setTop(undefined)
+    },
     sel: () => selRef.current,
     setSel,
     top: topRef.current,

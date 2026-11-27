@@ -67,6 +67,8 @@ Actions take the picked rows, or the cursor's row when none is picked. Adding or
 
 Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. A folder shows `🢒`, `🢓` when open. The heading shows where you are; `../` is always the first row.
 
+`/`, or a click on `Filter ·` at the right of the heading, filters the folders read so far (the root and the open folders): a file stays when every word is in its name, its folders' names or its artist, a folder that matches keeps what shows under it, and the folders above a match stay. Folders not yet opened aren't searched. `Enter` keeps the filter, the cursor on the first file that matches; `Esc` clears it, and so does going to another folder.
+
 Click the heading's location to edit it in place, the cursor where you clicked. `o` does the same from an empty line. While editing: `←` `→` or a click move the cursor, `Home` `End` or `Ctrl-A` `Ctrl-E` jump to the start or end, Backspace and `Ctrl-D` erase before or after it, `Ctrl-W` takes off a folder, `Ctrl-U` `Ctrl-K` erase to the start or end. `Enter` goes there; `Esc`, or a click on a row, leaves it as it was.
 
 | Key | |
@@ -74,6 +76,7 @@ Click the heading's location to edit it in place, the cursor where you clicked. 
 | `Enter` | open or shut a folder; on `../`, go up; on a file, add it to the queue |
 | `←` `→` | shut or open a folder |
 | `U` | the folder above (`../`) |
+| `/` | filter the folders read so far, at the right of the heading; `Enter` keeps it, `Esc` clears |
 | `a` | add to the queue |
 | `A` | play next: add after the song playing |
 | `S` | sort files by name, date modified, artist or album artist (folders stay first, by name) |
@@ -130,7 +133,7 @@ Everything the keys do, the mouse can do too:
 - **Rows:** a click selects a row; in Files a click on a folder opens or shuts it and a click on `../` goes up. A double-click plays the song in the Queue, and adds the file or folder to the queue in Files. Ctrl-click picks or unpicks a row; Shift-click or Alt-click picks the rows from the cursor to there. A right-click opens the row's menu.
 - **Drag:** in the Queue, or in a playlist's custom order, drag a song (or any of the picked songs) and let go where they should go: they land above the row marked `⤵`.
 - **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In Files, and in the Queue or an open playlist once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
-- **Filter:** in the Queue, or in an open playlist, a click on the `Filter ·` line under the tabs types a filter there, the cursor where you clicked (a click while typing moves it). It edits as the Files location does (`←` `→` `Home` `End`, `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U` `Ctrl-K` `Ctrl-D`). A click on a row leaves it, the filter as typed; `Esc` clears it.
+- **Filter:** a click on `Filter ·` (under the tabs in the Queue and an open playlist, at the right of the heading in Files) types a filter there, the cursor where you clicked (a click while typing moves it). It edits as the Files location does (`←` `→` `Home` `End`, `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U` `Ctrl-K` `Ctrl-D`). A click on a row leaves it, the filter as typed; `Esc` clears it.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
 - **Controls:** 󰒮 previous, 󰏤 pause (󰐊 while paused; stopped, it plays as `space` does), 󰓛 stop, 󰒭 next (Nerd Font icons, which kitty and Ghostty bundle); `repeat …` and `shuffle …` switch when clicked.
 - **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.

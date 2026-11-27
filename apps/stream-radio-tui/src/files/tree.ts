@@ -64,3 +64,33 @@ export function fileRows(
 
 // The folder above `path`; '/' stays '/'.
 export const parentOf = (path: string) => path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/'
+
+// The rows with every word of `text` on the way down to them: in the folder
+// and file names from the root, or a file's artist. A folder that matches
+// keeps the rows showing under it; a match keeps the folders above it. ../
+// stays; loading and error notes go. Only what has been read can match.
+export function filterFileRows(rows: FileRow[], text: string, tags: (path: string) => Tags | undefined): FileRow[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return rows
+  const out: FileRow[] = []
+  // the names on the way down to the row, and the folders above it not yet kept
+  const names: string[] = []
+  const above: (FileRow | undefined)[] = []
+  for (const row of rows) {
+    if (row.kind === 'up') out.push(row)
+    if (row.kind === 'up' || row.kind === 'note') continue
+    names.length = above.length = row.depth
+    names.push(row.name)
+    const hay = `${names.join('/')} ${row.kind === 'file' ? (tags(row.path)?.artist ?? '') : ''}`.toLowerCase()
+    const isMatch = words.every(w => hay.includes(w))
+    above.push(row.kind === 'dir' && !isMatch ? row : undefined)
+    if (!isMatch) continue
+    for (let d = 0; d < row.depth; d++) {
+      const dir = above[d]
+      if (dir) out.push(dir)
+      above[d] = undefined
+    }
+    out.push(row)
+  }
+  return out
+}
