@@ -1,4 +1,5 @@
-// Two fixes to how Ink 5 places characters in its output grid.
+// Fixes to how wide Ink 5 takes text to be: two to how it places characters
+// in its output grid (output.js), one to when it measures a text (dom.js).
 //
 // Wide characters: Ink takes any character stored as two UTF-16 code units for
 // a double-width one. Kitty's image placeholder, U+10EEEE, is two code units
@@ -13,6 +14,13 @@
 // and the rest of that row came out a column short, tearing the divider and
 // the art beside it. A character string-width calls zero columns now joins the
 // cell before it, or the start of a double-width character before it.
+//
+// A text measured again: Ink has Yoga measure a text again when a string in it
+// changes, or is added at its end or removed, but not when one is inserted
+// before a part already there: insertBeforeNode returns before marking the
+// text dirty. The text kept its old width, and truncate-end cut the new one to
+// it, so an edit line's first letter showed as … (React makes no node for '',
+// so the text before the cursor appeared then, before the cursor's own cell).
 //
 // Applied by build.mjs and vitest.config.ts; package.json pins Ink to 5.2.1,
 // the version it was written for, and it throws rather than build a TUI with
@@ -34,12 +42,30 @@ const FIXES = [
   },
 ]
 
-export const INK_OUTPUT = /[\\/]ink[\\/]build[\\/]output\.js$/
+const DOM_FIXES = [
+  {
+    old: 'node.yogaNode?.insertChild(newChildNode.yogaNode, index);\n        }\n        return;',
+    new:
+      'node.yogaNode?.insertChild(newChildNode.yogaNode, index);\n        }\n' +
+      "        if (node.nodeName === 'ink-text' || node.nodeName === 'ink-virtual-text') {\n            markNodeAsDirty(node);\n        }\n" +
+      '        return;',
+  },
+]
 
-export function patchInkOutput(source) {
-  for (const fix of FIXES) {
-    if (source.split(fix.old).length !== 2) throw new Error('ink-width-fix: Ink output.js changed; check the width fixes')
+export const INK_OUTPUT = /[\\/]ink[\\/]build[\\/]output\.js$/
+export const INK_DOM = /[\\/]ink[\\/]build[\\/]dom\.js$/
+
+function apply(source, fixes, file) {
+  for (const fix of fixes) {
+    if (source.split(fix.old).length !== 2) throw new Error(`ink-width-fix: Ink ${file} changed; check the width fixes`)
     source = source.replace(fix.old, fix.new)
   }
   return source
 }
+
+export const patchInkOutput = source => apply(source, FIXES, 'output.js')
+export const patchInkDom = source => apply(source, DOM_FIXES, 'dom.js')
+
+// Ink's file at `path`, patched if it is one of the two: the build and the tests both load Ink through this.
+export const patchInk = (path, source) =>
+  INK_OUTPUT.test(path) ? patchInkOutput(source) : INK_DOM.test(path) ? patchInkDom(source) : source

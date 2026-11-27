@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { execSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { INK_OUTPUT, patchInkOutput } from './ink-width-fix.mjs'
+import { INK_DOM, INK_OUTPUT, patchInk } from './ink-width-fix.mjs'
 
 // The version: the commit's date (UTC), then its short hash, as
 // 2026.11.26+e23f472; the same commit builds the same version. 'unknown'
@@ -35,7 +35,9 @@ const noDevtools = {
 const inkWidth = {
   name: 'ink-width-fix',
   setup(b) {
-    b.onLoad({ filter: INK_OUTPUT }, async args => ({ contents: patchInkOutput(await readFile(args.path, 'utf8')), loader: 'js' }))
+    for (const filter of [INK_OUTPUT, INK_DOM]) {
+      b.onLoad({ filter }, async args => ({ contents: patchInk(args.path, await readFile(args.path, 'utf8')), loader: 'js' }))
+    }
   },
 }
 
