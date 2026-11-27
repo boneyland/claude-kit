@@ -4,7 +4,7 @@ import type { Tab } from './ui/Tabs'
 import type { Edit } from './ui/lineEdit'
 
 // list: keys are commands; filter, open and name: keys edit a line of text
-// with a cursor (filter's under the Queue's or Playlists' tabs; open's in the
+// with a cursor (filter's at the right of the tab's heading; open's in the
 // Files heading; name's a playlist's name, new or renamed); help: the key list
 // shows, and keys scroll or close it; menu: a row's menu is open, and keys
 // choose from it; checklist: Add to playlist's checklist is open, and keys

@@ -6,7 +6,7 @@ import { RowFill } from './RowFill'
 import type { FileRow } from '../files/tree'
 import type { Tags } from '../media/tags'
 import type { Line } from './lineEdit'
-import { EditLine } from './EditLine'
+import { EditLine, HeadingRow, headingWidth } from './EditLine'
 
 type Props = {
   // where the tree is: a folder, or a YouTube playlist's title
@@ -28,15 +28,10 @@ type Props = {
   // a row's menu: right-click, or the ⋯ at the end of the cursor's row
   onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
-  // the filter line, at the right of the heading's row, filterWidth(width) wide
+  // the filter, at the right of the heading's row
   filter?: React.ReactNode
 }
 
-
-// The filter's share of the heading's row, in a list `width` wide; a cell
-// between it and the location.
-export const filterWidth = (width: number) => Math.min(32, Math.max(12, Math.floor(width * 0.45)))
-const headingWidth = (width: number) => Math.max(1, width - filterWidth(width) - 1)
 
 // The cells a location being edited has in a list `width` wide.
 export const editCells = headingWidth
@@ -69,18 +64,13 @@ export function FilesView({ heading, editing, onHeading, rows, selected, picked,
   }
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
-      <Box>
-        <Clickable width={headingWidth(width)} marginRight={1} flexShrink={0} onClick={hit => onHeading?.(hit.x)}>
-          {editing ? <EditLine prefix="" line={editing} width={editCells(width)} /> : (
-            <Text dimColor wrap="truncate-end">
-              {heading}
-            </Text>
-          )}
-        </Clickable>
-        <Box width={filterWidth(width)} flexShrink={0}>
-          {filter}
-        </Box>
-      </Box>
+      <HeadingRow width={width} onClick={onHeading} filter={filter}>
+        {editing ? <EditLine prefix="" line={editing} width={editCells(width)} /> : (
+          <Text dimColor wrap="truncate-end">
+            {heading}
+          </Text>
+        )}
+      </HeadingRow>
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         // a video can be in a playlist twice: each copy is its own row

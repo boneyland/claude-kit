@@ -206,8 +206,11 @@ const columnOf = (line: string, index: number) =>
   }, 0)
 
 const lineOf = (lines: string[], re: RegExp) => lines.findIndex(l => re.test(l))
-// The Queue's or Playlists' filter line, under the tabs (without the pane beside it).
-const filterOf = (lines: string[]) => stripAnsi(lines[lineOf(lines, /Files\s+Queue/) + 1] ?? '').split('│')[0]!.trimEnd()
+// The tab's filter, at the right of its heading's row (without the pane beside it).
+const filterOf = (lines: string[]) => {
+  const row = stripAnsi(lines[lineOf(lines, /Files\s+Queue/) + 1] ?? '').split('│')[0]!
+  return row.slice(Math.max(0, row.indexOf('Filter · '))).trimEnd()
+}
 
 afterEach(() => {
   cleanup()
@@ -746,13 +749,12 @@ describe('mouse rows', () => {
 })
 
 describe('tabs', () => {
-  // Tests draw without colour, so which tab shows is read from the lines
-  // under the tab row: Files has its filter on its heading's row, the Queue
-  // and Playlists a line of their own, and Playlists' heading names it.
+  // Tests draw without colour, so which tab shows is read from the heading
+  // under the tab row: Playlists' names it, the Queue's counts songs, Files'
+  // is a folder.
   const tabOf = (all: string[]) => {
-    const at = lineOf(all, /Files\s+Queue/) + 1
-    if (!/^\s*Filter · /.test(stripAnsi(all[at] ?? ''))) return 'Files'
-    return /^\s*Playlists/.test(stripAnsi(all[at + 1] ?? '')) ? 'Playlists' : 'Queue'
+    const heading = stripAnsi(all[lineOf(all, /Files\s+Queue/) + 1] ?? '').split('Filter · ')[0]!
+    return /^\s*Playlists/.test(heading) ? 'Playlists' : /\bsongs?\b|Chapters|No queue/.test(heading) ? 'Queue' : 'Files'
   }
   const EMPTY: Partial<PlayerKeys> = { queue: { kind: 'none', items: [], paths: [], root: '', current: -1 } }
 
@@ -1533,7 +1535,7 @@ describe('review fixes', () => {
     await click(where(' Files ').x + 2, where(' Files ').y)
     expect(lines().join('\n')).not.toContain('Move up')
     // the click only closed the menu: still on the Queue, where Enter plays the row
-    expect(stripAnsi(lines()[lineOf(lines(), /Files\s+Queue/) + 2] ?? '')).toMatch(/^\s*\/m · 12 songs/)
+    expect(stripAnsi(lines()[lineOf(lines(), /Files\s+Queue/) + 1] ?? '')).toMatch(/^\s*\/m · 12 songs/)
     await press(ENTER)
     expect(player.pick).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1)
     expect(player.addToQueue).not.toHaveBeenCalled()
@@ -2247,7 +2249,7 @@ describe('the Playlists tab', () => {
 
   test('the filter line: none at the top level; in an open list a click types there', async () => {
     const { press, click, where, lines } = await open()
-    expect(filterOf(lines())).toBe('Filter · open a list to filter it')
+    expect(filterOf(lines())).toBe('Filter · open a list first')
     const f = where('Filter · ')
     await click(f.x + 12, f.y)
     // still a command: j moves down

@@ -36,7 +36,7 @@ export const QUEUE_KEY_HELP: [string, string][] = [
   ['Delete', 'remove the picked songs (or this one)'],
   ['R', 'sort the other way round'],
   ['C twice', 'clear the queue and stop; l brings it back'],
-  ['/, click Filter', 'filter the list, on the line under the tabs (← → Home End Ctrl-A/E/W/U/K/D edit); Enter plays the first match, Esc clears'],
+  ['/, click Filter', 'filter the list, at the right of the heading (← → Home End Ctrl-A/E/W/U/K/D edit); Enter plays the first match, Esc clears'],
 ]
 
 export const FILES_KEY_HELP: [string, string][] = [
@@ -60,7 +60,7 @@ export const PLAYLISTS_KEY_HELP: [string, string][] = [
   ['Alt-↑ ↓  u d', "move the picked songs (or this one) in the list's file; not while sorted, not in Recently played"],
   ['S', "sort the open list: title, artist, album artist, album, folder, then custom order (the file's own); only a view, remembered for the list"],
   ['R', 'sort the other way round'],
-  ['/, click Filter', 'filter the open list, on the line under the tabs; Enter plays it from the first match, Esc clears'],
+  ['/, click Filter', 'filter the open list, at the right of the heading; Enter plays it from the first match, Esc clears'],
   ['Enter  Esc', 'in the name prompt (New playlist, Rename): save the name, or leave it as it was'],
 ]
 

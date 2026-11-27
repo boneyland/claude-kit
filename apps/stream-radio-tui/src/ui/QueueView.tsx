@@ -3,6 +3,7 @@ import { Box } from 'ink'
 import { Text } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
+import { HeadingRow } from './EditLine'
 import { extraOf, type FlatRow } from '../queue/rows'
 
 type Props = {
@@ -25,16 +26,20 @@ type Props = {
   // a row's menu: right-click, or the ⋯ at the end of the cursor's row
   onMenu?(at: number): void
   onWheel?(dir: 'up' | 'down'): void
+  // the filter, at the right of the heading's row
+  filter?: React.ReactNode
 }
 
 // The Queue tab: one row per song, the window of rows from `first`.
 // at: a row's place in `rows` (not its queue index).
-export function QueueView({ heading, rows, selected, picked, dropAt, current, isFavourite, height, width, first, onRow, onRowDrag, onRowRelease, onMenu, onWheel }: Props) {
+export function QueueView({ heading, rows, selected, picked, dropAt, current, isFavourite, height, width, first, onRow, onRowDrag, onRowRelease, onMenu, onWheel, filter }: Props) {
   return (
     <Clickable flexDirection="column" width={width} onWheel={onWheel}>
-      <Text dimColor wrap="truncate-end">
-        {heading}
-      </Text>
+      <HeadingRow width={width} filter={filter}>
+        <Text dimColor wrap="truncate-end">
+          {heading}
+        </Text>
+      </HeadingRow>
       {rows.slice(first, first + height).map((row, i) => {
         const at = first + i
         const isPlaying = row.index === current

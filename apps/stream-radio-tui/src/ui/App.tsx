@@ -17,7 +17,7 @@ import { MouseProvider, type Hit } from '../mouse/Clickable'
 import type { Graphics } from '../gfx/screen'
 import { firstRow } from './List'
 import { QueueView } from './QueueView'
-import { editCells, FilesView, filterWidth } from './FilesView'
+import { editCells, FilesView } from './FilesView'
 import { filterCells, FilterLine } from './EditLine'
 import { edit, indexAt, type Line } from './lineEdit'
 import { chapterMenu, filesMenu, Menu, queueMenu, type MenuItem } from './Menu'
@@ -477,7 +477,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         if (mode === 'help') return setHelpTop(helpTop(a.by === 'all' ? a.dir * Infinity : helpTopRef.current + a.dir * bodyHeight, bodyHeight, tabRef.current))
         setCurTop(undefined)
         // a page keeps a row of the last one in view
-        const to = inRange(a.by === 'all' ? a.dir * Infinity : at + a.dir * Math.max(1, rowsHeight - 1))
+        const to = inRange(a.by === 'all' ? a.dir * Infinity : at + a.dir * Math.max(1, listHeight - 1))
         return setCurSel({ cursor: to, anchor: to, picked: curSel().picked })
       }
       case 'extendPick':
@@ -629,10 +629,6 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const sideWidth = isWide ? Math.max(28, Math.floor(columns * 0.35)) : columns
   const listWidth = isWide ? columns - sideWidth : columns
   const listHeight = Math.max(1, lines - FIXED_ROWS - (isWide ? 0 : NOW_PLAYING_ROWS + 1))
-  // the filter line under the tabs, in the Queue and Playlists
-  const hasFilterLine = tab !== 'files'
-  // the rows the tab showing has room for
-  const rowsHeight = Math.max(1, listHeight - (hasFilterLine ? 1 : 0))
   // The lines between the title and the text line: the list and the pane.
   const bodyHeight = listHeight + 2 + (isWide ? 0 : NOW_PLAYING_ROWS + 1)
   const heading = filter
@@ -656,7 +652,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   // Only with a known length: a live stream has no bar to click.
   const onSeek = (share: number) => duration > 0 && act(() => seek(h, share * duration))
   const onVolume = (level: number) => act(() => inTurn(() => setVolume(h, session.config.volume, level)))
-  const first = firstRow(selected, rows.length, rowsHeight, queueTab.top)
+  const first = firstRow(selected, rows.length, listHeight, queueTab.top)
   // A click selects and holds the view where it is; a double-click does what
   // Enter does. Ctrl-click picks one row; Shift- or Alt-click a range.
   const onRow = (index: number, hit: Hit) => {
@@ -694,7 +690,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     if (!drag || drag.to === drag.from) return
     queueTab.moveTo(drag.to < rows.length ? rows[drag.to].index : q.items.length)
   }
-  const onWheel = (dir: 'up' | 'down') => queueTab.setTop(firstRow(selected, rows.length, rowsHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const onWheel = (dir: 'up' | 'down') => queueTab.setTop(firstRow(selected, rows.length, listHeight, first + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const fSel = filesSel()
   const fFirst = firstRow(fSel.cursor, fRows.length, listHeight, files.top)
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
@@ -725,7 +721,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     if (dismissMenu()) return
     const isPl = isPlaylistsTab()
     if (isPl && !pl.canFilter) return
-    const cells = filterCells(isFilesTab() ? filterWidth(listWidth) : listWidth)
+    const cells = filterCells(listWidth)
     const isTyping = modeRef.current === 'filter'
     // not typing, the line shows from its start
     const line = isTyping ? (isPl ? pl.filterLine : filterNow()) : { text: isPl ? pl.filter : isFilesTab() ? files.filter.text : view.filter, at: 0 }
@@ -755,11 +751,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     setMode('open')
   }
   const plSel = pl.sel()
-  const plFirst = firstRow(plSel.cursor, pl.rows.length, rowsHeight, pl.top)
-  const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, rowsHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
+  const plFirst = firstRow(plSel.cursor, pl.rows.length, listHeight, pl.top)
+  const onPlWheel = (dir: 'up' | 'down') => pl.setTop(firstRow(plSel.cursor, pl.rows.length, listHeight, plFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   const onPlRow = (index: number, hit: Hit) => dismissMenu() || leaveEdit() || (leaveFilter(), pl.onRow(index, hit, plFirst))
   // the shown songs' tags, for their artist (the newest asked is read first)
-  const plShownKey = tab === 'playlists' ? pl.rows.slice(plFirst, plFirst + rowsHeight).flatMap(r => (r.kind === 'song' ? [r.song.path] : [])).join('\n') : ''
+  const plShownKey = tab === 'playlists' ? pl.rows.slice(plFirst, plFirst + listHeight).flatMap(r => (r.kind === 'song' ? [r.song.path] : [])).join('\n') : ''
   useEffect(() => book.need(plShownKey ? plShownKey.split('\n') : []), [book, plShownKey])
   const fShown = tab === 'files' ? fRows.slice(fFirst, fFirst + listHeight) : []
   const fShownKey = fShown.flatMap(r => (r.kind === 'file' ? [r.path] : [])).join('\n')
@@ -770,7 +766,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   )
   useEffect(() => book.need(fAllKey ? fAllKey.split('\n') : []), [book, fAllKey])
   useEffect(() => book.need(fShownKey ? fShownKey.split('\n') : []), [book, fShownKey])
-  const shown = tab === 'queue' ? rows.slice(first, first + rowsHeight) : []
+  const shown = tab === 'queue' ? rows.slice(first, first + listHeight) : []
   const shownKey = shown.map(r => q.paths[r.index] ?? '').join('\n')
   // every song's tags, for sorting; the shown rows' first (the newest asked is read first)
   const allKey = useMemo(() => (tab === 'queue' ? q.paths.join('\n') : ''), [tab, q.paths])
@@ -779,7 +775,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const menu = menuRef.current
   const menuTop = (() => {
     if (!menu) return 0
-    const rowY = 2 + (hasFilterLine ? 1 : 0) + menu.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
+    const rowY = 2 + menu.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
     const height = menu.items.length + 2
     // below the row, or above it when that would run past the list
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
@@ -789,12 +785,22 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const checkRows = Math.max(1, listHeight - 1)
   const checkTop = (() => {
     if (!check) return 0
-    const rowY = 2 + (hasFilterLine ? 1 : 0) + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
+    const rowY = 2 + check.at - (tab === 'queue' ? first : tab === 'playlists' ? plFirst : fFirst)
     // title, the rows shown and the frame
     const height = Math.min(check.rows.length + 1, checkRows) + 3
     // below the row, or above it when that would run past the list; at the top when neither fits
     return rowY + 1 + height <= listHeight + 2 ? rowY + 1 : Math.max(0, rowY - height)
   })()
+  // the tab's filter, at the right of its heading's row
+  const filterLine = (
+    <FilterLine
+      text={tab === 'playlists' ? pl.filter : tab === 'files' ? files.filter.text : view.filter}
+      editing={mode !== 'filter' ? undefined : tab === 'playlists' ? pl.filterLine : tab === 'files' ? files.filter : qFilterRef.current}
+      canFilter={tab !== 'playlists' || pl.canFilter}
+      width={listWidth}
+      onClick={onFilterLine}
+    />
+  )
   const list = (
     <Box flexDirection="column" width={listWidth}>
       <Tabs
@@ -816,15 +822,6 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
         onSort={() => dismissMenu() || handle({ kind: 'sortNext' })}
         onReverse={() => dismissMenu() || handle({ kind: 'sortReverse' })}
       />
-      {hasFilterLine ? (
-        <FilterLine
-          text={tab === 'playlists' ? pl.filter : view.filter}
-          editing={mode !== 'filter' ? undefined : tab === 'playlists' ? pl.filterLine : qFilterRef.current}
-          canFilter={tab === 'queue' || pl.canFilter}
-          width={listWidth}
-          onClick={onFilterLine}
-        />
-      ) : null}
       {tab === 'queue' ? (
         <QueueView
           heading={heading}
@@ -834,7 +831,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           dropAt={dragRef.current?.to}
           current={q.current}
           isFavourite={i => favs.has(q.paths[i] ?? '')}
-          height={rowsHeight}
+          height={listHeight}
           width={listWidth}
           first={first}
           onRow={onRow}
@@ -842,6 +839,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           onRowRelease={onRowRelease}
           onMenu={openMenu}
           onWheel={onWheel}
+          filter={filterLine}
         />
       ) : tab === 'playlists' ? (
         <PlaylistsView
@@ -850,7 +848,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           selected={plSel.cursor}
           picked={new Set(plSel.picked)}
           dropAt={pl.drag?.to}
-          height={rowsHeight}
+          height={listHeight}
           width={listWidth}
           first={plFirst}
           now={pl.lib.now}
@@ -860,6 +858,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           onRowRelease={pl.onRowRelease}
           onMenu={openMenu}
           onWheel={onPlWheel}
+          filter={filterLine}
         />
       ) : (
         <FilesView
@@ -876,7 +875,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
           isFavourite={r => favs.has(files.entriesOf(r)[0]?.path ?? '')}
           onRow={onFileRow}
           onMenu={openMenu}
-          filter={<FilterLine text={files.filter.text} editing={mode === 'filter' ? files.filter : undefined} canFilter width={filterWidth(listWidth)} onClick={onFilterLine} />}
+          filter={filterLine}
           onWheel={onFilesWheel}
         />
       )}
