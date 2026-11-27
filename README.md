@@ -4,14 +4,14 @@ My mods for [Claude Code](https://claude.com/claude-code), plus savvy-flow and s
 
 | Name | Type | What it does |
 | --- | --- | --- |
-| [savvy-flow](plugins/savvy-flow) | skill + agents | `/savvy-flow <task>`: the session model plans, delegates to tiered worker subagents and reviews their work. |
+| [stream-radio-tui](apps/stream-radio-tui) | app | A full-screen terminal player for the same mpv as stream-radio: a playlist tree, now playing, pause, skip, volume, shuffle, repeat. Quit it and the music keeps playing. A one-line installer; not a plugin. |
+| [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv. A footer button shows the song and its progress and opens a menu (pause, stop, play last or default, type a URL); it retries with yt-dlp's android client when YouTube refuses. |
 | [savvy-progress](plugins/savvy-progress) | mod | A progress bar above the prompt and a live agents panel. Made for savvy-flow, shows any subagents, and mirrors Claude Code's own task list otherwise. |
 | [turn-gauge](plugins/turn-gauge) | mod | A band above the prompt: turn, speed, cost, prompt cache countdown, plan limits, context, cache hit rate and tokens, with the model and effort on a second row. Warns on spend (cache misses, output-heavy turns, a long context costing more than starting over, running out before a reset), offers a compact-keeping-recent-turns button, and notifies before the cache expires. |
 | [prompt-index](plugins/prompt-index) | mod | A pane listing the session's prompts: click one to jump there, filter, step through matches, see which are on screen. `/prompts` or the footer button toggles it. |
-| [stream-radio](plugins/stream-radio) | mod | `/stream <url>`: plays a YouTube stream's audio through mpv. A footer button shows the song and its progress and opens a menu (pause, stop, play last or default, type a URL); it retries with yt-dlp's android client when YouTube refuses. |
-| [stream-radio-tui](apps/stream-radio-tui) | app | A full-screen terminal player for the same mpv as stream-radio: a playlist tree, now playing, pause, skip, volume, shuffle, repeat. Quit it and the music keeps playing. A one-line installer; not a plugin. |
 | [pr-watch](plugins/pr-watch) | mod | Watches the current branch's PR (or any PR). When CI fails or a merge conflict appears, it wakes this same session to fix it and push, with no cloud session. A footer button sums up the PRs and opens a side panel to watch, check and stop them; `/pr-watch` does the same. |
 | [footer-where](plugins/footer-where) | mod | Shows the current directory and git branch at the right of the prompt footer. |
+| [savvy-flow](plugins/savvy-flow) | skill + agents | `/savvy-flow <task>`: the session model plans, delegates to tiered worker subagents and reviews their work. |
 
 savvy-flow and savvy-progress work on their own and light up together: with both installed, the flow drives the bar and workers report their progress to the panel. The other mods are independent of each other.
 
