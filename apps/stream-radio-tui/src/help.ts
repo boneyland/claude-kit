@@ -1,5 +1,5 @@
 import { textWidth } from '@core/nowplaying'
-import { ICONS } from './ui/Controls'
+import type { Icons } from './ui/icons'
 
 // The one list of keys and what the mouse does: the ? screen (ui/Help.tsx)
 // and --help both draw it, and a test checks the README's tables name every key.
@@ -64,8 +64,8 @@ export const PLAYLISTS_KEY_HELP: [string, string][] = [
   ['Enter  Esc', 'in the name prompt (New playlist, Rename): save the name, or leave it as it was'],
 ]
 
-// What the mouse does.
-export const MOUSE_HELP: [string, string][] = [
+// What the mouse does, with the controls' icons as `icons` draws them.
+export const mouseHelp = (icons: Icons): [string, string][] => [
   ['click', 'select a row; on a folder, open or shut it; on a playlist, open it; on ../, go up'],
   ['Ctrl-click', 'pick or unpick a row'],
   ['Shift-, Alt-click', 'pick the rows from the cursor to there'],
@@ -76,7 +76,7 @@ export const MOUSE_HELP: [string, string][] = [
   ['sort: …', 'sort by the next field'],
   ['↓  ↑ after it', 'Files, Queue, or an open playlist: sort the other way round'],
   ['Files heading', 'edit the location there; Esc leaves it'],
-  [`${ICONS.prev}  ${ICONS.pause}  ${ICONS.next}  ${ICONS.stop}`, 'previous, pause or play, next, stop'],
+  [`${icons.prev}  ${icons.pause}  ${icons.next}  ${icons.stop}`, 'previous, pause or play, next, stop'],
   ['★  ☆', 'by the title playing: take it out of Favourites, or put it in'],
   ['volume bar', 'set the volume there'],
   ['repeat, shuffle', 'switch them'],
@@ -88,7 +88,7 @@ export const MOUSE_HELP: [string, string][] = [
 const list = (rows: [string, string][]) => rows.map(([k, what]) => `  ${k}${' '.repeat(Math.max(1, 20 - textWidth(k)))}${what}`).join('\n')
 
 // What --help prints.
-export const USAGE = `Usage: stream-radio-tui [url | path]
+export const usage = (icons: Icons) => `Usage: stream-radio-tui [url | path]
 
 A full-screen player for the stream-radio mod's shared mpv. With a URL, or a
 file, folder or playlist, it plays that; with none it follows the player that
@@ -110,13 +110,15 @@ Playlists tab:
 ${list(PLAYLISTS_KEY_HELP)}
 
 Mouse:
-${list(MOUSE_HELP)}
+${list(mouseHelp(icons))}
 
 Config: $XDG_CONFIG_HOME/stream-radio/config.json
         (~/.config/stream-radio/config.json without XDG_CONFIG_HOME)
         volume, player, androidClient, defaultUrl,
         graphics ("auto", "on" or "off": album art and a pixel waveform),
-        mouse ("on" or "off": clicks and the wheel; Shift-drag selects text)
+        mouse ("on" or "off": clicks and the wheel; Shift-drag selects text),
+        icons ("auto", "nerd" or "plain": the controls' icons; auto picks
+        Nerd Font ones only in kitty, Ghostty and WezTerm)
 
   --help       this text
   --version    the version`

@@ -3,7 +3,8 @@ import { render } from 'ink'
 import { openSession } from './session'
 import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe'
 import { App } from './ui/App'
-import { USAGE } from './help'
+import { usage } from './help'
+import { iconsFor, IconsContext } from './ui/icons'
 import { nodeMedia } from './media'
 import { kittyGraphics, leaveScreen, type Graphics } from './gfx/screen'
 import { mouseInput } from './mouse/input'
@@ -28,7 +29,7 @@ let shown: Graphics | undefined
 
 async function main(argv: string[]) {
   if (argv.includes('--version')) return console.log(`stream-radio-tui ${VERSION}`)
-  if (argv.includes('--help') || argv.includes('-h')) return console.log(USAGE)
+  if (argv.includes('--help') || argv.includes('-h')) return console.log(usage(iconsFor(process.env, 'auto')))
 
   const listeners = new Set<() => void>()
   const subscribe = (fn: () => void) => {
@@ -51,10 +52,12 @@ async function main(argv: string[]) {
   // Clicks come out of stdin before Ink reads it; Ink gets the keys.
   const input = session.config.mouse === 'on' ? mouseInput(process.stdin, () => write(MOUSE_OFF)) : undefined
   if (input) write(MOUSE_ON)
-  const app = render(<App session={session} subscribe={subscribe} media={nodeMedia(process.env, session.config.player)} graphics={graphics} mouse={input?.subscribe} />, {
-    exitOnCtrlC: false,
-    stdin: input?.stdin ?? process.stdin,
-  })
+  const app = render(
+    <IconsContext.Provider value={iconsFor(process.env, session.config.icons)}>
+      <App session={session} subscribe={subscribe} media={nodeMedia(process.env, session.config.player)} graphics={graphics} mouse={input?.subscribe} />
+    </IconsContext.Provider>,
+    { exitOnCtrlC: false, stdin: input?.stdin ?? process.stdin },
+  )
   // Lets go of the player (it plays on), puts the terminal back, and goes.
   const bail = (code: number, error?: unknown) => {
     session.close()

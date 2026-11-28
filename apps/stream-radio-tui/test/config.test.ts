@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { loadConfig } from '../src/config'
 
-const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on' }
+const DEFAULTS = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on', icons: 'auto' }
 let dir: string
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-cfg-'))
@@ -31,6 +31,14 @@ describe('loadConfig', () => {
     expect((await loadConfig(env())).graphics).toBe('off')
     write('{"graphics": "yes"}')
     expect((await loadConfig(env())).graphics).toBe('auto')
+  })
+  test('icons can be set to nerd or plain; anything else is auto', async () => {
+    write('{"icons": "nerd"}')
+    expect((await loadConfig(env())).icons).toBe('nerd')
+    write('{"icons": "plain"}')
+    expect((await loadConfig(env())).icons).toBe('plain')
+    write('{"icons": true}')
+    expect((await loadConfig(env())).icons).toBe('auto')
   })
   test('a missing file gives the defaults', async () => {
     expect(await loadConfig(env())).toEqual(DEFAULTS)

@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { Box } from 'ink'
 import { Text } from './Text'
-import { VOLUME_STEP } from '@core/nowplaying'
+import { textWidth, VOLUME_STEP } from '@core/nowplaying'
 import { Clickable } from '../mouse/Clickable'
 import type { Action } from '../keys'
+import { IconsContext } from './icons'
 
 const FILL_COLOR = '#5fafff'
 
@@ -52,30 +53,29 @@ export function VolumeBar({ level, width, onSet }: BarProps) {
 // isStopped: nothing plays (the pause key then plays the queue).
 type Props = { isPaused: boolean; isStopped: boolean; volume: number; width: number; onAction?(a: Action): void; onVolume?(level: number): void }
 
-// Nerd Font Material icons (kitty and Ghostty bundle the font): previous,
-// pause, play, next, stop. Each takes one column; kitty may draw it over the
-// space after it, so each button is the icon and a space.
-export const ICONS = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: '\u{F040A}', next: '\u{F04AD}', stop: '\u{F04DB}' }
-
-// 󰒮 󰏤 󰒭 󰓛 then the volume bar over the rest of `width`; the play icon for
-// pause while paused or stopped. Each does what its key does.
+// Previous, pause, next, stop (icons.ts picks the set), then the volume bar
+// over the rest of `width`; the play icon for pause while paused or stopped.
+// Each does what its key does.
 export function Controls({ isPaused, isStopped, volume, width, onAction, onVolume }: Props) {
+  const icons = useContext(IconsContext)
   const button = (icon: string, a: Action) => (
     <Clickable flexShrink={0} onClick={() => onAction?.(a)}>
       <Text>{`${icon} `}</Text>
     </Clickable>
   )
-  const used = 4 * 3 + 1
+  // each button its icon and a space, a space between them, two before the bar
+  const pausing = Math.max(textWidth(icons.pause), textWidth(icons.play))
+  const used = [icons.prev, icons.next, icons.stop].reduce((n, icon) => n + textWidth(icon), pausing) + 4 + 3 + 2
   // nothing shrinks: a squeezed button or bar would wrap and misplace clicks
   return (
     <Box width={width} flexShrink={0}>
-      {button(ICONS.prev, { kind: 'prev' })}
+      {button(icons.prev, { kind: 'prev' })}
       <Text> </Text>
-      {button(isPaused || isStopped ? ICONS.play : ICONS.pause, { kind: 'pause' })}
+      {button(isPaused || isStopped ? icons.play : icons.pause, { kind: 'pause' })}
       <Text> </Text>
-      {button(ICONS.next, { kind: 'next' })}
+      {button(icons.next, { kind: 'next' })}
       <Text> </Text>
-      {button(ICONS.stop, { kind: 'stop' })}
+      {button(icons.stop, { kind: 'stop' })}
       <Text>{'  '}</Text>
       <VolumeBar level={volume} width={Math.max(10, width - used)} onSet={onVolume} />
     </Box>

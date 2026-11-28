@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { Box } from 'ink'
 import { Text } from './Text'
 import { textWidth } from '@core/nowplaying'
-import { FILES_KEY_HELP, KEY_HELP, MOUSE_HELP, PLAYLISTS_KEY_HELP, QUEUE_KEY_HELP } from '../help'
+import { FILES_KEY_HELP, KEY_HELP, mouseHelp, PLAYLISTS_KEY_HELP, QUEUE_KEY_HELP } from '../help'
+import { IconsContext, NERD_ICONS, type Icons } from './icons'
 import type { Tab } from './Tabs'
 
 const COLUMN = 20
@@ -17,7 +18,7 @@ const TAB_HELP: Record<Tab, { heading: string; keys: [string, string][] }> = {
 }
 
 // The lines of the list, headings and all.
-export function helpLines(tab: Tab = 'queue'): { text: string; isHeading?: boolean }[] {
+export function helpLines(tab: Tab = 'queue', icons: Icons = NERD_ICONS): { text: string; isHeading?: boolean }[] {
   const rows = (list: [string, string][]) => list.map(([k, what]) => ({ text: `  ${pad(k)}${what}` }))
   return [
     { text: 'Keys', isHeading: true },
@@ -27,7 +28,7 @@ export function helpLines(tab: Tab = 'queue'): { text: string; isHeading?: boole
     ...rows(TAB_HELP[tab].keys),
     { text: '' },
     { text: 'Mouse', isHeading: true },
-    ...rows(MOUSE_HELP),
+    ...rows(mouseHelp(icons)),
   ]
 }
 
@@ -36,9 +37,10 @@ export const helpTop = (top: number, height: number, tab?: Tab) => Math.max(0, M
 
 // The key list in `height` lines from line `top`.
 export function Help({ top, height, width, tab }: { top: number; height: number; width: number; tab?: Tab }) {
+  const icons = useContext(IconsContext)
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {helpLines(tab)
+      {helpLines(tab, icons)
         .slice(helpTop(top, height, tab), helpTop(top, height, tab) + height)
         .map((line, i) => (
           <Text key={i} bold={line.isHeading} wrap="truncate-end">

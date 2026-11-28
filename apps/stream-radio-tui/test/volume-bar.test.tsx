@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest'
 import React from 'react'
 import { Box, Text } from 'ink'
 import { render } from 'ink-testing-library'
-import { ICONS, volumeAt, VolumeBar } from '../src/ui/Controls'
+import { volumeAt, VolumeBar } from '../src/ui/Controls'
+import { NERD_ICONS as ICONS } from '../src/ui/icons'
 
 describe('volumeAt', () => {
   test('the ends give 0 and 100; between, the nearest 5', () => {

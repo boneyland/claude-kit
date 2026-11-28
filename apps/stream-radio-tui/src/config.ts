@@ -8,9 +8,12 @@ export type GraphicsSetting = 'auto' | 'on' | 'off'
 // Clicks and the wheel; off leaves the terminal's own text selection as it is.
 export type MouseSetting = 'on' | 'off'
 
-export type TuiConfig = PlayerConfig & { defaultUrl: string; graphics: GraphicsSetting; mouse: MouseSetting }
+// The controls' icons: Nerd Font ones, plain shapes, or picked by the terminal.
+export type IconsSetting = 'auto' | 'nerd' | 'plain'
 
-export const DEFAULT_CONFIG: TuiConfig = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on' }
+export type TuiConfig = PlayerConfig & { defaultUrl: string; graphics: GraphicsSetting; mouse: MouseSetting; icons: IconsSetting }
+
+export const DEFAULT_CONFIG: TuiConfig = { volume: 60, player: 'mpv', androidClient: false, defaultUrl: '', graphics: 'auto', mouse: 'on', icons: 'auto' }
 
 // ${XDG_CONFIG_HOME or HOME/.config}/stream-radio/config.json. A missing or
 // unreadable file, or a field of the wrong type, gives that field's default.
@@ -32,5 +35,6 @@ export async function loadConfig(env: Record<string, string | undefined>): Promi
     defaultUrl: typeof o.defaultUrl === 'string' ? o.defaultUrl : d.defaultUrl,
     graphics: o.graphics === 'on' || o.graphics === 'off' ? o.graphics : d.graphics,
     mouse: o.mouse === 'off' ? 'off' : d.mouse,
+    icons: o.icons === 'nerd' || o.icons === 'plain' ? o.icons : d.icons,
   }
 }

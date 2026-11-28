@@ -1,7 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { FILES_KEY_HELP, KEY_HELP, PLAYLISTS_KEY_HELP, QUEUE_KEY_HELP, USAGE } from '../src/help'
+import { FILES_KEY_HELP, KEY_HELP, PLAYLISTS_KEY_HELP, QUEUE_KEY_HELP, usage } from '../src/help'
+import { NERD_ICONS } from '../src/ui/icons'
+
+const USAGE = usage(NERD_ICONS)
 
 const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
 

@@ -15,7 +15,7 @@ import type { Media } from '../src/media'
 import type { Wave } from '../src/media/peaks'
 import { kittyGraphics, type Graphics } from '../src/gfx/screen'
 import { tilde } from '../src/ui/hooks'
-import { ICONS } from '../src/ui/Controls'
+import { NERD_ICONS as ICONS } from '../src/ui/icons'
 import type { MouseEvent, MouseSource } from '../src/mouse/sgr'
 import { tagReader, type TagReader } from '../src/media/tags'
 
