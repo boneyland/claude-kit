@@ -54,11 +54,16 @@ export const PRUNE_EVERY_MS = 30 * 60 * 1000
 
 // pruneCache now and every `everyMs` after, until the returned stop is
 // called. The timer never keeps the process alive.
-export function keepPruned(dir: string, everyMs = PRUNE_EVERY_MS, maxBytes = CACHE_MAX_BYTES): () => void {
-  void pruneCache(dir, maxBytes)
-  const timer = setInterval(() => void pruneCache(dir, maxBytes), everyMs)
+export function keepPruned(dir: string, everyMs = PRUNE_EVERY_MS, maxBytes = CACHE_MAX_BYTES): () => Promise<void> {
+  // one prune at a time, each after the last
+  let running = pruneCache(dir, maxBytes)
+  const timer = setInterval(() => (running = running.then(() => pruneCache(dir, maxBytes))), everyMs)
   timer.unref()
-  return () => clearInterval(timer)
+  // resolves once the prune in progress, if any, is done: none deletes after
+  return () => {
+    clearInterval(timer)
+    return running
+  }
 }
 
 // Never throws: a cache that can't be written only means no cache. Written
