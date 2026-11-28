@@ -140,7 +140,7 @@ Everything the keys do, the mouse can do too:
 - **Tabs:** a click on `Files`, `Queue` or `Playlists` switches; a click on `sort: …` sorts by the next field. In Files, and in the Queue or an open playlist once sorted, the `↓` after it (`↑` the other way round) turns the sort round, as `R` does.
 - **Filter:** a click on `Filter ·`, at the right of the heading (in Playlists, of an open list), types a filter there, the cursor where you clicked (a click while typing moves it). It edits as the Files location does (`←` `→` `Home` `End`, `Ctrl-A` `Ctrl-E` `Ctrl-W` `Ctrl-U` `Ctrl-K` `Ctrl-D`). A click on a row leaves it, the filter as typed; `Esc` clears it.
 - **Wheel:** scrolls the list without moving the selection; a key that moves the selection brings the view back to it.
-- **Controls:** ⏮ previous, ⏸ pause (▶ while paused; stopped, it plays as `space` does), ⏹ stop, ⏭ next (drawn as Nerd Font icons in kitty, Ghostty and WezTerm, which bundle the font, and as `◂◂ ‖ ▸ ▸▸ ■` elsewhere, Termux included; see `icons` under Config); `repeat …` and `shuffle …` switch when clicked.
+- **Controls:** ⏮ previous, ⏸ pause (▶ while paused; stopped, it plays as `space` does), ⏹ stop, ⏭ next (drawn as Nerd Font icons in kitty, Ghostty and WezTerm, which bundle the font, in Termux when `~/.termux/font.ttf` is a Nerd Font, and as `◂◂ ‖ ▸ ▸▸ ■` elsewhere; see `icons` under Config); `repeat …` and `shuffle …` switch when clicked.
 - **Favourite:** the `☆` by the title of what plays is `★` when the song is in ★ Favourites; a click on it puts the song in or takes it out, as `*` does.
 - **Volume:** the bar `|██████vol 60%       |` sets the volume where you click it, to the nearest 5 %.
 - **Seek:** a click on the waveform, or on the plain bar, jumps there. Live streams have no bar.
@@ -177,7 +177,7 @@ Optional, in `${XDG_CONFIG_HOME:-~/.config}/stream-radio/config.json`:
 | `defaultUrl` | empty | what `l` plays when the queue is empty and nothing cleared can come back |
 | `graphics` | `auto` | album art and a pixel waveform: `auto` asks the terminal, `on` or `off` forces it |
 | `mouse` | `on` | clicks and the wheel (see Mouse); `off` leaves text selection to the terminal |
-| `icons` | `auto` | the controls' icons: `auto` uses Nerd Font icons in kitty, Ghostty and WezTerm and plain shapes elsewhere; `nerd` forces them (your terminal's font has them), `plain` forces the shapes |
+| `icons` | `auto` | the controls' icons: `auto` uses Nerd Font icons in kitty, Ghostty and WezTerm, and in Termux when `~/.termux/font.ttf` is a Nerd Font (v3 or later) with them, and plain shapes elsewhere; `nerd` forces them (your terminal's font has them), `plain` forces the shapes |
 
 A missing file, or a field of the wrong type, gives that field's default. The mod has its own settings with the same names; they are separate.
 

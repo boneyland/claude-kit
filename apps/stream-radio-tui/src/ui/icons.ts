@@ -13,12 +13,14 @@ export const NERD_ICONS: Icons = { prev: '\u{F04AE}', pause: '\u{F03E4}', play: 
 // columns wide). Pause and play are as wide, so nothing moves when they swap.
 export const PLAIN_ICONS: Icons = { prev: '◂◂', pause: '‖', play: '▸', next: '▸▸', stop: '■' }
 
-// `auto`: Nerd Font icons only in the terminals that bundle the font (kitty,
-// Ghostty, WezTerm), found by the variables they set, which tmux passes on.
-// Whether any other terminal's font has them can't be asked.
-export function iconsFor(env: Record<string, string | undefined>, setting: IconsSetting): Icons {
+// `auto`: Nerd Font icons in the terminals that bundle the font (kitty,
+// Ghostty, WezTerm), found by the variables they set, which tmux passes on,
+// and in Termux when its font has them (`termuxFont`, from fonts.ts). Whether
+// any other terminal's font has them can't be asked.
+export function iconsFor(env: Record<string, string | undefined>, setting: IconsSetting, termuxFont = false): Icons {
   if (setting !== 'auto') return setting === 'nerd' ? NERD_ICONS : PLAIN_ICONS
   const bundled =
+    termuxFont ||
     env.TERM === 'xterm-kitty' ||
     !!env.KITTY_WINDOW_ID ||
     env.TERM_PROGRAM === 'ghostty' ||

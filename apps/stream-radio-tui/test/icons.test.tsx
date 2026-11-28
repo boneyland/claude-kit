@@ -20,6 +20,11 @@ describe('iconsFor', () => {
     expect(iconsFor({ TERM: 'xterm-256color' }, 'auto')).toBe(PLAIN_ICONS)
     expect(iconsFor({}, 'auto')).toBe(PLAIN_ICONS)
   })
+  test('auto: Nerd Font icons in Termux when its font has them', () => {
+    expect(iconsFor({ TERMUX_VERSION: '0.118.1' }, 'auto', true)).toBe(NERD_ICONS)
+    expect(iconsFor({ TERMUX_VERSION: '0.118.1' }, 'auto', false)).toBe(PLAIN_ICONS)
+    expect(iconsFor({ TERMUX_VERSION: '0.118.1' }, 'plain', true)).toBe(PLAIN_ICONS)
+  })
   test('the setting overrides the guess', () => {
     expect(iconsFor({ TERMUX_VERSION: '0.118.1' }, 'nerd')).toBe(NERD_ICONS)
     expect(iconsFor({ TERM: 'xterm-kitty' }, 'plain')).toBe(PLAIN_ICONS)

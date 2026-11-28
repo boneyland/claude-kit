@@ -5,6 +5,7 @@ import { FALLBACK_CELL, graphicsOn, probeTerminal, type Cell } from './gfx/probe
 import { App } from './ui/App'
 import { usage } from './help'
 import { iconsFor, IconsContext } from './ui/icons'
+import { termuxFontHasIcons } from './fonts'
 import { nodeMedia } from './media'
 import { kittyGraphics, leaveScreen, type Graphics } from './gfx/screen'
 import { mouseInput } from './mouse/input'
@@ -29,7 +30,7 @@ let shown: Graphics | undefined
 
 async function main(argv: string[]) {
   if (argv.includes('--version')) return console.log(`stream-radio-tui ${VERSION}`)
-  if (argv.includes('--help') || argv.includes('-h')) return console.log(usage(iconsFor(process.env, 'auto')))
+  if (argv.includes('--help') || argv.includes('-h')) return console.log(usage(iconsFor(process.env, 'auto', await termuxFontHasIcons(process.env))))
 
   const listeners = new Set<() => void>()
   const subscribe = (fn: () => void) => {
@@ -38,6 +39,7 @@ async function main(argv: string[]) {
   }
   const session = await openSession(argv, { onChange: () => listeners.forEach(fn => fn()) })
   const display = await pictures(session.config.graphics)
+  const icons = iconsFor(process.env, session.config.icons, session.config.icons === 'auto' && (await termuxFontHasIcons(process.env)))
   const write = (s: string) => void process.stdout.write(s)
   const graphics = display.isOn ? kittyGraphics(write, display.cell) : undefined
   shown = graphics
@@ -53,7 +55,7 @@ async function main(argv: string[]) {
   const input = session.config.mouse === 'on' ? mouseInput(process.stdin, () => write(MOUSE_OFF)) : undefined
   if (input) write(MOUSE_ON)
   const app = render(
-    <IconsContext.Provider value={iconsFor(process.env, session.config.icons)}>
+    <IconsContext.Provider value={icons}>
       <App session={session} subscribe={subscribe} media={nodeMedia(process.env, session.config.player)} graphics={graphics} mouse={input?.subscribe} />
     </IconsContext.Provider>,
     { exitOnCtrlC: false, stdin: input?.stdin ?? process.stdin },

@@ -118,7 +118,8 @@ Config: $XDG_CONFIG_HOME/stream-radio/config.json
         graphics ("auto", "on" or "off": album art and a pixel waveform),
         mouse ("on" or "off": clicks and the wheel; Shift-drag selects text),
         icons ("auto", "nerd" or "plain": the controls' icons; auto picks
-        Nerd Font ones only in kitty, Ghostty and WezTerm)
+        Nerd Font ones in kitty, Ghostty and WezTerm, and in Termux when
+        ~/.termux/font.ttf is a Nerd Font)
 
   --help       this text
   --version    the version`
