@@ -107,9 +107,9 @@ const [PG_UP, PG_DOWN, HOME, END] = ['\x1b[5~', '\x1b[6~', '\x1b[H', '\x1b[F']
 // A session over a real store: the App draws what is in it and calls the
 // (mocked) core actions with its host.
 // library: the saved playlists' data folder (XDG_DATA_HOME), files read for real, and the poll's timer.
-type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']>; library?: { data: string; every: Host['every'] } }
+type Extra = { media?: Media; graphics?: Graphics; rows?: number; tags?: TagReader; fs?: Partial<Host['fs']>; library?: { data: string; every: Host['every'] }; fsDelayMs?: number }
 async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, status = '', home = '', extra: Extra = {}) {
-  const { media, graphics, rows, tags, fs, library } = extra
+  const { media, graphics, rows, tags, fs, library, fsDelayMs } = extra
   const listeners = new Set<() => void>()
   let seq = status ? 1 : 0
   const vars = memoryStore(() => listeners.forEach(fn => fn()))
@@ -119,6 +119,13 @@ async function show(columns: number, state: Partial<PlayerKeys> = PLAYING, statu
       ? { ...nodeHost({ titleChanged: () => undefined, watching: () => undefined }, vars, { env: { HOME: home || TMP, XDG_DATA_HOME: library.data } }), home: async () => home, dataDir: async () => STATE, every: library.every }
       : { program: 'tui', vars, home: async () => home, fs, dataDir: async () => STATE, libraryDir: async () => '', every: () => ({ cancel: () => undefined }) }
   ) as unknown as Host
+  // every file call answered late, as on a slow machine
+  if (library && fsDelayMs) {
+    const real = host.fs as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>
+    host.fs = Object.fromEntries(
+      Object.entries(real).map(([name, fn]) => [name, async (...args: unknown[]) => (await new Promise(r => setTimeout(r, fsDelayMs)), fn(...args))]),
+    ) as unknown as Host['fs']
+  }
   const session: Session = { host, config: { ...DEFAULT_CONFIG }, close: vi.fn(), status: () => status, statusSeq: () => seq }
   // the session says something (again), as its say() does
   const say = (text: string) => {
@@ -1889,9 +1896,9 @@ describe('the Playlists tab', () => {
     'Road trip': m3u(['/m/r1.mp3', 'Road one'], ['/m/r2.mp3', 'Road two'], ['/m/r3.mp3', 'Road three']),
     'Late night': m3u(['/m/l1.mp3', 'Late one']),
   }
-  async function open(files: Record<string, string> = FILES) {
+  async function open(files: Record<string, string> = FILES, fsDelayMs?: number) {
     const lib = library(files)
-    const ui = await show(100, PLAYING, '', '', { library: lib })
+    const ui = await show(100, PLAYING, '', '', { library: lib, fsDelayMs })
     await ui.press('\t')
     await vi.waitFor(() => expect(ui.lines().join('\n')).toContain('+ New playlist…'))
     return { ...ui, lib }
@@ -1970,8 +1977,8 @@ describe('the Playlists tab', () => {
     const order = (file: string) => [...nodeFs.readFileSync(file, 'utf8').matchAll(/^\/m\/(\w+)\.mp3$/gm)].map(m => m[1])
     const status = (all: string[]) => all[lineOf(all, /^─+$/) + 1] ?? ''
     // opens Road trip (r1, r2, r3), the cursor on its first song
-    async function road(files: Record<string, string> = FILES) {
-      const ui = await open(files)
+    async function road(files: Record<string, string> = FILES, fsDelayMs?: number) {
+      const ui = await open(files, fsDelayMs)
       await ui.press('j', 'j', 'j', ENTER)
       await vi.waitFor(() => expect(rowsText(ui.lines())).toContain('Road two'))
       return ui
@@ -2136,6 +2143,30 @@ describe('the Playlists tab', () => {
       expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3'])
     })
 
+    test('the cursor moved while a move is written stays where it was put', async () => {
+      // each file call takes 40 ms, so the move is still being written while j j land
+      const { press, lib } = await road(FILES, 40)
+      // the top song up: nothing to do, but it takes a while to find that out
+      await press('u', 'j', 'j')
+      await new Promise(r => setTimeout(r, 1500))
+      // the last song down: nothing to do (moving the top song would be the cursor sent back)
+      await press('d')
+      await new Promise(r => setTimeout(r, 1500))
+      expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3'])
+    })
+
+    test('a key right after a move acts on the rows as moved, not the ones before', async () => {
+      const { press, lib } = await road(FILES, 40)
+      await press('j', 'u')
+      // the file written and unlocked, the list not yet read again: the cursor is on Road two, now the top song
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r2', 'r1', 'r3']), { interval: 5, timeout: 3000 })
+      await new Promise(r => setTimeout(r, 70))
+      await press('d')
+      await vi.waitFor(() => expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3']), { timeout: 3000 })
+      await new Promise(r => setTimeout(r, 1000))
+      expect(order(lib.file('Road trip'))).toEqual(['r1', 'r2', 'r3'])
+    })
+
     test("the list menu's Play on a tag-sorted list reads the tags first", async () => {
       const dir = nodeFs.mkdtempSync(nodePath.join(TMP, 'songs-'))
       const song = (n: string) => nodePath.join(dir, `${n}.mp3`)
@@ -2144,9 +2175,10 @@ describe('the Playlists tab', () => {
       const tags = tagReader(async p => ({ title: '', artist: artists[p] ?? '', albumArtist: '', album: '' }))
       const lib = library({ Mix: m3u([song('a'), 'Song A'], [song('b'), 'Song B'], [song('c'), 'Song C']) })
       nodeFs.writeFileSync(REMEMBER, JSON.stringify({ sorts: { Mix: { field: 'artist', isReversed: false } } }))
-      const { press, host, session } = await show(100, PLAYING, '', '', { library: lib, tags })
+      const { press, host, session, lines } = await show(100, PLAYING, '', '', { library: lib, tags })
       await press('\t')
-      await vi.waitFor(() => expect(nodeFs.existsSync(lib.file('Mix'))).toBe(true))
+      // the lists read: keys before then move nothing
+      await vi.waitFor(() => expect(lines().join('\n')).toMatch(/Mix +· 3/))
       // the list was never opened: no tags have been asked for
       await press('j', 'j', 'm', ENTER)
       const entries = [{ path: song('c'), title: 'Song C' }, { path: song('b'), title: 'Song B' }, { path: song('a'), title: 'Song A' }]

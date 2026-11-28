@@ -142,9 +142,18 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
   const key = useMemo(() => rows.map(rowKey).join('\n'), [rows])
 
   const sel = (): Selection => clamp(current(selRef.current, key) ?? NO_SELECTION, rows.length)
-  const setSel = (next: Selection) => setSelState({ ...next, forKey: key })
+  // counts the selection's changes other than a move's own, so a move that
+  // ends after the cursor moved leaves it where it was put
+  const selChanges = useRef(0)
+  const setSel = (next: Selection) => {
+    selChanges.current += 1
+    setSelState({ ...next, forKey: key })
+  }
   // the cursor on row `at`, against rows yet to be drawn: kept unpicked
-  const putCursor = (at: number) => setSelState({ cursor: at, anchor: at, picked: [] })
+  const putCursor = (at: number) => {
+    selChanges.current += 1
+    setSelState({ cursor: at, anchor: at, picked: [] })
+  }
   const setFilter = (text: string) => {
     setFilterState(text)
     setTop(undefined)
@@ -229,6 +238,7 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
     if (!picks.length) return
     const cursorRow = rows[was.cursor]
     const cursorPick = cursorRow?.kind === 'song' ? { index: cursorRow.index, song: cursorRow.song } : undefined
+    const changes = selChanges.current
     act(() =>
       inTurn(async () => {
         const home = await h.home().catch(() => '')
@@ -246,14 +256,19 @@ export function usePlaylistsTab(h: Host, config: TuiConfig, isShown: boolean, pl
           return moveSongs(f, order)
         }, { mustExist: o.name !== FAVOURITES })
         if (typeof done === 'string') return done
-        // the rows as they will be once the list is read again, the pick and cursor on the songs moved
-        const after = libraryRows({ lists: lib.lists, isLoaded: lib.isLoaded, open: { ...o, songs: songsOf(done) } }, filterRef.current.trim())
-        const rowOf = (index: number) => after.findIndex(r => r.kind === 'song' && r.index === index)
-        const picked = moved.map(rowOf).filter(i => i >= 0)
-        const at = cursorAt >= 0 ? rowOf(cursorAt) : -1
-        const cursor = at >= 0 ? at : was.cursor
-        setSelState({ cursor, anchor: cursor, picked: was.picked.length ? picked : [], forKey: after.map(rowKey).join('\n') })
-        setTop(undefined)
+        // the list as written, shown now with the pick and cursor on the songs
+        // moved, unless the cursor was moved since the key (it stays put)
+        const open = { ...o, songs: songsOf(done) }
+        lib.show(open)
+        if (selChanges.current === changes) {
+          const after = libraryRows({ lists: lib.lists, isLoaded: lib.isLoaded, open }, filterRef.current.trim())
+          const rowOf = (index: number) => after.findIndex(r => r.kind === 'song' && r.index === index)
+          const picked = moved.map(rowOf).filter(i => i >= 0)
+          const at = cursorAt >= 0 ? rowOf(cursorAt) : -1
+          const cursor = at >= 0 ? at : was.cursor
+          setSelState({ cursor, anchor: cursor, picked: was.picked.length ? picked : [], forKey: after.map(rowKey).join('\n') })
+          setTop(undefined)
+        }
         lib.refresh()
       }),
     )

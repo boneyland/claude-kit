@@ -35,6 +35,9 @@ export type Library = {
   close(): void
   // reads what shows again, now
   refresh(): void
+  // shows `open`, as just written to its file, at once: rows and a selection
+  // set with them land in the same render (a refresh then reads it again)
+  show(open: OpenList): void
   // reads what shows again if it changed on disk
   check(): void
 }
@@ -193,6 +196,9 @@ export function useLibrary(h: Host, isShown: boolean, onGone?: () => void): Libr
     refresh: () => {
       seen.current = undefined
       void check(true)
+    },
+    show: open => {
+      if (want.current === open.name) setOpen(open)
     },
     check: () => void check(),
   }
