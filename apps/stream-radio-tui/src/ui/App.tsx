@@ -696,7 +696,12 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
   const onFilesWheel = (dir: 'up' | 'down') => files.setTop(firstRow(fSel.cursor, fRows.length, listHeight, fFirst + (dir === 'down' ? WHEEL_ROWS : -WHEEL_ROWS)))
   // ../ goes up and a folder opens or shuts, at a click; a file only selects.
   const onFileRow = (index: number, hit: Hit) => {
-    if (dismissMenu() || leaveEdit()) return
+    // A new playlist's name being typed belongs to the checklist: the click
+    // only closes it. The location being typed is left and the click acts,
+    // as with the filter: swallowed, it left the cursor where it was, and an
+    // Alt-click next picked from there (from ../, every folder between).
+    if (dismissMenu() || (modeRef.current === 'name' && leaveEdit())) return
+    leaveEdit()
     leaveFilter()
     files.setTop(fFirst)
     const sel = filesSel()

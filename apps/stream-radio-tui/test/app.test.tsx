@@ -1075,12 +1075,25 @@ describe('files', () => {
     expect(lines().join('\n')).not.toContain('zz')
     await click(t.x, t.y)
     await press('zz')
+    // the click does what it does too: the folder opens
     await click(where('Album/').x, where('Album/').y)
     expect(stripAnsi(heading(lines()))).toContain('~/Music')
-    expect(lines().join('\n')).not.toContain('01 One.flac')
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
     // keys are commands again
     await press('U')
     await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
+  })
+
+  test('a click on a file while the location is typed puts the cursor there, so Alt-click picks from it, not from ../', async () => {
+    const { lines, click, modClick, where, press, host, session } = await showFiles({}, { ...TREE, '/h/Music': [{ name: 'Album', kind: 'dir' as const }, ...['a', 'b', 'c'].map(n => ({ name: `${n}.mp3`, kind: 'file' as const }))] })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('c.mp3'))
+    const t = where('~/Music')
+    await click(t.x, t.y)
+    await click(where('b.mp3').x, where('b.mp3').y)
+    await modClick(where('c.mp3').x, where('c.mp3').y, 'alt')
+    expect(lines().join('\n')).toContain('2 picked')
+    await press('a')
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/b.mp3' }, { path: '/h/Music/c.mp3' }], 'end')
   })
 
   test('o from the Queue goes to Files', async () => {
@@ -1166,6 +1179,23 @@ describe('files actions', () => {
     await click(where('Play next').x + 1, where('Play next').y)
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/loose.mp3' }], 'next')
     expect(lines().join('\n')).not.toContain('Play next')
+  })
+
+  test('two rows picked, the menu on one of them: Add to queue adds those two', async () => {
+    const { lines, press, rightClick, click, where, host, session } = await sp({ '/h/Music': ['a', 'b', 'c', 'd'].map(n => ({ name: `${n}.mp3`, kind: 'file' as const })) })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('a.mp3'))
+    await press('j', 'j', '\x1b[1;2B')
+    expect(lines().join('\n')).toContain('2 picked')
+    await rightClick(where('c.mp3').x, where('c.mp3').y)
+    await click(where('Add to queue').x + 1, where('Add to queue').y)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/b.mp3' }, { path: '/h/Music/c.mp3' }], 'end')
+  })
+
+  test('two rows picked, m then Enter: Add to queue adds those two', async () => {
+    const { lines, press, host, session } = await sp({ '/h/Music': ['a', 'b', 'c', 'd'].map(n => ({ name: `${n}.mp3`, kind: 'file' as const })) })
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('a.mp3'))
+    await press('j', 'j', '\x1b[1;2B', 'm', ENTER)
+    expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/b.mp3' }, { path: '/h/Music/c.mp3' }], 'end')
   })
 
   test('m opens the menu at the cursor; ↓ Enter picks; Esc closes it without acting', async () => {
