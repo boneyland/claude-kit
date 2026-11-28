@@ -984,7 +984,7 @@ describe('files', () => {
     await vi.waitFor(() => expect(lines().join('\n')).toContain('📁 Album/'))
     await click(where('Album/').x, where('Album/').y)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('01 One.flac'))
-    expect(lines().join('\n')).toContain('🢓 📁 Album/')
+    expect(lines().join('\n')).toContain('▾ 📁 Album/')
     await press(ENTER)
     expect(lines().join('\n')).not.toContain('01 One.flac')
   })
@@ -1173,7 +1173,7 @@ describe('files actions', () => {
     await dblclick(where('Album/').x, where('Album/').y)
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [{ path: '/h/Music/Album' }], 'end')
     await settled()
-    expect(lines().join('\n')).toContain('🢒 📁 Album/')
+    expect(lines().join('\n')).toContain('▸ 📁 Album/')
     expect(lines().join('\n')).not.toContain('01 One.flac')
   })
 
@@ -1261,7 +1261,7 @@ describe('youtube in files', () => {
     const { press, lines, host, session } = await withRun({ exitCode: 0, stdout: JSON.stringify(MIX), stderr: '' })
     await press('o', LIST, ENTER)
     await vi.waitFor(() => expect(lines().join('\n')).toContain('Drive Two'))
-    expect(lines().join('\n')).toContain('🢓 📁 Road Mix/')
+    expect(lines().join('\n')).toContain('▾ 📁 Road Mix/')
     expect(lines().join('\n')).toContain('Drive One · Chan')
     await press('j', 'a')
     expect(player.addToQueue).toHaveBeenCalledWith(host, session.config, [

@@ -70,7 +70,7 @@ Actions take the picked rows, or the cursor's row when none is picked. Adding or
 
 ### Files
 
-Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. A folder shows `🢒`, `🢓` when open. The heading shows where you are; `../` is always the first row.
+Opens at the last folder browsed, else `~/Music`, else the home folder. It lists folders and the files mpv plays (sound, video and playlist files); dotfiles and everything else stay hidden. A folder shows `▸`, `▾` when open. The heading shows where you are; `../` is always the first row.
 
 `/`, or a click on `Filter ·` at the right of the heading, filters the folders read so far (the root and the open folders): a file stays when every word is in its name, its folders' names or its artist, a folder that matches keeps what shows under it, and the folders above a match stay. Folders not yet opened aren't searched. `Enter` keeps the filter, the cursor on the first file that matches; `Esc` clears it, and so does going to another folder.
 

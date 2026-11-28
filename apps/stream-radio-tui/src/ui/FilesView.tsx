@@ -36,16 +36,16 @@ type Props = {
 // The cells a location being edited has in a list `width` wide.
 export const editCells = headingWidth
 
-// x of a folder row's 🢒/🢓, from the row's left edge.
+// x of a folder row's ▸/▾, from the row's left edge.
 export const arrowAt = (row: FileRow) => (row.kind === 'dir' ? 2 + 2 * row.depth : -1)
 
-// A row's text: a folder with 🢓 (open) or 🢒 before it, a favourite file with ★.
+// A row's text: a folder with ▾ (open) or ▸ before it, a favourite file with ★.
 function label(row: FileRow, isFavourite: boolean): string {
   switch (row.kind) {
     case 'up':
       return '../'
     case 'dir':
-      return `${'  '.repeat(row.depth)}${row.isOpen ? '🢓' : '🢒'} 📁 ${row.name}/`
+      return `${'  '.repeat(row.depth)}${row.isOpen ? '▾' : '▸'} 📁 ${row.name}/`
     case 'file':
       return `${'  '.repeat(row.depth)}${isFavourite ? '★' : ' '} ${row.name}`
     case 'note':
