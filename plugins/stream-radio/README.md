@@ -1,6 +1,6 @@
 # stream-radio
 
-Play the audio of any YouTube stream (live radio, a video, anything `mpv` opens) or your own music files from Claude Code, and show what is playing at the right of the footer line under the prompt, after the engine's own labels.
+A Claude Code mod. Play the audio of any YouTube stream, live radio, a video, or anything `mpv` opens, or your own music files. Show what is playing at the right of the footer line under the prompt, after the engine's own labels.
 
 ```
 /stream https://www.youtube.com/watch?v=tRsQsTMvPNg   # Claude FM, music for thinking and building
