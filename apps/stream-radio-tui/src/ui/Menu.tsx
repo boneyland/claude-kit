@@ -3,19 +3,22 @@ import { Text } from './Text'
 import { Clickable } from '../mouse/Clickable'
 import type { Action, LibraryOn } from '../keys'
 import type { Song } from '@core/library'
+import { textWidth } from '@core/nowplaying'
 
 export type MenuItem = { label: string; key: string; action: Action }
 
 // The actions of a row, drawn over the list at (x, y) from the list's top
 // left. ↑/↓ and Enter choose (through the app's keys), as does a click.
 export function Menu({ items, selected, x, y, onPick }: { items: readonly MenuItem[]; selected: number; x: number; y: number; onPick(i: number): void }) {
-  const width = Math.max(...items.map(i => i.label.length + i.key.length + 4)) + 2
+  // in columns, not code units: a label can carry a playlist's name (Delete "…")
+  const width = Math.max(...items.map(i => textWidth(i.label) + textWidth(i.key) + 4)) + 2
+  const pad = (item: MenuItem) => ' '.repeat(Math.max(0, width - 2 - textWidth(item.label) - textWidth(item.key)))
   return (
     // layer 1: over the rows it covers; a click on its frame does nothing
     <Clickable layer={1} onClick={() => {}} position="absolute" marginLeft={x} marginTop={y} flexDirection="column" borderStyle="round" width={width + 2}>
       {items.map((item, i) => (
         <Clickable key={item.label} layer={1} onClick={() => onPick(i)}>
-          <Text inverse={i === selected}>{` ${item.label.padEnd(width - item.key.length - 2)}${item.key} `}</Text>
+          <Text inverse={i === selected}>{` ${item.label}${pad(item)}${item.key} `}</Text>
         </Clickable>
       ))}
     </Clickable>

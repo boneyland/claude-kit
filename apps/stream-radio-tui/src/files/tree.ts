@@ -14,15 +14,17 @@ export type FileRow =
   | { kind: 'file'; path: string; name: string; depth: number }
   | { kind: 'note'; text: string; depth: number }
 
-function fileOrder(sort: FilesSort, tags: (path: string) => Tags | undefined) {
+// Files without the tag sorted by go last whichever way round, as in the
+// Queue and Playlists (sortOrder): `sign` turns only the rest round.
+function fileOrder(sort: FilesSort, tags: (path: string) => Tags | undefined, sign: number) {
   return (a: FileEntry, b: FileEntry): number => {
-    if (sort === 'modified') return b.mtimeMs - a.mtimeMs || byName(a.name, b.name)
+    if (sort === 'modified') return sign * (b.mtimeMs - a.mtimeMs || byName(a.name, b.name))
     if (sort === 'artist' || sort === 'albumArtist') {
       const [ta, tb] = [tags(a.path)?.[sort] ?? '', tags(b.path)?.[sort] ?? '']
       if (!ta !== !tb) return ta ? -1 : 1
-      return byName(ta, tb) || byName(a.name, b.name)
+      return sign * (byName(ta, tb) || byName(a.name, b.name))
     }
-    return byName(a.name, b.name)
+    return sign * byName(a.name, b.name)
   }
 }
 
@@ -41,8 +43,7 @@ export function fileRows(
 ): FileRow[] {
   const rows: FileRow[] = [{ kind: 'up' }]
   const sign = isReversed ? -1 : 1
-  const forward = fileOrder(sort, tags)
-  const order = (a: FileEntry, b: FileEntry) => sign * forward(a, b)
+  const order = fileOrder(sort, tags, sign)
   const dirSign = isReversed && sort === 'name' ? -1 : 1
   const walk = (folder: string, depth: number) => {
     const listing = listings.get(folder) ?? 'loading'

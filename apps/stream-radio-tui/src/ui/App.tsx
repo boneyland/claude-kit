@@ -48,7 +48,6 @@ const INTERRUPT_MS = 2000
 // Ink clears the whole screen at each frame that fills it.
 const FIXED_ROWS = 9
 const WIDE_COLUMNS = 80
-const PICK_INSIDE = 'Pick songs inside a playlist.'
 
 // What * and P act on, made when pressed (or when a menu opened): songs
 // (toExpand: Files rows, folders still to be expanded), or the song playing.
@@ -262,8 +261,9 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     })
   // What * and P act on in the tab showing: the picked rows, else the
   // cursor's; with no row to act on, the song playing. undefined: nothing
-  // (the cursor on ../); 'top': the Playlists tab's lists, not songs.
-  const keyTarget = (): Target | 'top' | undefined => {
+  // (the cursor on ../). Not on the Playlists tab's lists: libraryKeys
+  // answers * and P there itself.
+  const keyTarget = (): Target | undefined => {
     const on = targets(curSel())
     if (isQueueTab()) {
       if (!rows.length || q.kind !== 'playlist') return { isPlaying: true }
@@ -272,7 +272,7 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     }
     if (isPlaylistsTab()) {
       const songs = pl.chosen()
-      if (!songs) return 'top'
+      if (!songs) return undefined
       if (songs.length) return { songs }
       return pl.rows.some(r => r.kind === 'song') ? undefined : { isPlaying: true }
     }
@@ -303,13 +303,11 @@ function Player({ session, view, media, graphics, tagReader }: { session: Sessio
     const sel = curSel()
     if (sel.picked.length) setCurSel(clear(sel))
   }
-  // From a key (on: {}) or a menu: the target, or why there is none.
+  // From a key (on: {}) or a menu: the target, if there is one.
   const libraryTarget = (on: LibraryOn): Target | undefined => {
     const given = targetOf(on)
     if (given) return given
-    const t = keyTarget()
-    if (t === 'top') return void setNotice(PICK_INSIDE)
-    return t
+    return keyTarget()
   }
   const favourite = (on: LibraryOn) => {
     const t = libraryTarget(on)

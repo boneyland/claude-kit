@@ -915,6 +915,19 @@ describe('files', () => {
     await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
   })
 
+  test('a folder shown again is read again: songs added meanwhile show', async () => {
+    const tree = { ...TREE, '/h/Music': [...TREE['/h/Music']!] }
+    const { lines, press } = await showFiles({}, tree)
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('loose.mp3'))
+    await press('U')
+    await vi.waitFor(() => expect(heading(lines())).toMatch(/^~\s/))
+    tree['/h/Music'].push({ name: 'new.mp3', kind: 'file' })
+    await press('o')
+    await press('~/Music', ENTER)
+    await vi.waitFor(() => expect(heading(lines())).toContain('~/Music'))
+    await vi.waitFor(() => expect(lines().join('\n')).toContain('new.mp3'))
+  })
+
   test("G opens Files at the playing song's folder, the cursor on it", async () => {
     const song = '/h/Music/Album/02 Two.flac'
     const playing: Partial<PlayerKeys> = {

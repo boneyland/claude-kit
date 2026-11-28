@@ -102,6 +102,17 @@ describe('install.sh', () => {
     expect(r.out).not.toContain('Removed')
   })
 
+  it('Ctrl-C during the download ends the install, removing the temp file, rather than trying again', async () => {
+    const prefix = path.join(tmp, 'int-bin')
+    const bin = pathWith('int-path', NEEDED.filter(t => t !== 'curl'), ['mpv', 'yt-dlp', 'python3'])
+    // a download the user interrupts: Ctrl-C reaches the script as well as curl
+    fs.writeFileSync(path.join(bin, 'curl'), '#!/bin/sh\nkill -INT $PPID\nexit 130\n', { mode: 0o755 })
+    const r = await run({ PATH: bin, HOME: tmp, STREAM_RADIO_TUI_DIR: prefix, STREAM_RADIO_TUI_URL: url })
+    expect(r.code).toBe(130)
+    expect(r.out).not.toContain('Trying again')
+    expect(fs.readdirSync(prefix)).toEqual([])
+  })
+
   it('ignores PREFIX, which some systems set for other things', async () => {
     const elsewhere = path.join(tmp, 'prefix-ignored')
     const home = path.join(tmp, 'prefix-home')

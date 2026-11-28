@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box } from 'ink'
-import { Text } from './Text'
+import { Text, clean } from './Text'
 import { Clickable, type Hit } from '../mouse/Clickable'
 import { RowFill } from './RowFill'
 import { HeadingRow } from './EditLine'
@@ -97,14 +97,18 @@ export function PlaylistsView({ heading, rows, selected, picked, dropAt, height,
 }
 
 // The name being typed for a playlist, on the text line: the cursor on a cell of its own.
+// Its strings are cleaned here: the Text it is drawn in cleans only the strings
+// it is given, not those inside this fragment, and Rename's label and line
+// start as a name read from a playlist's file name.
 export function NamePrompt({ label, line, width }: { label: string; line: Line; width: number }) {
-  const { before, under, after } = shown(line, width - textWidth(label))
+  const shownLabel = clean(label)
+  const { before, under, after } = shown(line, width - textWidth(shownLabel))
   return (
     <>
-      {label}
-      {before}
+      {shownLabel}
+      {clean(before)}
       <Text inverse>{under}</Text>
-      {after}
+      {clean(after)}
     </>
   )
 }

@@ -76,18 +76,27 @@ export function useFiles(h: Host, book: TagBook): Files {
   useEffect(() => () => void (isLive.current = false), [])
 
   const putListing = (path: string, listing: Listing) => setListings(new Map(listingsRef.current).set(path, listing))
+  // folders being read again, their listing from before still shown
+  const rereading = useRef(new Set<string>()).current
+  // A folder listed before is shown as it was and read again, so songs added
+  // or deleted since show; a YouTube playlist's listing is all there is.
   const load = (path: string) => {
     const known = listingsRef.current.get(path)
-    if (known === 'loading' || Array.isArray(known)) return
-    putListing(path, 'loading')
-    loadFolder(h, path).then(
-      entries => {
-        if (!isLive.current) return
-        for (const e of entries) if (e.kind === 'file') book.know(e.path, e.mtimeMs)
-        putListing(path, entries)
-      },
-      (error: unknown) => isLive.current && putListing(path, { error: `Can't read ${path}: ${error instanceof Error ? error.message : String(error)}` }),
-    )
+    if (known === 'loading' || rereading.has(path)) return
+    if (Array.isArray(known)) {
+      if (path.startsWith(YT) || playlists.has(path)) return
+      rereading.add(path)
+    } else putListing(path, 'loading')
+    loadFolder(h, path)
+      .finally(() => rereading.delete(path))
+      .then(
+        entries => {
+          if (!isLive.current) return
+          for (const e of entries) if (e.kind === 'file') book.know(e.path, e.mtimeMs)
+          putListing(path, entries)
+        },
+        (error: unknown) => isLive.current && putListing(path, { error: `Can't read ${path}: ${error instanceof Error ? error.message : String(error)}` }),
+      )
   }
   const showRoot = (path: string) => {
     if (!path.startsWith(YT)) lastLocal.current = path
@@ -126,22 +135,25 @@ export function useFiles(h: Host, book: TagBook): Files {
     return v ? { title: v.title, artist: v.channel, albumArtist: '', album: '' } : book.get(path)
   }
   // Worked out again only when what they show changes, not at each redraw.
-  // The playlists and videos change only along with the listings.
+  // The playlists and videos change only along with the listings. Tags
+  // arrive as often as every 100 ms while any tab reads them: the tree heeds
+  // them only when sorted by them, the filter only when one is typed.
   const tagsSeen = book.version()
+  const isByTag = sortRef.current === 'artist' || sortRef.current === 'albumArtist'
   const tree = useMemo(
     () => (rootRef.current ? fileRows(rootRef.current, listingsRef.current, openRef.current, sortRef.current, tags, new Set(playlists.keys()), reversedRef.current) : []),
     // tags is read through the listings and the book's version
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootRef.current, listingsRef.current, openRef.current, sortRef.current, reversedRef.current, tagsSeen],
+    [rootRef.current, listingsRef.current, openRef.current, sortRef.current, reversedRef.current, isByTag ? tagsSeen : 0],
   )
   const filterText = filterRef.current.text.trim()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rows = useMemo(() => filterFileRows(tree, filterText, tags), [tree, filterText])
+  const rows = useMemo(() => filterFileRows(tree, filterText, tags), [tree, filterText, filterText ? tagsSeen : 0])
   const revealAt = revealing.current ? rows.findIndex(r => r.kind === 'file' && r.path === revealing.current) : -1
   // Its folder read (or not readable) without it: the reveal is given up, so
   // the cursor doesn't jump to it whenever it turns up later.
   const revealIn = revealing.current ? listingsRef.current.get(parentOf(revealing.current)) : undefined
-  const isRevealSettled = revealIn !== undefined && revealIn !== 'loading'
+  const isRevealSettled = revealIn !== undefined && revealIn !== 'loading' && !rereading.has(parentOf(revealing.current))
   useEffect(() => {
     if (revealAt < 0) {
       if (isRevealSettled) revealing.current = ''

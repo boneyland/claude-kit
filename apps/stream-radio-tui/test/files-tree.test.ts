@@ -42,6 +42,12 @@ describe('fileRows', () => {
     const tags = (p: string) => (p === '/m/c.mp3' ? { title: '', artist: 'Abba', albumArtist: '', album: '' } : undefined)
     expect(fileRows('/m', listings, new Set(), 'artist', tags).map(r => ('name' in r ? r.name : r.kind))).toEqual(['up', 'c.mp3', 'a.mp3', 'b.mp3'])
   })
+  test('artist, reversed: the tagged turn round, the untagged stay last, as in the Queue', () => {
+    const listings = new Map<string, Listing>([['/m', [file('/m/a.mp3'), file('/m/b.mp3'), file('/m/c.mp3'), file('/m/d.mp3')]]])
+    const artists: Record<string, string> = { '/m/c.mp3': 'Abba', '/m/d.mp3': 'Queen' }
+    const tags = (p: string) => (artists[p] ? { title: '', artist: artists[p], albumArtist: '', album: '' } : undefined)
+    expect(fileRows('/m', listings, new Set(), 'artist', tags, new Set(), true).map(r => ('name' in r ? r.name : r.kind))).toEqual(['up', 'd.mp3', 'c.mp3', 'b.mp3', 'a.mp3'])
+  })
   test('a folder still loading shows loading… under it; an error shows its text', () => {
     const listings = new Map<string, Listing>([
       ['/m', [dir('/m/A'), dir('/m/B')]],

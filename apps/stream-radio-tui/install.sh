@@ -54,7 +54,13 @@ if [ -f "$DEST/stream-radio-tui" ]; then
   old=$(version_of "$DEST/stream-radio-tui")
 fi
 tmp=$(mktemp "$DEST/.stream-radio-tui.XXXXXX")
-trap 'rm -f "$tmp"' EXIT HUP INT TERM
+# A signal removes the temp file and ends the install, with the code the
+# signal would have given: a trap that only cleaned up would let the script
+# carry on and try the download again.
+trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp"; trap - EXIT; exit 129' HUP
+trap 'rm -f "$tmp"; trap - EXIT; exit 130' INT
+trap 'rm -f "$tmp"; trap - EXIT; exit 143' TERM
 # The release publishes the file's SHA-256 beside it: a download cut short
 # or garbled on the way is never installed. While a new build is being
 # published the two files are swapped one after the other, so for a moment

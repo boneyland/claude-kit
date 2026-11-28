@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'vitest'
 import React from 'react'
 import { cleanup, render } from 'ink-testing-library'
 import { clean, RawText, Text } from '../src/ui/Text'
+import { NamePrompt } from '../src/ui/PlaylistsView'
 
 afterEach(() => cleanup())
 
@@ -26,6 +27,19 @@ test('Text draws no escape sequence from its strings, nested or in pieces', () =
   expect(frame).not.toContain('\x1b]')
   expect(frame).not.toContain('\x07')
   expect(frame).toContain('Song]52;c;cHduZWQ= by')
+})
+
+test('the name prompt draws no escape sequence from a playlist name read off disk', () => {
+  const name = `List${CLIPBOARD}`
+  const { lastFrame } = render(
+    <Text>
+      <NamePrompt label={`Rename "${name}" to: `} line={{ text: name, at: 2 }} width={60} />
+    </Text>,
+  )
+  const frame = lastFrame() ?? ''
+  expect(frame).not.toContain('\x1b]')
+  expect(frame).not.toContain('\x07')
+  expect(frame).toContain('Rename "List]52;c;cHduZWQ=" to: ')
 })
 
 test('RawText keeps escape sequences meant for the terminal', () => {
